@@ -33,6 +33,8 @@ const volumeSchema = z.object({
   kvNamespaceRef: z.object({ name: z.string() }).optional(),
   serviceRef: z.object({ name: z.string() }).optional(),
   hyperdriveRef: z.object({ name: z.string() }).optional(),
+  d1DatabaseRef: z.object({ name: z.string() }).optional(),
+  queueRef: z.object({ name: z.string() }).optional(),
 });
 
 const containerSchema = z.object({
@@ -63,6 +65,20 @@ export const deploymentSchema = z.object({
   kind: z.literal('Deployment'),
   metadata: objectMetaSchema,
   spec: deploymentSpecSchema,
+});
+
+const statefulSetSpecSchema = z.object({
+  replicas: z.number().int().nonnegative().optional(),
+  serviceName: z.string().optional(),
+  selector: z.object({ matchLabels: z.record(z.string()) }),
+  template: podTemplateSpecSchema,
+});
+
+export const statefulSetSchema = z.object({
+  apiVersion: z.literal('apps/v1'),
+  kind: z.literal('StatefulSet'),
+  metadata: objectMetaSchema,
+  spec: statefulSetSpecSchema,
 });
 
 const blueGreenSchema = z.object({
@@ -207,9 +223,36 @@ export const hyperdriveSchema = z.object({
   }),
 });
 
+export const d1DatabaseSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('D1Database'),
+  metadata: objectMetaSchema,
+  spec: z
+    .object({
+      primaryLocationHint: z
+        .enum(['wnam', 'enam', 'weur', 'eeur', 'apac', 'oc'])
+        .optional(),
+    })
+    .optional()
+    .default({}),
+});
+
+export const queueSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('Queue'),
+  metadata: objectMetaSchema,
+  spec: z
+    .object({
+      consumer: z.object({ workerName: z.string() }).optional(),
+    })
+    .optional()
+    .default({}),
+});
+
 export const k1cResourceSchema = z.discriminatedUnion('kind', [
   deploymentSchema,
   rolloutSchema,
+  statefulSetSchema,
   cronJobSchema,
   configMapSchema,
   secretSchema,
@@ -219,4 +262,6 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   kvNamespaceSchema,
   dispatchNamespaceSchema,
   hyperdriveSchema,
+  d1DatabaseSchema,
+  queueSchema,
 ]);

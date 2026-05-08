@@ -7,6 +7,8 @@ import { secretProvider } from './secret.ts';
 import { dispatchNamespaceProvider } from './dispatch-namespace.ts';
 import { customDomainProvider } from './custom-domain.ts';
 import { hyperdriveProvider } from './hyperdrive.ts';
+import { d1DatabaseProvider } from './d1-database.ts';
+import { queueProvider } from './queue.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -18,6 +20,8 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(dispatchNamespaceProvider);
   r.register(customDomainProvider);
   r.register(hyperdriveProvider);
+  r.register(d1DatabaseProvider);
+  r.register(queueProvider);
   return r;
 }
 

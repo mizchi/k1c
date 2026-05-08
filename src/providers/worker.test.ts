@@ -243,6 +243,39 @@ describe('workerProvider', () => {
       });
     });
 
+    it('emits a DO self-binding and migrations.new_sqlite_classes for durableObjectClasses', async () => {
+      const scripts = setup();
+      await workerProvider.create(buildCtx(scripts), 'default/chatroom', {
+        ...baseProps,
+        scriptName: 'k1c--default--chatroom',
+        durableObjectClasses: ['Chatroom'],
+      });
+      const meta = scripts.versions.create.mock.calls[0]![1].metadata;
+      const bindings = meta.bindings as Array<Record<string, string>>;
+      expect(bindings).toContainEqual({
+        type: 'durable_object_namespace',
+        name: 'Chatroom',
+        class_name: 'Chatroom',
+      });
+      const migrations = meta.migrations as Record<string, unknown>;
+      expect(migrations.new_sqlite_classes).toEqual(['Chatroom']);
+      const tags = meta.tags as string[];
+      expect(tags).toContain('k1c.io/do-classes=Chatroom');
+    });
+
+    it('parses durableObjectClasses back from the do-classes tag on read', async () => {
+      const scripts = buildScriptsMock();
+      scripts.scriptAndVersionSettings.get.mockResolvedValueOnce({
+        compatibility_date: '2025-06-01',
+        bindings: [],
+        tags: ['k1c.io/managed-by=k1c', 'k1c.io/do-classes=Chatroom,Lobby'],
+      });
+      const result = await workerProvider.read(buildCtx(scripts), 'k1c--default--chatroom');
+      expect(result).not.toBe(NotFound);
+      const props = result as unknown as Record<string, unknown>;
+      expect(props.durableObjectClasses).toEqual(['Chatroom', 'Lobby']);
+    });
+
     it('clears cron triggers when cronSchedules is empty (CronJob suspend)', async () => {
       const scripts = setup();
       await workerProvider.create(buildCtx(scripts), 'default/api', {

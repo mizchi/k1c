@@ -47,6 +47,16 @@ export interface WorkerProperties {
    * cron triggers.
    */
   readonly cronSchedules?: ReadonlyArray<string>;
+  /**
+   * Durable Object class names this Worker defines. Lowering a `StatefulSet` populates
+   * this. The Worker provider:
+   *  - emits one `durable_object_namespace` self-binding per class
+   *  - on first deploy (no `k1c.io/do-classes=` tag in prior), declares them via
+   *    `metadata.migrations.new_sqlite_classes`. Adding / removing classes on a
+   *    later apply is **not yet implemented** in v0.2; CF will reject migrations
+   *    that try to redeclare an existing class.
+   */
+  readonly durableObjectClasses?: ReadonlyArray<string>;
 }
 
 export type WorkerBinding =
@@ -58,7 +68,16 @@ export type WorkerBinding =
       readonly name: string;
       readonly dispatchNamespace: string;
     }
-  | { readonly type: 'hyperdrive'; readonly name: string; readonly hyperdriveId: string };
+  | { readonly type: 'hyperdrive'; readonly name: string; readonly hyperdriveId: string }
+  | { readonly type: 'd1'; readonly name: string; readonly databaseId: string }
+  | { readonly type: 'queue'; readonly name: string; readonly queueName: string }
+  | {
+      readonly type: 'durable_object_namespace';
+      readonly name: string;
+      readonly className: string;
+      /** When the DO class lives in another script, set this to that script's name. */
+      readonly scriptName?: string;
+    };
 
 export const workerSchema: z.ZodType<WorkerProperties> = z.object({
   scriptName: z.string(),
@@ -95,6 +114,22 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
           name: z.string(),
           hyperdriveId: z.string(),
         }),
+        z.object({
+          type: z.literal('d1'),
+          name: z.string(),
+          databaseId: z.string(),
+        }),
+        z.object({
+          type: z.literal('queue'),
+          name: z.string(),
+          queueName: z.string(),
+        }),
+        z.object({
+          type: z.literal('durable_object_namespace'),
+          name: z.string(),
+          className: z.string(),
+          scriptName: z.string().optional(),
+        }),
       ]),
     )
     .optional(),
@@ -104,6 +139,7 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
   entrypointContent: z.string().optional(),
   entrypointHash: z.string().optional(),
   cronSchedules: z.array(z.string()).optional(),
+  durableObjectClasses: z.array(z.string()).optional(),
 });
 
 const NAME_PREFIX = 'k1c--';
@@ -129,7 +165,10 @@ interface CFBinding {
   readonly namespace_id?: string;
   readonly service?: string;
   readonly namespace?: string; // for dispatch_namespace bindings
-  readonly id?: string; // for hyperdrive bindings (and possibly others)
+  readonly id?: string; // for hyperdrive / d1 bindings
+  readonly queue_name?: string; // for queue bindings
+  readonly class_name?: string; // for durable_object_namespace bindings
+  readonly script_name?: string; // for cross-script DO bindings
 }
 
 function buildBindings(props: WorkerProperties): CFBinding[] {
@@ -151,30 +190,65 @@ function buildBindings(props: WorkerProperties): CFBinding[] {
       out.push({ type: 'dispatch_namespace', name: b.name, namespace: b.dispatchNamespace });
     } else if (b.type === 'hyperdrive') {
       out.push({ type: 'hyperdrive', name: b.name, id: b.hyperdriveId });
+    } else if (b.type === 'd1') {
+      out.push({ type: 'd1', name: b.name, id: b.databaseId });
+    } else if (b.type === 'queue') {
+      out.push({ type: 'queue', name: b.name, queue_name: b.queueName });
+    } else if (b.type === 'durable_object_namespace') {
+      out.push({
+        type: 'durable_object_namespace',
+        name: b.name,
+        class_name: b.className,
+        ...(b.scriptName !== undefined ? { script_name: b.scriptName } : {}),
+      });
     }
   }
   return out;
 }
 
 const CONTENT_HASH_TAG_PREFIX = 'k1c.io/content-hash=';
+const DO_CLASSES_TAG_PREFIX = 'k1c.io/do-classes=';
 
 function buildMetadata(ctx: ProviderContext, props: WorkerProperties) {
   const tags = [ctx.managedByLabel];
   if (props.entrypointHash !== undefined) {
     tags.push(`${CONTENT_HASH_TAG_PREFIX}${props.entrypointHash}`);
   }
+  const classes = [...(props.durableObjectClasses ?? [])].sort();
+  if (classes.length > 0) {
+    tags.push(`${DO_CLASSES_TAG_PREFIX}${classes.join(',')}`);
+  }
+  // Auto-include self-pointing DO bindings for every declared class so the Worker
+  // can address its own DO instances by name (e.g. `env.<class>.idFromName(id)`).
+  const selfDoBindings: WorkerBinding[] = classes.map((className) => ({
+    type: 'durable_object_namespace',
+    name: className,
+    className,
+  }));
+  const allBindings = buildBindings({
+    ...props,
+    bindings: [...(props.bindings ?? []), ...selfDoBindings],
+  });
   return {
     main_module: MAIN_MODULE,
     compatibility_date: props.compatibilityDate,
     ...(props.compatibilityFlags !== undefined
       ? { compatibility_flags: [...props.compatibilityFlags] }
       : {}),
-    bindings: buildBindings(props),
+    bindings: allBindings,
     tags,
     ...(props.observability !== undefined
       ? { observability: { enabled: props.observability.enabled } }
       : {}),
     ...(props.placement !== undefined ? { placement: { mode: props.placement.mode } } : {}),
+    ...(classes.length > 0
+      ? {
+          migrations: {
+            new_sqlite_classes: classes,
+            new_tag: props.entrypointHash ?? 'k1c-initial',
+          },
+        }
+      : {}),
   };
 }
 
@@ -182,6 +256,18 @@ function extractContentHash(tags: ReadonlyArray<string> | undefined): string | u
   if (!tags) return undefined;
   for (const tag of tags) {
     if (tag.startsWith(CONTENT_HASH_TAG_PREFIX)) return tag.slice(CONTENT_HASH_TAG_PREFIX.length);
+  }
+  return undefined;
+}
+
+function extractDoClasses(tags: ReadonlyArray<string> | undefined): ReadonlyArray<string> | undefined {
+  if (!tags) return undefined;
+  for (const tag of tags) {
+    if (tag.startsWith(DO_CLASSES_TAG_PREFIX)) {
+      const list = tag.slice(DO_CLASSES_TAG_PREFIX.length);
+      if (!list) return undefined;
+      return list.split(',').filter((s) => s.length > 0);
+    }
   }
   return undefined;
 }
@@ -298,6 +384,20 @@ function fromCFBinding(b: CFBinding): unknown {
   if (b.type === 'hyperdrive' && b.id !== undefined) {
     return { type: 'hyperdrive', name: b.name, hyperdriveId: b.id };
   }
+  if (b.type === 'd1' && b.id !== undefined) {
+    return { type: 'd1', name: b.name, databaseId: b.id };
+  }
+  if (b.type === 'queue' && b.queue_name !== undefined) {
+    return { type: 'queue', name: b.name, queueName: b.queue_name };
+  }
+  if (b.type === 'durable_object_namespace' && b.class_name !== undefined) {
+    return {
+      type: 'durable_object_namespace',
+      name: b.name,
+      className: b.class_name,
+      ...(b.script_name !== undefined ? { scriptName: b.script_name } : {}),
+    };
+  }
   return null;
 }
 
@@ -345,6 +445,7 @@ export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
       tags?: string[];
     };
     const entrypointHash = extractContentHash(settings.tags);
+    const durableObjectClasses = extractDoClasses(settings.tags);
 
     let cronSchedules: ReadonlyArray<string> | undefined;
     try {
@@ -390,6 +491,7 @@ export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
         : {}),
       ...(entrypointHash !== undefined ? { entrypointHash } : {}),
       ...(cronSchedules !== undefined ? { cronSchedules } : {}),
+      ...(durableObjectClasses !== undefined ? { durableObjectClasses } : {}),
     };
     return props;
   },

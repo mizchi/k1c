@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type {
   ConfigMapResource,
   CronJob,
+  D1Database,
   Deployment,
   DispatchNamespace,
   Hyperdrive,
@@ -10,11 +11,13 @@ import type {
   KVNamespace,
   ObjectMeta,
   PodTemplateSpec,
+  Queue,
   R2Bucket,
   ResourceRef,
   Rollout,
   SecretResource,
   ServiceResource,
+  StatefulSet,
 } from './types.ts';
 import type { DesiredResource } from '../reconciler/types.ts';
 import type { WorkerBinding, WorkerProperties } from '../providers/worker.ts';
@@ -23,6 +26,8 @@ import type { KVNamespaceProperties } from '../providers/kv-namespace.ts';
 import type { DispatchNamespaceProperties } from '../providers/dispatch-namespace.ts';
 import type { CustomDomainProperties } from '../providers/custom-domain.ts';
 import type { HyperdriveProperties } from '../providers/hyperdrive.ts';
+import type { D1DatabaseProperties } from '../providers/d1-database.ts';
+import type { QueueProperties } from '../providers/queue.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 
 export class LowerError extends Error {
@@ -58,6 +63,8 @@ interface LookupTables {
   readonly r2Buckets: Map<string, R2Bucket>;
   readonly kvNamespaces: Map<string, KVNamespace>;
   readonly hyperdrives: Map<string, Hyperdrive>;
+  readonly d1Databases: Map<string, D1Database>;
+  readonly queues: Map<string, Queue>;
   /** Map of `<ns>/<service-name>` → target Worker script name (primary container). */
   readonly serviceTargets: Map<string, string>;
 }
@@ -72,10 +79,13 @@ export async function lower(
     r2Buckets: new Map(),
     kvNamespaces: new Map(),
     hyperdrives: new Map(),
+    d1Databases: new Map(),
+    queues: new Map(),
     serviceTargets: new Map(),
   };
   const deployments: Deployment[] = [];
   const rollouts: Rollout[] = [];
+  const statefulSets: StatefulSet[] = [];
   const dispatchNamespaces: DispatchNamespace[] = [];
   const services: ServiceResource[] = [];
   const cronJobs: CronJob[] = [];
@@ -109,11 +119,20 @@ export async function lower(
       case 'Rollout':
         rollouts.push(r);
         break;
+      case 'StatefulSet':
+        statefulSets.push(r);
+        break;
       case 'CronJob':
         cronJobs.push(r);
         break;
       case 'Hyperdrive':
         tables.hyperdrives.set(label, r);
+        break;
+      case 'D1Database':
+        tables.d1Databases.set(label, r);
+        break;
+      case 'Queue':
+        tables.queues.set(label, r);
         break;
     }
   }
@@ -135,6 +154,10 @@ export async function lower(
   for (const kv of tables.kvNamespaces.values()) desired.push(lowerKVNamespace(kv));
   for (const dn of dispatchNamespaces) desired.push(lowerDispatchNamespace(dn));
   for (const h of tables.hyperdrives.values()) desired.push(lowerHyperdrive(h, tables));
+  for (const d of tables.d1Databases.values()) desired.push(lowerD1Database(d));
+  for (const q of tables.queues.values()) {
+    desired.push(lowerQueue(q));
+  }
   for (const d of deployments) {
     for (const w of await lowerDeployment(d, tables, options)) {
       desired.push(w);
@@ -152,12 +175,54 @@ export async function lower(
     desired.push(await lowerCronJob(c, tables, options));
   }
 
+  for (const s of statefulSets) {
+    desired.push(await lowerStatefulSet(s, tables, options));
+  }
+
   for (const s of services) {
     const out = lowerService(s, deployments, rollouts, warnings);
     if (out !== null) desired.push(out);
   }
 
   return { desired, warnings };
+}
+
+async function lowerStatefulSet(
+  s: StatefulSet,
+  tables: LookupTables,
+  options: LowerOptions | undefined,
+): Promise<DesiredResource<WorkerProperties>> {
+  const ns = s.metadata.namespace ?? 'default';
+  const name = s.metadata.name;
+  const containers = s.spec.template.spec.containers;
+  if (containers.length !== 1) {
+    throw new LowerError(
+      `StatefulSet ${ns}/${name}: only single-container Pods are supported in v0.2 (got ${containers.length})`,
+    );
+  }
+  const annotations = s.metadata.annotations ?? {};
+  const className =
+    annotations['cloudflare.com/durable-object-class'] ??
+    `${name.charAt(0).toUpperCase()}${name.slice(1)}`;
+  if (!/^[A-Z][A-Za-z0-9_]*$/.test(className)) {
+    throw new LowerError(
+      `StatefulSet ${ns}/${name}: derived Durable Object class "${className}" is not a valid JS identifier; set \`cloudflare.com/durable-object-class\` annotation explicitly`,
+    );
+  }
+  const ref = refOf(s);
+  const workers = await buildWorkerDesireds(
+    'StatefulSet' as never,
+    ref,
+    s.metadata,
+    s.spec.template,
+    tables,
+    options,
+  );
+  const worker = workers[0]!;
+  return {
+    ...worker,
+    properties: { ...worker.properties, durableObjectClasses: [className] },
+  };
 }
 
 async function lowerCronJob(
@@ -408,6 +473,51 @@ function lowerHyperdrive(
         : {}),
     },
     dependsOn: [refOf(sec)],
+  };
+}
+
+function lowerD1Database(d: D1Database): DesiredResource<D1DatabaseProperties> {
+  const ns = d.metadata.namespace ?? 'default';
+  const name = d.metadata.name;
+  return {
+    resourceType: 'D1Database',
+    ref: refOf(d),
+    label: `${ns}/${name}`,
+    properties: {
+      databaseName: `k1c-${ns}-${name}`,
+      ...(d.spec?.primaryLocationHint !== undefined
+        ? { primaryLocationHint: d.spec.primaryLocationHint }
+        : {}),
+    },
+  };
+}
+
+function lowerQueue(q: Queue): DesiredResource<QueueProperties> {
+  const ns = q.metadata.namespace ?? 'default';
+  const name = q.metadata.name;
+  const consumer = q.spec?.consumer;
+  return {
+    resourceType: 'Queue',
+    ref: refOf(q),
+    label: `${ns}/${name}`,
+    properties: {
+      queueName: `k1c-${ns}-${name}`,
+      ...(consumer !== undefined
+        ? { consumerWorkerName: `k1c--${ns}--${consumer.workerName}` }
+        : {}),
+    },
+    ...(consumer !== undefined
+      ? {
+          dependsOn: [
+            {
+              apiVersion: 'apps/v1',
+              kind: 'Deployment',
+              namespace: ns,
+              name: consumer.workerName,
+            },
+          ],
+        }
+      : {}),
   };
 }
 
@@ -833,9 +943,35 @@ async function buildContainerProperties(
         hyperdriveId: `<resolved-at-apply:hyperdrive:${h.metadata.name}>`,
       });
       pushUnique(dependsOn, refOf(h));
+    } else if (vol.d1DatabaseRef) {
+      const d = tables.d1Databases.get(`${ns}/${vol.d1DatabaseRef.name}`);
+      if (!d) {
+        throw new LowerError(
+          `${ctxLabel}: D1Database "${vol.d1DatabaseRef.name}" not found in namespace "${ns}"`,
+        );
+      }
+      bindings.push({
+        type: 'd1',
+        name: mount.mountPath,
+        databaseId: `<resolved-at-apply:d1:${d.metadata.name}>`,
+      });
+      pushUnique(dependsOn, refOf(d));
+    } else if (vol.queueRef) {
+      const q = tables.queues.get(`${ns}/${vol.queueRef.name}`);
+      if (!q) {
+        throw new LowerError(
+          `${ctxLabel}: Queue "${vol.queueRef.name}" not found in namespace "${ns}"`,
+        );
+      }
+      bindings.push({
+        type: 'queue',
+        name: mount.mountPath,
+        queueName: `k1c-${ns}-${q.metadata.name}`,
+      });
+      pushUnique(dependsOn, refOf(q));
     } else {
       throw new LowerError(
-        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, or hyperdriveRef)`,
+        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, hyperdriveRef, d1DatabaseRef, or queueRef)`,
       );
     }
   }

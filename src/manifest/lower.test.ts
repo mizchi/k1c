@@ -421,6 +421,168 @@ spec:
     expect((primary.dependsOn ?? []).some((r) => r.kind === 'ConfigMap')).toBe(false);
   });
 
+  it('lowers StatefulSet to a Worker with durableObjectClasses derived from name', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: chatroom }
+spec:
+  serviceName: chatroom-svc
+  selector: { matchLabels: { app: chatroom } }
+  template:
+    spec:
+      containers: [{ name: chat, image: ./chat.js }]
+`);
+    const w = result.desired[0]!;
+    expect(w.resourceType).toBe('Worker');
+    expect(w.label).toBe('default/chatroom');
+    const props = w.properties as Record<string, unknown>;
+    // Default class name = PascalCase(metadata.name)
+    expect(props.durableObjectClasses).toEqual(['Chatroom']);
+  });
+
+  it('honours cloudflare.com/durable-object-class annotation', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: chatroom
+  annotations:
+    cloudflare.com/durable-object-class: ChatRoomDO
+spec:
+  selector: { matchLabels: { app: chatroom } }
+  template:
+    spec:
+      containers: [{ name: chat, image: ./chat.js }]
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    expect(props.durableObjectClasses).toEqual(['ChatRoomDO']);
+  });
+
+  it('rejects StatefulSet whose derived class name is not a valid JS identifier', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: chat-room }
+spec:
+  selector: { matchLabels: { app: x } }
+  template:
+    spec:
+      containers: [{ name: c, image: ./c.js }]
+`),
+    ).rejects.toThrow(/not a valid JS identifier/);
+  });
+
+  it('lowers D1Database to a DesiredResource with prefixed databaseName', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: D1Database
+metadata: { name: app-db, namespace: prod }
+spec: { primaryLocationHint: weur }
+`);
+    const d1 = result.desired[0]!;
+    expect(d1.resourceType).toBe('D1Database');
+    expect(d1.label).toBe('prod/app-db');
+    expect(d1.properties).toEqual({
+      databaseName: 'k1c-prod-app-db',
+      primaryLocationHint: 'weur',
+    });
+  });
+
+  it('emits d1 Worker binding from volume.d1DatabaseRef', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: D1Database
+metadata: { name: app-db }
+spec: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./api.js
+          volumeMounts:
+            - { name: db, mountPath: DB }
+      volumes:
+        - { name: db, d1DatabaseRef: { name: app-db } }
+`);
+    const api = result.desired.find((d) => d.label === 'default/api')!;
+    const bindings = (api.properties as Record<string, unknown>).bindings as Array<
+      Record<string, string>
+    >;
+    expect(bindings).toContainEqual(expect.objectContaining({ type: 'd1', name: 'DB' }));
+    expect(api.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'D1Database', name: 'app-db' }),
+    );
+  });
+
+  it('lowers Queue to a DesiredResource and produces queue Worker binding', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Queue
+metadata: { name: jobs }
+spec: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: producer }
+spec:
+  selector: { matchLabels: { app: producer } }
+  template:
+    spec:
+      containers:
+        - name: producer
+          image: ./producer.js
+          volumeMounts: [{ name: q, mountPath: JOBS }]
+      volumes:
+        - { name: q, queueRef: { name: jobs } }
+`);
+    const queue = result.desired.find((d) => d.resourceType === 'Queue')!;
+    expect(queue.label).toBe('default/jobs');
+    expect((queue.properties as Record<string, unknown>).queueName).toBe('k1c-default-jobs');
+
+    const producer = result.desired.find((d) => d.label === 'default/producer')!;
+    const bindings = (producer.properties as Record<string, unknown>).bindings as Array<
+      Record<string, string>
+    >;
+    expect(bindings).toContainEqual({
+      type: 'queue',
+      name: 'JOBS',
+      queueName: 'k1c-default-jobs',
+    });
+  });
+
+  it('wires Queue.spec.consumer to a Worker via consumerWorkerName', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Queue
+metadata: { name: jobs }
+spec:
+  consumer: { workerName: worker }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: worker }
+spec:
+  selector: { matchLabels: { app: worker } }
+  template:
+    spec:
+      containers: [{ name: worker, image: ./worker.js }]
+`);
+    const queue = result.desired.find((d) => d.resourceType === 'Queue')!;
+    const props = queue.properties as Record<string, unknown>;
+    expect(props.consumerWorkerName).toBe('k1c--default--worker');
+    expect(queue.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'Deployment', name: 'worker' }),
+    );
+  });
+
   it('lowers Hyperdrive, resolving password from a referenced Secret', async () => {
     const result = await lowerYaml(`
 apiVersion: v1

@@ -41,6 +41,8 @@ export interface Volume {
   readonly kvNamespaceRef?: { readonly name: string };
   readonly serviceRef?: { readonly name: string };
   readonly hyperdriveRef?: { readonly name: string };
+  readonly d1DatabaseRef?: { readonly name: string };
+  readonly queueRef?: { readonly name: string };
 }
 
 export interface PodTemplateSpec {
@@ -60,6 +62,15 @@ export interface DeploymentSpec {
 }
 
 export type Deployment = BaseResource<'Deployment', 'apps/v1', DeploymentSpec>;
+
+export interface StatefulSetSpec {
+  readonly replicas?: number;
+  readonly serviceName?: string;
+  readonly selector: { readonly matchLabels: Readonly<Record<string, string>> };
+  readonly template: PodTemplateSpec;
+}
+
+export type StatefulSet = BaseResource<'StatefulSet', 'apps/v1', StatefulSetSpec>;
 
 export interface BlueGreenStrategy {
   readonly autoPromotionEnabled?: boolean;
@@ -186,9 +197,28 @@ export interface HyperdriveSpec {
 
 export type Hyperdrive = BaseResource<'Hyperdrive', 'cloudflare.k1c.io/v1alpha1', HyperdriveSpec>;
 
+export interface D1DatabaseSpec {
+  readonly primaryLocationHint?: 'wnam' | 'enam' | 'weur' | 'eeur' | 'apac' | 'oc';
+}
+
+export type D1Database = BaseResource<
+  'D1Database',
+  'cloudflare.k1c.io/v1alpha1',
+  D1DatabaseSpec
+>;
+
+export interface QueueSpec {
+  /** Optional consumer Worker (referenced by name). The dispatched Worker must exist
+   *  in the same namespace and is wired via `cloudflare.workers.queues.consumers`. */
+  readonly consumer?: { readonly workerName: string };
+}
+
+export type Queue = BaseResource<'Queue', 'cloudflare.k1c.io/v1alpha1', QueueSpec>;
+
 export type K1cResource =
   | Deployment
   | Rollout
+  | StatefulSet
   | CronJob
   | ConfigMapResource
   | SecretResource
@@ -197,7 +227,9 @@ export type K1cResource =
   | R2Bucket
   | KVNamespace
   | DispatchNamespace
-  | Hyperdrive;
+  | Hyperdrive
+  | D1Database
+  | Queue;
 
 export type ResourceKind = K1cResource['kind'];
 
