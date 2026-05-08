@@ -71,6 +71,8 @@ spec:
 
 `mountPath` is repurposed as the **binding identifier** the Worker code sees on `env`. The reconciler resolves `*Ref` to the resource's NativeID before uploading the Worker.
 
+Volume reference types currently supported: `r2BucketRef`, `kvNamespaceRef`, `serviceRef` (cross-Pod via ClusterIP `Service`), `hyperdriveRef` (private DB via Hyperdrive).
+
 ### v0 deletion behavior
 
 `apply` with a manifest that no longer contains a previously-managed resource → the resource is deleted, **except** R2 buckets and KV namespaces, which require `--cascade=true` to drop. R2 data is treated as user data; default-deleting it on a typo would be unsafe.

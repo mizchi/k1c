@@ -32,6 +32,7 @@ const volumeSchema = z.object({
   r2BucketRef: z.object({ name: z.string() }).optional(),
   kvNamespaceRef: z.object({ name: z.string() }).optional(),
   serviceRef: z.object({ name: z.string() }).optional(),
+  hyperdriveRef: z.object({ name: z.string() }).optional(),
 });
 
 const containerSchema = z.object({
@@ -182,6 +183,30 @@ export const dispatchNamespaceSchema = z.object({
   spec: z.object({}).strict().optional().default({}),
 });
 
+export const hyperdriveSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('Hyperdrive'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    origin: z.object({
+      scheme: z.enum(['postgres', 'postgresql', 'mysql']),
+      host: z.string().min(1),
+      port: z.number().int().positive(),
+      database: z.string().min(1),
+      user: z.string().min(1),
+      passwordSecretRef: z.object({ name: z.string(), key: z.string() }),
+    }),
+    caching: z
+      .object({
+        disabled: z.boolean().optional(),
+        maxAge: z.number().int().nonnegative().optional(),
+        staleWhileRevalidate: z.number().int().nonnegative().optional(),
+      })
+      .optional(),
+    originConnectionLimit: z.number().int().positive().optional(),
+  }),
+});
+
 export const k1cResourceSchema = z.discriminatedUnion('kind', [
   deploymentSchema,
   rolloutSchema,
@@ -193,4 +218,5 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   r2BucketSchema,
   kvNamespaceSchema,
   dispatchNamespaceSchema,
+  hyperdriveSchema,
 ]);

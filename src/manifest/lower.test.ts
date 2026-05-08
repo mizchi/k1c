@@ -421,6 +421,102 @@ spec:
     expect((primary.dependsOn ?? []).some((r) => r.kind === 'ConfigMap')).toBe(false);
   });
 
+  it('lowers Hyperdrive, resolving password from a referenced Secret', async () => {
+    const result = await lowerYaml(`
+apiVersion: v1
+kind: Secret
+metadata: { name: db-creds }
+stringData: { PASSWORD: hunter2 }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Hyperdrive
+metadata: { name: app-db }
+spec:
+  origin:
+    scheme: postgres
+    host: db.internal
+    port: 5432
+    database: app
+    user: app
+    passwordSecretRef: { name: db-creds, key: PASSWORD }
+  caching: { disabled: false, maxAge: 60 }
+`);
+    const hd = result.desired.find((d) => d.resourceType === 'Hyperdrive');
+    expect(hd).toBeDefined();
+    expect(hd!.label).toBe('default/app-db');
+    const props = hd!.properties as Record<string, unknown>;
+    expect(props.name).toBe('k1c-default-app-db');
+    expect((props.origin as Record<string, unknown>).password).toBe('hunter2');
+    expect((props.origin as Record<string, unknown>).host).toBe('db.internal');
+    expect(hd!.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'Secret', name: 'db-creds' }),
+    );
+  });
+
+  it('throws when Hyperdrive password Secret is missing', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Hyperdrive
+metadata: { name: app-db }
+spec:
+  origin:
+    scheme: postgres
+    host: db.internal
+    port: 5432
+    database: app
+    user: app
+    passwordSecretRef: { name: missing, key: PASSWORD }
+`),
+    ).rejects.toThrow(/Secret "missing"/);
+  });
+
+  it('emits hyperdrive Worker binding from volume.hyperdriveRef', async () => {
+    const result = await lowerYaml(`
+apiVersion: v1
+kind: Secret
+metadata: { name: db-creds }
+stringData: { PASSWORD: x }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Hyperdrive
+metadata: { name: app-db }
+spec:
+  origin:
+    scheme: postgres
+    host: db.internal
+    port: 5432
+    database: app
+    user: app
+    passwordSecretRef: { name: db-creds, key: PASSWORD }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./api.js
+          volumeMounts:
+            - { name: db, mountPath: DB }
+      volumes:
+        - { name: db, hyperdriveRef: { name: app-db } }
+`);
+    const api = result.desired.find((d) => d.label === 'default/api')!;
+    const bindings = (api.properties as Record<string, unknown>).bindings as Array<
+      Record<string, string>
+    >;
+    expect(bindings).toContainEqual(
+      expect.objectContaining({ type: 'hyperdrive', name: 'DB' }),
+    );
+    expect(api.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'Hyperdrive', name: 'app-db' }),
+    );
+  });
+
   it('lowers CronJob into a Worker with cronSchedules', async () => {
     const result = await lowerYaml(`
 apiVersion: batch/v1

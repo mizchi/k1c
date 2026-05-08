@@ -57,7 +57,8 @@ export type WorkerBinding =
       readonly type: 'dispatch_namespace';
       readonly name: string;
       readonly dispatchNamespace: string;
-    };
+    }
+  | { readonly type: 'hyperdrive'; readonly name: string; readonly hyperdriveId: string };
 
 export const workerSchema: z.ZodType<WorkerProperties> = z.object({
   scriptName: z.string(),
@@ -88,6 +89,11 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
           type: z.literal('dispatch_namespace'),
           name: z.string(),
           dispatchNamespace: z.string(),
+        }),
+        z.object({
+          type: z.literal('hyperdrive'),
+          name: z.string(),
+          hyperdriveId: z.string(),
         }),
       ]),
     )
@@ -123,6 +129,7 @@ interface CFBinding {
   readonly namespace_id?: string;
   readonly service?: string;
   readonly namespace?: string; // for dispatch_namespace bindings
+  readonly id?: string; // for hyperdrive bindings (and possibly others)
 }
 
 function buildBindings(props: WorkerProperties): CFBinding[] {
@@ -142,6 +149,8 @@ function buildBindings(props: WorkerProperties): CFBinding[] {
       out.push({ type: 'service', name: b.name, service: b.service });
     } else if (b.type === 'dispatch_namespace') {
       out.push({ type: 'dispatch_namespace', name: b.name, namespace: b.dispatchNamespace });
+    } else if (b.type === 'hyperdrive') {
+      out.push({ type: 'hyperdrive', name: b.name, id: b.hyperdriveId });
     }
   }
   return out;
@@ -285,6 +294,9 @@ function fromCFBinding(b: CFBinding): unknown {
   }
   if (b.type === 'dispatch_namespace' && b.namespace !== undefined) {
     return { type: 'dispatch_namespace', name: b.name, dispatchNamespace: b.namespace };
+  }
+  if (b.type === 'hyperdrive' && b.id !== undefined) {
+    return { type: 'hyperdrive', name: b.name, hyperdriveId: b.id };
   }
   return null;
 }

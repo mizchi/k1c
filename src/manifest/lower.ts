@@ -5,6 +5,7 @@ import type {
   CronJob,
   Deployment,
   DispatchNamespace,
+  Hyperdrive,
   K1cResource,
   KVNamespace,
   ObjectMeta,
@@ -21,6 +22,7 @@ import type { R2BucketProperties } from '../providers/r2-bucket.ts';
 import type { KVNamespaceProperties } from '../providers/kv-namespace.ts';
 import type { DispatchNamespaceProperties } from '../providers/dispatch-namespace.ts';
 import type { CustomDomainProperties } from '../providers/custom-domain.ts';
+import type { HyperdriveProperties } from '../providers/hyperdrive.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 
 export class LowerError extends Error {
@@ -55,6 +57,7 @@ interface LookupTables {
   readonly secrets: Map<string, SecretResource>;
   readonly r2Buckets: Map<string, R2Bucket>;
   readonly kvNamespaces: Map<string, KVNamespace>;
+  readonly hyperdrives: Map<string, Hyperdrive>;
   /** Map of `<ns>/<service-name>` → target Worker script name (primary container). */
   readonly serviceTargets: Map<string, string>;
 }
@@ -68,6 +71,7 @@ export async function lower(
     secrets: new Map(),
     r2Buckets: new Map(),
     kvNamespaces: new Map(),
+    hyperdrives: new Map(),
     serviceTargets: new Map(),
   };
   const deployments: Deployment[] = [];
@@ -108,6 +112,9 @@ export async function lower(
       case 'CronJob':
         cronJobs.push(r);
         break;
+      case 'Hyperdrive':
+        tables.hyperdrives.set(label, r);
+        break;
     }
   }
 
@@ -127,6 +134,7 @@ export async function lower(
   for (const b of tables.r2Buckets.values()) desired.push(lowerR2Bucket(b));
   for (const kv of tables.kvNamespaces.values()) desired.push(lowerKVNamespace(kv));
   for (const dn of dispatchNamespaces) desired.push(lowerDispatchNamespace(dn));
+  for (const h of tables.hyperdrives.values()) desired.push(lowerHyperdrive(h, tables));
   for (const d of deployments) {
     for (const w of await lowerDeployment(d, tables, options)) {
       desired.push(w);
@@ -357,6 +365,49 @@ function lowerR2Bucket(b: R2Bucket): DesiredResource<R2BucketProperties> {
     ref: refOf(b),
     label: `${ns}/${name}`,
     properties,
+  };
+}
+
+function lowerHyperdrive(
+  h: Hyperdrive,
+  tables: LookupTables,
+): DesiredResource<HyperdriveProperties> {
+  const ns = h.metadata.namespace ?? 'default';
+  const name = h.metadata.name;
+  const sRef = h.spec.origin.passwordSecretRef;
+  const sec = tables.secrets.get(`${ns}/${sRef.name}`);
+  if (!sec) {
+    throw new LowerError(
+      `Hyperdrive ${ns}/${name}: Secret "${sRef.name}" referenced by passwordSecretRef not found in namespace "${ns}"`,
+    );
+  }
+  const password = secretValue(sec, sRef.key);
+  if (password === undefined) {
+    throw new LowerError(
+      `Hyperdrive ${ns}/${name}: Secret "${sRef.name}" has no key "${sRef.key}"`,
+    );
+  }
+  const cfgName = `k1c-${ns}-${name}`;
+  return {
+    resourceType: 'Hyperdrive',
+    ref: refOf(h),
+    label: `${ns}/${name}`,
+    properties: {
+      name: cfgName,
+      origin: {
+        scheme: h.spec.origin.scheme,
+        host: h.spec.origin.host,
+        port: h.spec.origin.port,
+        database: h.spec.origin.database,
+        user: h.spec.origin.user,
+        password,
+      },
+      ...(h.spec.caching !== undefined ? { caching: h.spec.caching } : {}),
+      ...(h.spec.originConnectionLimit !== undefined
+        ? { originConnectionLimit: h.spec.originConnectionLimit }
+        : {}),
+    },
+    dependsOn: [refOf(sec)],
   };
 }
 
@@ -769,9 +820,22 @@ async function buildContainerProperties(
         namespace: ns,
         name: vol.serviceRef.name,
       });
+    } else if (vol.hyperdriveRef) {
+      const h = tables.hyperdrives.get(`${ns}/${vol.hyperdriveRef.name}`);
+      if (!h) {
+        throw new LowerError(
+          `${ctxLabel}: Hyperdrive "${vol.hyperdriveRef.name}" not found in namespace "${ns}"`,
+        );
+      }
+      bindings.push({
+        type: 'hyperdrive',
+        name: mount.mountPath,
+        hyperdriveId: `<resolved-at-apply:hyperdrive:${h.metadata.name}>`,
+      });
+      pushUnique(dependsOn, refOf(h));
     } else {
       throw new LowerError(
-        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, or serviceRef)`,
+        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, or hyperdriveRef)`,
       );
     }
   }

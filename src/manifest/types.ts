@@ -40,6 +40,7 @@ export interface Volume {
   readonly r2BucketRef?: { readonly name: string };
   readonly kvNamespaceRef?: { readonly name: string };
   readonly serviceRef?: { readonly name: string };
+  readonly hyperdriveRef?: { readonly name: string };
 }
 
 export interface PodTemplateSpec {
@@ -159,6 +160,32 @@ export type DispatchNamespace = BaseResource<
   DispatchNamespaceSpec
 >;
 
+export type HyperdriveScheme = 'postgres' | 'postgresql' | 'mysql';
+
+export interface HyperdriveOrigin {
+  readonly scheme: HyperdriveScheme;
+  readonly host: string;
+  readonly port: number;
+  readonly database: string;
+  readonly user: string;
+  /** The password value is read from the referenced Secret at lower time. */
+  readonly passwordSecretRef: { readonly name: string; readonly key: string };
+}
+
+export interface HyperdriveCaching {
+  readonly disabled?: boolean;
+  readonly maxAge?: number;
+  readonly staleWhileRevalidate?: number;
+}
+
+export interface HyperdriveSpec {
+  readonly origin: HyperdriveOrigin;
+  readonly caching?: HyperdriveCaching;
+  readonly originConnectionLimit?: number;
+}
+
+export type Hyperdrive = BaseResource<'Hyperdrive', 'cloudflare.k1c.io/v1alpha1', HyperdriveSpec>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -169,7 +196,8 @@ export type K1cResource =
   | ServiceResource
   | R2Bucket
   | KVNamespace
-  | DispatchNamespace;
+  | DispatchNamespace
+  | Hyperdrive;
 
 export type ResourceKind = K1cResource['kind'];
 

@@ -47,10 +47,23 @@ When we revisit, write **ADR-0007 "Multiple runtime modes: CLI and Workflow"** f
 2. Manifest source abstraction (R2 fetcher initially).
 3. A `wrangler.toml`-shaped deploy story.
 
+## "Cloudflare VPC" status
+
+Cloudflare does not ship a single product called "VPC". The pieces that approximate VPC connectivity from Workers are scattered:
+
+| Cloudflare feature | What it does | k1c support |
+|---|---|---|
+| **Hyperdrive** | Pooled / cached connection from a Worker to a Postgres or MySQL origin | **shipped as `Hyperdrive` CRD** (v0.2). `volumes[].hyperdriveRef` produces a `hyperdrive` Worker binding. |
+| **Cloudflare Tunnel** (`zero-trust/tunnels`) | `cloudflared` agent in the user's network → CF, lets Workers reach unpublished origins. Also feeds Hyperdrive's "Access-protected" mode. | not in k1c. Needs a `Tunnel` CRD plus the routing CRD that maps a hostname / route to the tunnel. Could ship as `cloudflare.k1c.io/v1alpha1 Tunnel`. |
+| **Magic Cloud Networking** | VPC peering and tag mirroring with AWS / GCP / Azure | not in k1c. Out of scope for personal-tier use; revisit if anyone asks. |
+| **Magic Transit / Magic WAN** | Enterprise IP routing, BGP, IPsec | out of scope. Enterprise tier only. |
+
+For the v0.2 question "can my Worker talk to my private database", the answer in k1c is: **declare a `Hyperdrive` resource with `passwordSecretRef`, mount it via `volumes[].hyperdriveRef`**, and call `env.<mountPath>` from your Worker. If the database is behind a Cloudflare Tunnel, configure the tunnel manually for now and point Hyperdrive at its hostname; the manifest-side `Tunnel` CRD is on the deferred list.
+
 ## Other deferred items (briefly)
 
+- **Tunnel + tunnel routing CRD** — the obvious next step for "VPC-like" private connectivity, see the table above.
 - **Rollout v0.1.2** — implement `canary.steps` (state machine across multiple applies, traffic-split via `deployments.create` with two `version_id`s) and `blueGreen.autoPromotionEnabled=false` (separate `k1c rollout promote` command, deploys staged version at 0% then 100% on promote).
 - **Worker.create on a fresh script** — assumes `scripts.versions.create` auto-creates the script. Needs verification against real Cloudflare; if it 404s, add a fallback to `scripts.update` for the first version.
 - **Async polling via `status()`** — provider interface has the hook, reconciler is sync-only. Custom Hostname SSL provisioning will force this.
-- **Worker entrypoint content hash** — manifest unchanged but JS file changed → currently no update is triggered. Fix: hash file content into Worker properties at lower time.
 - **Reverse-topo on deletes** — current delete order is label-sorted. Cloudflare tolerates out-of-order deletes, but reverse-topo would be cleaner.
