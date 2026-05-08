@@ -16,6 +16,7 @@ describe('parseArgs', () => {
       kind: 'apply',
       file: 'manifest.yaml',
       dryRun: false,
+      watch: false,
     });
   });
 
@@ -24,6 +25,7 @@ describe('parseArgs', () => {
       kind: 'apply',
       file: 'manifest.yaml',
       dryRun: false,
+      watch: false,
     });
   });
 
@@ -32,7 +34,22 @@ describe('parseArgs', () => {
       kind: 'apply',
       file: 'm.yaml',
       dryRun: true,
+      watch: false,
     });
+  });
+
+  it('parses --watch flag', () => {
+    expect(parseArgs(['apply', '-f', 'm.yaml', '--watch'])).toEqual({
+      kind: 'apply',
+      file: 'm.yaml',
+      dryRun: false,
+      watch: true,
+    });
+  });
+
+  it('rejects --dry-run + --watch together', () => {
+    const r = parseArgs(['apply', '-f', 'm.yaml', '--dry-run', '--watch']);
+    expect(r.kind).toBe('error');
   });
 
   it('accepts flags in any order', () => {
@@ -47,6 +64,7 @@ describe('parseArgs', () => {
     expect(parseArgs(['diff', '-f', 'manifest.yaml'])).toEqual({
       kind: 'diff',
       file: 'manifest.yaml',
+      output: 'text',
     });
   });
 
@@ -111,7 +129,11 @@ describe('parseArgs', () => {
 
   describe('get / describe / delete', () => {
     it('parses get with kind only', () => {
-      expect(parseArgs(['get', 'Worker'])).toEqual({ kind: 'get', resourceKind: 'Worker' });
+      expect(parseArgs(['get', 'Worker'])).toEqual({
+        kind: 'get',
+        resourceKind: 'Worker',
+        output: 'text',
+      });
     });
 
     it('parses get with kind + name + namespace', () => {
@@ -120,6 +142,7 @@ describe('parseArgs', () => {
         resourceKind: 'Worker',
         name: 'api',
         namespace: 'prod',
+        output: 'text',
       });
     });
 
@@ -128,7 +151,27 @@ describe('parseArgs', () => {
         kind: 'describe',
         resourceKind: 'R2Bucket',
         name: 'media',
+        output: 'text',
       });
+    });
+
+    it('parses -o json on get', () => {
+      expect(parseArgs(['get', 'Worker', '-o', 'json'])).toMatchObject({
+        kind: 'get',
+        resourceKind: 'Worker',
+        output: 'json',
+      });
+    });
+
+    it('rejects unknown --output value', () => {
+      const r = parseArgs(['get', 'Worker', '-o', 'xml']);
+      expect(r.kind).toBe('error');
+    });
+
+    it('parses version subcommand', () => {
+      expect(parseArgs(['version'])).toEqual({ kind: 'version' });
+      expect(parseArgs(['--version'])).toEqual({ kind: 'version' });
+      expect(parseArgs(['-V'])).toEqual({ kind: 'version' });
     });
 
     it('returns error when describe is missing name', () => {

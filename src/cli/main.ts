@@ -1,18 +1,25 @@
-import { readFile } from 'node:fs/promises';
+import { readFile, watch } from 'node:fs/promises';
 import process from 'node:process';
+import { resolve as resolvePath } from 'node:path';
 import Cloudflare from 'cloudflare';
-import { parseArgs, USAGE, type RolloutArgs } from './args.ts';
-import { runApply, runDelete, runDescribe, runDiff, runGet } from './run.ts';
+import { parseArgs, USAGE, type ApplyArgs, type RolloutArgs } from './args.ts';
+import { runApply, runDelete, runDescribe, runDiff, runGet, type RunDeps } from './run.ts';
 import { createDefaultRegistry } from '../providers/index.ts';
 import type { ProviderContext } from '../providers/types.ts';
 import { runRolloutCommand } from '../canary/rollout-command.ts';
 import type { RolloutStateClient } from '../canary/runtime.ts';
+
+const VERSION = '0.0.0';
 
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2));
 
   if (parsed.kind === 'help') {
     process.stdout.write(USAGE);
+    return 0;
+  }
+  if (parsed.kind === 'version') {
+    process.stdout.write(`k1c ${VERSION}\n`);
     return 0;
   }
   if (parsed.kind === 'error') {
@@ -52,13 +59,53 @@ async function main(): Promise<number> {
     err: (msg: string) => process.stderr.write(`${msg}\n`),
   };
 
-  if (parsed.kind === 'apply') return runApply(parsed, deps);
+  if (parsed.kind === 'apply') {
+    return parsed.watch ? runApplyWatch(parsed, deps) : runApply(parsed, deps);
+  }
   if (parsed.kind === 'diff') return runDiff(parsed, deps);
   if (parsed.kind === 'get') return runGet(parsed, deps);
   if (parsed.kind === 'describe') return runDescribe(parsed, deps);
   if (parsed.kind === 'delete') return runDelete(parsed, deps);
   if (parsed.kind === 'rollout') return runRollout(parsed, cloudflare, accountId);
   return 2;
+}
+
+async function runApplyWatch(args: ApplyArgs, deps: RunDeps): Promise<number> {
+  const filePath = resolvePath(args.file);
+  process.stdout.write(`(watching ${filePath} — initial apply)\n`);
+  await runApply(args, deps);
+  process.stdout.write(`\n(watching for changes; Ctrl-C to exit)\n`);
+  // Coalesce bursts of fs events; editors often emit multiple events per save.
+  let pending: NodeJS.Timeout | null = null;
+  let inFlight: Promise<void> = Promise.resolve();
+  const trigger = () => {
+    if (pending !== null) clearTimeout(pending);
+    pending = setTimeout(() => {
+      pending = null;
+      inFlight = inFlight.then(async () => {
+        process.stdout.write(`\n(change detected → re-applying)\n`);
+        try {
+          await runApply(args, deps);
+        } catch (e) {
+          process.stderr.write(
+            `apply during watch failed: ${e instanceof Error ? e.message : String(e)}\n`,
+          );
+        }
+      });
+    }, 200);
+  };
+  try {
+    for await (const _event of watch(filePath)) {
+      trigger();
+    }
+  } catch (e) {
+    if ((e as { code?: string }).code === 'ENOENT') {
+      process.stderr.write(`manifest no longer readable: ${filePath}\n`);
+      return 1;
+    }
+    throw e;
+  }
+  return 0;
 }
 
 async function runRollout(

@@ -63,8 +63,12 @@ export async function runDiff(args: DiffArgs, deps: RunDeps): Promise<number> {
   const loaded = await loadParsedAndDesired(args.file, deps);
   if (loaded === null) return 3;
   const planResult = await plan(loaded.desired, deps.registry, deps.providerCtx);
-  deps.out('[plan]');
-  deps.out(formatPlan(planResult));
+  if (args.output === 'json') {
+    deps.out(JSON.stringify({ operations: planResult.operations }, null, 2));
+  } else {
+    deps.out('[plan]');
+    deps.out(formatPlan(planResult));
+  }
   return 0;
 }
 
@@ -84,6 +88,10 @@ export async function runGet(args: GetArgs, deps: RunDeps): Promise<number> {
   } catch (e) {
     deps.err(`get failed: ${e instanceof Error ? e.message : String(e)}`);
     return 1;
+  }
+  if (args.output === 'json') {
+    deps.out(JSON.stringify({ kind: args.resourceKind, items: rows }, null, 2));
+    return 0;
   }
   if (rows.length === 0) {
     deps.out(`(no ${args.resourceKind} resources found)`);
@@ -129,6 +137,21 @@ export async function runDescribe(args: DescribeArgs, deps: RunDeps): Promise<nu
   if (props === NotFound) {
     deps.err(`${args.resourceKind} ${targetLabel} (nativeId=${nativeId}) was listed but read returned NotFound`);
     return 1;
+  }
+  if (args.output === 'json') {
+    deps.out(
+      JSON.stringify(
+        {
+          kind: args.resourceKind,
+          label: targetLabel,
+          nativeId,
+          properties: props,
+        },
+        null,
+        2,
+      ),
+    );
+    return 0;
   }
   deps.out(`Kind:       ${args.resourceKind}`);
   deps.out(`Label:      ${targetLabel}`);

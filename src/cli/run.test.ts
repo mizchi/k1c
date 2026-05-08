@@ -55,7 +55,7 @@ function buildDeps(manifest: string = MANIFEST) {
 describe('runApply', () => {
   it('returns 0 and creates resources on a fresh manifest', async () => {
     const deps = buildDeps();
-    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false }, deps);
+    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false, watch: false }, deps);
     expect(code).toBe(0);
     expect(deps.r2.state.size).toBe(1);
     expect(deps.worker.state.size).toBe(1);
@@ -69,7 +69,7 @@ describe('runApply', () => {
     const deps = buildDeps();
     const eventsBefore =
       deps.r2.events.length + deps.worker.events.length + deps.kv.events.length;
-    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: true }, deps);
+    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: true, watch: false }, deps);
     expect(code).toBe(0);
     const eventsAfter =
       deps.r2.events.length + deps.worker.events.length + deps.kv.events.length;
@@ -88,7 +88,7 @@ describe('runApply', () => {
     const deps = buildDeps();
     const err: ProviderError = { code: 'AccessDenied', recoverable: false, message: 'forbidden' };
     deps.worker.injectFailure({ op: 'create', remaining: 99, error: err });
-    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false }, deps);
+    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false, watch: false }, deps);
     expect(code).not.toBe(0);
     const printedErr = deps.captured.out.join('\n') + deps.captured.err.join('\n');
     expect(printedErr).toMatch(/FAILED/);
@@ -97,7 +97,7 @@ describe('runApply', () => {
 
   it('writes parse errors to stderr and returns non-zero', async () => {
     const deps = buildDeps('apiVersion: v1\nkind: Pod\nmetadata: { name: p }\nspec: { containers: [{name: c, image: i}] }\n');
-    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false }, deps);
+    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false, watch: false }, deps);
     expect(code).not.toBe(0);
     expect(deps.captured.err.join('\n')).toMatch(/Pod.*not supported/);
   });
@@ -108,7 +108,7 @@ describe('runDiff', () => {
     const deps = buildDeps();
     const eventsBefore =
       deps.r2.events.length + deps.worker.events.length + deps.kv.events.length;
-    const code = await runDiff({ kind: 'diff', file: 'm.yaml' }, deps);
+    const code = await runDiff({ kind: 'diff', file: 'm.yaml', output: 'text' }, deps);
     expect(code).toBe(0);
     expect(deps.r2.state.size).toBe(0);
     expect(deps.worker.state.size).toBe(0);
@@ -127,7 +127,7 @@ describe('runGet', () => {
     const deps = buildDeps();
     deps.worker.seed('id-1', 'default/api', { scriptName: 'k1c--default--api' } as never);
     deps.worker.seed('id-2', 'prod/gateway', { scriptName: 'k1c--prod--gateway' } as never);
-    const code = await runGet({ kind: 'get', resourceKind: 'Worker' }, deps);
+    const code = await runGet({ kind: 'get', resourceKind: 'Worker', output: 'text' }, deps);
     expect(code).toBe(0);
     const printed = deps.captured.out.join('\n');
     expect(printed).toMatch(/default\/api/);
@@ -139,7 +139,7 @@ describe('runGet', () => {
     deps.worker.seed('id-1', 'default/api', {} as never);
     deps.worker.seed('id-2', 'prod/gateway', {} as never);
     const code = await runGet(
-      { kind: 'get', resourceKind: 'Worker', namespace: 'prod' },
+      { kind: 'get', resourceKind: 'Worker', namespace: 'prod', output: 'text' },
       deps,
     );
     expect(code).toBe(0);
@@ -150,13 +150,13 @@ describe('runGet', () => {
 
   it('returns 2 for unknown resource kind', async () => {
     const deps = buildDeps();
-    const code = await runGet({ kind: 'get', resourceKind: 'Frobnicator' }, deps);
+    const code = await runGet({ kind: 'get', resourceKind: 'Frobnicator', output: 'text' }, deps);
     expect(code).toBe(2);
   });
 
   it('reports "no resources found" when empty', async () => {
     const deps = buildDeps();
-    const code = await runGet({ kind: 'get', resourceKind: 'Worker' }, deps);
+    const code = await runGet({ kind: 'get', resourceKind: 'Worker', output: 'text' }, deps);
     expect(code).toBe(0);
     expect(deps.captured.out.join('\n')).toMatch(/no Worker resources found/);
   });
@@ -170,7 +170,7 @@ describe('runDescribe', () => {
       entrypoint: './w.js',
     } as never);
     const code = await runDescribe(
-      { kind: 'describe', resourceKind: 'Worker', name: 'api' },
+      { kind: 'describe', resourceKind: 'Worker', name: 'api', output: 'text' },
       deps,
     );
     expect(code).toBe(0);
@@ -184,7 +184,7 @@ describe('runDescribe', () => {
   it('returns 1 when not found', async () => {
     const deps = buildDeps();
     const code = await runDescribe(
-      { kind: 'describe', resourceKind: 'Worker', name: 'ghost' },
+      { kind: 'describe', resourceKind: 'Worker', name: 'ghost', output: 'text' },
       deps,
     );
     expect(code).toBe(1);
