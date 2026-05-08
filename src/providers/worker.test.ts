@@ -213,6 +213,16 @@ describe('workerProvider', () => {
       expect(tags).toContain('k1c.io/managed-by=k1c');
     });
 
+    it('embeds the entrypointHash into metadata.tags as k1c.io/content-hash=...', async () => {
+      const scripts = setup();
+      await workerProvider.create(buildCtx(scripts), 'default/api', {
+        ...baseProps,
+        entrypointHash: 'abcdef0123',
+      });
+      const tags = scripts.versions.create.mock.calls[0]![1].metadata.tags as string[];
+      expect(tags).toContain('k1c.io/content-hash=abcdef0123');
+    });
+
     it('passes observability and placement when set', async () => {
       const scripts = setup();
       await workerProvider.create(buildCtx(scripts), 'default/api', {
@@ -362,6 +372,19 @@ describe('workerProvider', () => {
   });
 
   describe('read', () => {
+    it('parses entrypointHash back from the content-hash tag', async () => {
+      const scripts = buildScriptsMock();
+      scripts.scriptAndVersionSettings.get.mockResolvedValueOnce({
+        compatibility_date: '2025-06-01',
+        bindings: [],
+        tags: ['k1c.io/managed-by=k1c', 'k1c.io/content-hash=deadbeef'],
+      });
+      const result = await workerProvider.read(buildCtx(scripts), 'k1c--default--api');
+      expect(result).not.toBe(NotFound);
+      const props = result as unknown as Record<string, unknown>;
+      expect(props.entrypointHash).toBe('deadbeef');
+    });
+
     it('returns NotFound on 404', async () => {
       const scripts = buildScriptsMock();
       scripts.scriptAndVersionSettings.get.mockRejectedValueOnce({

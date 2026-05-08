@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runApply, runDiff } from './run.ts';
+import { runApply, runDelete, runDescribe, runDiff, runGet } from './run.ts';
 import { ProviderRegistry } from '../providers/registry.ts';
 import { workerSchema } from '../providers/worker.ts';
 import { r2BucketSchema } from '../providers/r2-bucket.ts';
@@ -119,5 +119,105 @@ describe('runDiff', () => {
     expect(newWrites).toHaveLength(0);
     const printed = deps.captured.out.join('\n');
     expect(printed).toMatch(/CREATE/);
+  });
+});
+
+describe('runGet', () => {
+  it('lists managed resources of a kind', async () => {
+    const deps = buildDeps();
+    deps.worker.seed('id-1', 'default/api', { scriptName: 'k1c--default--api' } as never);
+    deps.worker.seed('id-2', 'prod/gateway', { scriptName: 'k1c--prod--gateway' } as never);
+    const code = await runGet({ kind: 'get', resourceKind: 'Worker' }, deps);
+    expect(code).toBe(0);
+    const printed = deps.captured.out.join('\n');
+    expect(printed).toMatch(/default\/api/);
+    expect(printed).toMatch(/prod\/gateway/);
+  });
+
+  it('filters by namespace', async () => {
+    const deps = buildDeps();
+    deps.worker.seed('id-1', 'default/api', {} as never);
+    deps.worker.seed('id-2', 'prod/gateway', {} as never);
+    const code = await runGet(
+      { kind: 'get', resourceKind: 'Worker', namespace: 'prod' },
+      deps,
+    );
+    expect(code).toBe(0);
+    const printed = deps.captured.out.join('\n');
+    expect(printed).toMatch(/prod\/gateway/);
+    expect(printed).not.toMatch(/default\/api/);
+  });
+
+  it('returns 2 for unknown resource kind', async () => {
+    const deps = buildDeps();
+    const code = await runGet({ kind: 'get', resourceKind: 'Frobnicator' }, deps);
+    expect(code).toBe(2);
+  });
+
+  it('reports "no resources found" when empty', async () => {
+    const deps = buildDeps();
+    const code = await runGet({ kind: 'get', resourceKind: 'Worker' }, deps);
+    expect(code).toBe(0);
+    expect(deps.captured.out.join('\n')).toMatch(/no Worker resources found/);
+  });
+});
+
+describe('runDescribe', () => {
+  it('prints kind / label / nativeId / properties', async () => {
+    const deps = buildDeps();
+    deps.worker.seed('id-1', 'default/api', {
+      scriptName: 'k1c--default--api',
+      entrypoint: './w.js',
+    } as never);
+    const code = await runDescribe(
+      { kind: 'describe', resourceKind: 'Worker', name: 'api' },
+      deps,
+    );
+    expect(code).toBe(0);
+    const printed = deps.captured.out.join('\n');
+    expect(printed).toMatch(/Kind:\s+Worker/);
+    expect(printed).toMatch(/Label:\s+default\/api/);
+    expect(printed).toMatch(/NativeID:\s+id-1/);
+    expect(printed).toMatch(/k1c--default--api/);
+  });
+
+  it('returns 1 when not found', async () => {
+    const deps = buildDeps();
+    const code = await runDescribe(
+      { kind: 'describe', resourceKind: 'Worker', name: 'ghost' },
+      deps,
+    );
+    expect(code).toBe(1);
+  });
+});
+
+describe('runDelete', () => {
+  it('deletes resources from manifest, skipping data resources without --cascade', async () => {
+    const deps = buildDeps();
+    deps.worker.seed('w-1', 'default/api', {} as never);
+    deps.r2.seed('r-1', 'default/media', {} as never);
+    const code = await runDelete(
+      { kind: 'delete', file: 'm.yaml', cascade: false },
+      deps,
+    );
+    expect(code).toBe(0);
+    expect(deps.worker.state.has('w-1')).toBe(false);
+    expect(deps.r2.state.has('r-1')).toBe(true);
+    const printed = deps.captured.out.join('\n');
+    expect(printed).toMatch(/skipping R2Bucket default\/media/);
+    expect(printed).toMatch(/deleted Worker default\/api/);
+  });
+
+  it('with --cascade also deletes R2 / KV resources', async () => {
+    const deps = buildDeps();
+    deps.worker.seed('w-1', 'default/api', {} as never);
+    deps.r2.seed('r-1', 'default/media', {} as never);
+    const code = await runDelete(
+      { kind: 'delete', file: 'm.yaml', cascade: true },
+      deps,
+    );
+    expect(code).toBe(0);
+    expect(deps.worker.state.has('w-1')).toBe(false);
+    expect(deps.r2.state.has('r-1')).toBe(false);
   });
 });

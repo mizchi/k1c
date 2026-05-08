@@ -35,6 +35,12 @@ export interface WorkerProperties {
    * synthesized in-process rather than read from disk.
    */
   readonly entrypointContent?: string;
+  /**
+   * SHA-256 hex of the entrypoint bytes. Computed by lower; round-tripped through
+   * `metadata.tags` as `k1c.io/content-hash=<hash>` so the read path can reconstruct
+   * it from the live script and propertiesEqual catches file-only edits.
+   */
+  readonly entrypointHash?: string;
 }
 
 export type WorkerBinding =
@@ -83,6 +89,8 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
   observability: z.object({ enabled: z.boolean() }).optional(),
   placement: z.object({ mode: z.literal('smart') }).optional(),
   dispatchNamespace: z.string().optional(),
+  entrypointContent: z.string().optional(),
+  entrypointHash: z.string().optional(),
 });
 
 const NAME_PREFIX = 'k1c--';
@@ -132,7 +140,13 @@ function buildBindings(props: WorkerProperties): CFBinding[] {
   return out;
 }
 
+const CONTENT_HASH_TAG_PREFIX = 'k1c.io/content-hash=';
+
 function buildMetadata(ctx: ProviderContext, props: WorkerProperties) {
+  const tags = [ctx.managedByLabel];
+  if (props.entrypointHash !== undefined) {
+    tags.push(`${CONTENT_HASH_TAG_PREFIX}${props.entrypointHash}`);
+  }
   return {
     main_module: MAIN_MODULE,
     compatibility_date: props.compatibilityDate,
@@ -140,12 +154,20 @@ function buildMetadata(ctx: ProviderContext, props: WorkerProperties) {
       ? { compatibility_flags: [...props.compatibilityFlags] }
       : {}),
     bindings: buildBindings(props),
-    tags: [ctx.managedByLabel],
+    tags,
     ...(props.observability !== undefined
       ? { observability: { enabled: props.observability.enabled } }
       : {}),
     ...(props.placement !== undefined ? { placement: { mode: props.placement.mode } } : {}),
   };
+}
+
+function extractContentHash(tags: ReadonlyArray<string> | undefined): string | undefined {
+  if (!tags) return undefined;
+  for (const tag of tags) {
+    if (tag.startsWith(CONTENT_HASH_TAG_PREFIX)) return tag.slice(CONTENT_HASH_TAG_PREFIX.length);
+  }
+  return undefined;
 }
 
 async function readEntrypoint(
@@ -287,7 +309,9 @@ export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
       bindings?: CFBinding[];
       observability?: { enabled?: boolean };
       placement?: { mode?: 'smart' };
+      tags?: string[];
     };
+    const entrypointHash = extractContentHash(settings.tags);
 
     const vars: Record<string, string> = {};
     const bindings: WorkerBinding[] = [];
@@ -319,6 +343,7 @@ export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
       ...(settings.placement?.mode === 'smart'
         ? { placement: { mode: 'smart' as const } }
         : {}),
+      ...(entrypointHash !== undefined ? { entrypointHash } : {}),
     };
     return props;
   },

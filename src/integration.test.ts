@@ -79,7 +79,7 @@ describe('integration: parse → lower → plan → apply', () => {
     const parsed = parseManifest(SAMPLE);
     expect(parsed.resources).toHaveLength(5);
 
-    const lowered = lower(parsed.resources);
+    const lowered = await lower(parsed.resources, { readFile: async (p) => new TextEncoder().encode(`// stub for ${p}`) });
     expect(lowered.desired).toHaveLength(3); // R2Bucket, KVNamespace, Worker
 
     const p = await plan(lowered.desired, registry, ctx);
@@ -115,7 +115,7 @@ describe('integration: parse → lower → plan → apply', () => {
     const ctx = makeFakeContext();
 
     const parsed = parseManifest(SAMPLE);
-    const lowered = lower(parsed.resources);
+    const lowered = await lower(parsed.resources, { readFile: async (p) => new TextEncoder().encode(`// stub for ${p}`) });
     await apply(await plan(lowered.desired, registry, ctx), registry, ctx);
 
     // re-apply
@@ -131,7 +131,7 @@ describe('integration: parse → lower → plan → apply', () => {
     const ctx = makeFakeContext();
 
     const parsed = parseManifest(SAMPLE);
-    const lowered = lower(parsed.resources);
+    const lowered = await lower(parsed.resources, { readFile: async (p) => new TextEncoder().encode(`// stub for ${p}`) });
     await apply(await plan(lowered.desired, registry, ctx), registry, ctx);
 
     // Reduce the manifest to just the R2Bucket — Deployment is gone, KVNamespace is gone.
@@ -142,7 +142,7 @@ kind: R2Bucket
 metadata: { name: media }
 spec: { location: weur }
 `);
-    const lowered2 = lower(smaller.resources);
+    const lowered2 = await lower(smaller.resources, { readFile: async (p) => new TextEncoder().encode(`// stub for ${p}`) });
     const p2 = await plan(lowered2.desired, registry, ctx);
     const kinds = p2.operations.map((o) => o.kind).sort();
     // expect: noop(R2), delete(KV), delete(Worker)

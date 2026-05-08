@@ -97,6 +97,21 @@ export interface SecretResource extends BaseResource<'Secret', 'v1', never> {
 
 export interface NamespaceResource extends BaseResource<'Namespace', 'v1', never> {}
 
+export interface ServicePort {
+  readonly port: number;
+  readonly targetPort?: number;
+  readonly name?: string;
+  readonly protocol?: 'TCP' | 'UDP';
+}
+
+export interface ServiceSpec {
+  readonly type?: 'ClusterIP' | 'LoadBalancer';
+  readonly selector: Readonly<Record<string, string>>;
+  readonly ports?: ReadonlyArray<ServicePort>;
+}
+
+export type ServiceResource = BaseResource<'Service', 'v1', ServiceSpec>;
+
 export interface R2BucketSpec {
   readonly location?: 'wnam' | 'enam' | 'weur' | 'eeur' | 'apac' | 'oc';
   readonly storageClass?: 'Standard' | 'InfrequentAccess';
@@ -135,6 +150,7 @@ export type K1cResource =
   | ConfigMapResource
   | SecretResource
   | NamespaceResource
+  | ServiceResource
   | R2Bucket
   | KVNamespace
   | DispatchNamespace;

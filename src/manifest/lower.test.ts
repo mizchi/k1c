@@ -2,18 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { lower, LowerError } from './lower.ts';
 import { parseManifest } from './parse.ts';
 
+// Tests inject a deterministic readFile stub so lower can hash entrypoints without
+// touching disk. The stub is keyed by path so different entrypoints yield different hashes.
+const stubReadFile = async (path: string): Promise<Uint8Array> =>
+  new TextEncoder().encode(`// stub for ${path}`);
+
 function lowerYaml(yaml: string) {
   const { resources } = parseManifest(yaml);
-  return lower(resources);
+  return lower(resources, { readFile: stubReadFile });
 }
 
 describe('lower', () => {
-  it('returns empty desired list for empty input', () => {
-    expect(lower([]).desired).toHaveLength(0);
+  it('returns empty desired list for empty input', async () => {
+    expect((await lower([])).desired).toHaveLength(0);
   });
 
-  it('skips Namespace resources', () => {
-    const result = lowerYaml(`
+  it('skips Namespace resources', async () => {
+    const result = await lowerYaml(`
 apiVersion: v1
 kind: Namespace
 metadata: { name: prod }
@@ -21,8 +26,8 @@ metadata: { name: prod }
     expect(result.desired).toHaveLength(0);
   });
 
-  it('lowers R2Bucket to a DesiredResource with prefixed bucket name', () => {
-    const result = lowerYaml(`
+  it('lowers R2Bucket to a DesiredResource with prefixed bucket name', async () => {
+    const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: R2Bucket
 metadata: { name: media, namespace: prod }
@@ -35,8 +40,8 @@ spec: { location: weur }
     expect(d.properties).toEqual({ bucketName: 'k1c-prod-media', location: 'weur' });
   });
 
-  it('lowers DispatchNamespace to a DesiredResource with prefixed name', () => {
-    const result = lowerYaml(`
+  it('lowers DispatchNamespace to a DesiredResource with prefixed name', async () => {
+    const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: DispatchNamespace
 metadata: { name: production, namespace: prod }
@@ -49,8 +54,8 @@ spec: {}
     expect(d.properties).toEqual({ namespaceName: 'k1c-prod-production' });
   });
 
-  it('lowers KVNamespace to a DesiredResource with prefixed title', () => {
-    const result = lowerYaml(`
+  it('lowers KVNamespace to a DesiredResource with prefixed title', async () => {
+    const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: KVNamespace
 metadata: { name: cache }
@@ -61,8 +66,8 @@ spec: {}
     expect(d.properties).toEqual({ title: 'k1c/default/cache' });
   });
 
-  it('lowers a minimal Deployment to a Worker with defaults', () => {
-    const result = lowerYaml(`
+  it('lowers a minimal Deployment to a Worker with defaults', async () => {
+    const result = await lowerYaml(`
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: api }
@@ -84,8 +89,8 @@ spec:
     expect(d.dependsOn ?? []).toHaveLength(0);
   });
 
-  it('honours cloudflare.com/* annotations on Deployment', () => {
-    const result = lowerYaml(`
+  it('honours cloudflare.com/* annotations on Deployment', async () => {
+    const result = await lowerYaml(`
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -109,8 +114,8 @@ spec:
     expect(props.placement).toEqual({ mode: 'smart' });
   });
 
-  it('inlines literal env values into Worker.vars', () => {
-    const result = lowerYaml(`
+  it('inlines literal env values into Worker.vars', async () => {
+    const result = await lowerYaml(`
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: api }
@@ -129,8 +134,8 @@ spec:
     expect(props.vars).toEqual({ LOG_LEVEL: 'info', REGION: 'weur' });
   });
 
-  it('resolves env from ConfigMap and records dependency', () => {
-    const result = lowerYaml(`
+  it('resolves env from ConfigMap and records dependency', async () => {
+    const result = await lowerYaml(`
 apiVersion: v1
 kind: ConfigMap
 metadata: { name: cfg }
@@ -160,8 +165,8 @@ spec:
     );
   });
 
-  it('resolves env from Secret stringData and records dependency', () => {
-    const result = lowerYaml(`
+  it('resolves env from Secret stringData and records dependency', async () => {
+    const result = await lowerYaml(`
 apiVersion: v1
 kind: Secret
 metadata: { name: creds }
@@ -191,8 +196,8 @@ spec:
     );
   });
 
-  it('decodes Secret base64 data field', () => {
-    const result = lowerYaml(`
+  it('decodes Secret base64 data field', async () => {
+    const result = await lowerYaml(`
 apiVersion: v1
 kind: Secret
 metadata: { name: creds }
@@ -218,8 +223,8 @@ spec:
     expect(props.secrets).toEqual({ TOKEN: 'abc123' });
   });
 
-  it('emits r2_bucket binding from volume + volumeMount', () => {
-    const result = lowerYaml(`
+  it('emits r2_bucket binding from volume + volumeMount', async () => {
+    const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: R2Bucket
 metadata: { name: media }
@@ -251,8 +256,8 @@ spec:
     );
   });
 
-  it('emits kv_namespace binding with placeholder namespaceId', () => {
-    const result = lowerYaml(`
+  it('emits kv_namespace binding with placeholder namespaceId', async () => {
+    const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: KVNamespace
 metadata: { name: cache }
@@ -284,7 +289,7 @@ spec:
     expect(bindings[0]?.namespaceId).toMatch(/cache/);
   });
 
-  it('throws LowerError when ConfigMap reference is unresolved', () => {
+  it('throws LowerError when ConfigMap reference is unresolved', async () => {
     const yaml = `
 apiVersion: apps/v1
 kind: Deployment
@@ -301,11 +306,11 @@ spec:
               valueFrom:
                 configMapKeyRef: { name: missing, key: X }
 `;
-    expect(() => lowerYaml(yaml)).toThrow(LowerError);
-    expect(() => lowerYaml(yaml)).toThrow(/ConfigMap.*missing/);
+    await expect(lowerYaml(yaml)).rejects.toThrow(LowerError);
+    await expect(lowerYaml(yaml)).rejects.toThrow(/ConfigMap.*missing/);
   });
 
-  it('throws LowerError when Secret key is missing on a found Secret', () => {
+  it('throws LowerError when Secret key is missing on a found Secret', async () => {
     const yaml = `
 apiVersion: v1
 kind: Secret
@@ -327,10 +332,10 @@ spec:
               valueFrom:
                 secretKeyRef: { name: creds, key: TOKEN }
 `;
-    expect(() => lowerYaml(yaml)).toThrow(/Secret.*creds.*TOKEN/);
+    await expect(lowerYaml(yaml)).rejects.toThrow(/Secret.*creds.*TOKEN/);
   });
 
-  it('throws when volumeMount has no matching volume', () => {
+  it('throws when volumeMount has no matching volume', async () => {
     const yaml = `
 apiVersion: apps/v1
 kind: Deployment
@@ -345,10 +350,10 @@ spec:
           volumeMounts:
             - { name: missing, mountPath: X }
 `;
-    expect(() => lowerYaml(yaml)).toThrow(/volumeMount.*missing/);
+    await expect(lowerYaml(yaml)).rejects.toThrow(/volumeMount.*missing/);
   });
 
-  it('throws when Deployment has multiple containers (v0 limitation)', () => {
+  it('throws when Deployment has multiple containers (v0 limitation)', async () => {
     const yaml = `
 apiVersion: apps/v1
 kind: Deployment
@@ -361,10 +366,10 @@ spec:
         - { name: a, image: ./a.js }
         - { name: b, image: ./b.js }
 `;
-    expect(() => lowerYaml(yaml)).toThrow(/single-container/);
+    await expect(lowerYaml(yaml)).rejects.toThrow(/single-container/);
   });
 
-  it('rejects cross-namespace ConfigMap reference', () => {
+  it('rejects cross-namespace ConfigMap reference', async () => {
     const yaml = `
 apiVersion: v1
 kind: ConfigMap
@@ -387,11 +392,11 @@ spec:
                 configMapKeyRef: { name: cfg, key: X }
 `;
     // ConfigMap is in 'other', Deployment looks in 'prod' — should fail to resolve
-    expect(() => lowerYaml(yaml)).toThrow(/ConfigMap.*cfg/);
+    await expect(lowerYaml(yaml)).rejects.toThrow(/ConfigMap.*cfg/);
   });
 
-  it('lowers Rollout (blueGreen) into a Worker with no warnings', () => {
-    const result = lowerYaml(`
+  it('lowers Rollout (blueGreen) into a Worker with no warnings', async () => {
+    const result = await lowerYaml(`
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata: { name: api }
@@ -413,8 +418,8 @@ spec:
     expect((w.properties as Record<string, unknown>).scriptName).toBe('k1c--default--api');
   });
 
-  it('lowers Rollout with cloudflare.com/dispatch-namespace into dispatcher + stable + state KV', () => {
-    const result = lowerYaml(`
+  it('lowers Rollout with cloudflare.com/dispatch-namespace into dispatcher + stable + state KV', async () => {
+    const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: DispatchNamespace
 metadata: { name: production }
@@ -481,8 +486,8 @@ spec:
     expect(result.warnings[0]!.message).toMatch(/canary state machine.*not yet implemented/);
   });
 
-  it('does not duplicate the rollout-state KV when multiple Rollouts share a dispatch namespace', () => {
-    const result = lowerYaml(`
+  it('does not duplicate the rollout-state KV when multiple Rollouts share a dispatch namespace', async () => {
+    const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: DispatchNamespace
 metadata: { name: prod }
@@ -518,8 +523,8 @@ spec:
     expect(stateKvs).toHaveLength(1);
   });
 
-  it('warns when Rollout uses canary strategy (not yet implemented)', () => {
-    const result = lowerYaml(`
+  it('warns when Rollout uses canary strategy (not yet implemented)', async () => {
+    const result = await lowerYaml(`
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata: { name: api }
@@ -541,8 +546,8 @@ spec:
     expect(result.warnings[0]!.message).toMatch(/canary.*not yet implemented/i);
   });
 
-  it('warns when Rollout disables auto-promotion (not yet implemented)', () => {
-    const result = lowerYaml(`
+  it('warns when Rollout disables auto-promotion (not yet implemented)', async () => {
+    const result = await lowerYaml(`
 apiVersion: argoproj.io/v1alpha1
 kind: Rollout
 metadata: { name: api }
@@ -560,8 +565,8 @@ spec:
     expect(result.warnings[0]!.message).toMatch(/autoPromotionEnabled=false.*not yet implemented/i);
   });
 
-  it('does not duplicate dependsOn entries when one resource is referenced twice', () => {
-    const result = lowerYaml(`
+  it('does not duplicate dependsOn entries when one resource is referenced twice', async () => {
+    const result = await lowerYaml(`
 apiVersion: v1
 kind: ConfigMap
 metadata: { name: cfg }
@@ -586,5 +591,120 @@ spec:
     const worker = result.desired[0]!;
     const cmDeps = (worker.dependsOn ?? []).filter((r) => r.kind === 'ConfigMap');
     expect(cmDeps).toHaveLength(1);
+  });
+
+  it('lowers Service type=LoadBalancer to a CustomDomain pointing at the matched Worker', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api, tier: web } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./dist/worker.js }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-domain
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+    cloudflare.com/hostname: api.example.com
+spec:
+  type: LoadBalancer
+  selector: { app: api }
+  ports: [{ port: 443 }]
+`);
+    const domain = result.desired.find((d) => d.resourceType === 'CustomDomain');
+    expect(domain).toBeDefined();
+    expect(domain!.label).toBe('api.example.com');
+    expect(domain!.properties).toEqual({
+      hostname: 'api.example.com',
+      service: 'k1c--default--api',
+      zoneId: 'zone-abc',
+      environment: 'production',
+    });
+    expect(domain!.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'Deployment', name: 'api' }),
+    );
+  });
+
+  it('throws when LoadBalancer Service has no matching Deployment/Rollout', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-domain
+  annotations:
+    cloudflare.com/zone-id: z1
+    cloudflare.com/hostname: api.example.com
+spec:
+  type: LoadBalancer
+  selector: { app: ghost }
+`),
+    ).rejects.toThrow(/no Deployment or Rollout/);
+  });
+
+  it('throws when LoadBalancer Service is missing required annotations', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./dist/worker.js }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-domain }
+spec:
+  type: LoadBalancer
+  selector: { app: api }
+`),
+    ).rejects.toThrow(/cloudflare.com\/zone-id.*cloudflare.com\/hostname/);
+  });
+
+  it('warns and skips Service with type=ClusterIP (not yet implemented)', async () => {
+    const result = await lowerYaml(`
+apiVersion: v1
+kind: Service
+metadata: { name: internal-api }
+spec:
+  type: ClusterIP
+  selector: { app: api }
+`);
+    const domains = result.desired.filter((d) => d.resourceType === 'CustomDomain');
+    expect(domains).toHaveLength(0);
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]!.message).toMatch(/ClusterIP.*not yet implemented/);
+  });
+
+  it('hashes the entrypoint content into Worker.entrypointHash', async () => {
+    const { resources } = parseManifest(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./worker-a.js }]
+`);
+    const a = await lower(resources, {
+      readFile: async () => new TextEncoder().encode('// content v1'),
+    });
+    const b = await lower(resources, {
+      readFile: async () => new TextEncoder().encode('// content v2'),
+    });
+    const propsA = a.desired[0]!.properties as Record<string, unknown>;
+    const propsB = b.desired[0]!.properties as Record<string, unknown>;
+    expect(propsA.entrypointHash).toBeTruthy();
+    expect(propsB.entrypointHash).toBeTruthy();
+    expect(propsA.entrypointHash).not.toBe(propsB.entrypointHash);
   });
 });

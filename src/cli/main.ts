@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import process from 'node:process';
 import Cloudflare from 'cloudflare';
 import { parseArgs, USAGE, type RolloutArgs } from './args.ts';
-import { runApply, runDiff } from './run.ts';
+import { runApply, runDelete, runDescribe, runDiff, runGet } from './run.ts';
 import { createDefaultRegistry } from '../providers/index.ts';
 import type { ProviderContext } from '../providers/types.ts';
 import { runRolloutCommand } from '../canary/rollout-command.ts';
@@ -54,6 +54,9 @@ async function main(): Promise<number> {
 
   if (parsed.kind === 'apply') return runApply(parsed, deps);
   if (parsed.kind === 'diff') return runDiff(parsed, deps);
+  if (parsed.kind === 'get') return runGet(parsed, deps);
+  if (parsed.kind === 'describe') return runDescribe(parsed, deps);
+  if (parsed.kind === 'delete') return runDelete(parsed, deps);
   if (parsed.kind === 'rollout') return runRollout(parsed, cloudflare, accountId);
   return 2;
 }

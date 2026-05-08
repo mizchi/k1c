@@ -5,6 +5,7 @@ import { kvNamespaceProvider } from './kv-namespace.ts';
 import { configMapProvider } from './configmap.ts';
 import { secretProvider } from './secret.ts';
 import { dispatchNamespaceProvider } from './dispatch-namespace.ts';
+import { customDomainProvider } from './custom-domain.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -14,6 +15,7 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(configMapProvider);
   r.register(secretProvider);
   r.register(dispatchNamespaceProvider);
+  r.register(customDomainProvider);
   return r;
 }
 

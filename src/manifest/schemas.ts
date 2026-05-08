@@ -118,6 +118,26 @@ export const namespaceSchema = z.object({
   metadata: objectMetaSchema,
 });
 
+export const serviceSchema = z.object({
+  apiVersion: z.literal('v1'),
+  kind: z.literal('Service'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    type: z.enum(['ClusterIP', 'LoadBalancer']).optional(),
+    selector: z.record(z.string()),
+    ports: z
+      .array(
+        z.object({
+          port: z.number().int().positive(),
+          targetPort: z.number().int().positive().optional(),
+          name: z.string().optional(),
+          protocol: z.enum(['TCP', 'UDP']).optional(),
+        }),
+      )
+      .optional(),
+  }),
+});
+
 export const r2BucketSchema = z.object({
   apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
   kind: z.literal('R2Bucket'),
@@ -150,6 +170,7 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   configMapSchema,
   secretSchema,
   namespaceSchema,
+  serviceSchema,
   r2BucketSchema,
   kvNamespaceSchema,
   dispatchNamespaceSchema,

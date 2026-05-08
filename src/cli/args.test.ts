@@ -108,4 +108,51 @@ describe('parseArgs', () => {
       expect(r.kind).toBe('error');
     });
   });
+
+  describe('get / describe / delete', () => {
+    it('parses get with kind only', () => {
+      expect(parseArgs(['get', 'Worker'])).toEqual({ kind: 'get', resourceKind: 'Worker' });
+    });
+
+    it('parses get with kind + name + namespace', () => {
+      expect(parseArgs(['get', 'Worker', 'api', '-n', 'prod'])).toEqual({
+        kind: 'get',
+        resourceKind: 'Worker',
+        name: 'api',
+        namespace: 'prod',
+      });
+    });
+
+    it('parses describe with required name', () => {
+      expect(parseArgs(['describe', 'R2Bucket', 'media'])).toEqual({
+        kind: 'describe',
+        resourceKind: 'R2Bucket',
+        name: 'media',
+      });
+    });
+
+    it('returns error when describe is missing name', () => {
+      expect(parseArgs(['describe', 'R2Bucket']).kind).toBe('error');
+    });
+
+    it('parses delete with -f and --cascade', () => {
+      expect(parseArgs(['delete', '-f', 'm.yaml', '--cascade'])).toEqual({
+        kind: 'delete',
+        file: 'm.yaml',
+        cascade: true,
+      });
+    });
+
+    it('parses delete without --cascade defaults to false', () => {
+      expect(parseArgs(['delete', '-f', 'm.yaml'])).toEqual({
+        kind: 'delete',
+        file: 'm.yaml',
+        cascade: false,
+      });
+    });
+
+    it('returns error when delete has no -f', () => {
+      expect(parseArgs(['delete']).kind).toBe('error');
+    });
+  });
 });

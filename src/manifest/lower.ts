@@ -1,4 +1,5 @@
 import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import type {
   ConfigMapResource,
   Deployment,
@@ -11,12 +12,14 @@ import type {
   ResourceRef,
   Rollout,
   SecretResource,
+  ServiceResource,
 } from './types.ts';
 import type { DesiredResource } from '../reconciler/types.ts';
 import type { WorkerBinding, WorkerProperties } from '../providers/worker.ts';
 import type { R2BucketProperties } from '../providers/r2-bucket.ts';
 import type { KVNamespaceProperties } from '../providers/kv-namespace.ts';
 import type { DispatchNamespaceProperties } from '../providers/dispatch-namespace.ts';
+import type { CustomDomainProperties } from '../providers/custom-domain.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 
 export class LowerError extends Error {
@@ -36,6 +39,14 @@ export interface LowerResult {
   readonly warnings: ReadonlyArray<LowerWarning>;
 }
 
+export interface LowerOptions {
+  /**
+   * Reads the bytes of a Worker entrypoint file. Defaults to fs/promises.readFile.
+   * Tests inject a stub to keep lower decoupled from disk I/O.
+   */
+  readonly readFile?: (path: string) => Promise<Uint8Array>;
+}
+
 const DEFAULT_COMPATIBILITY_DATE = '2025-01-01';
 
 interface LookupTables {
@@ -45,7 +56,10 @@ interface LookupTables {
   readonly kvNamespaces: Map<string, KVNamespace>;
 }
 
-export function lower(resources: ReadonlyArray<K1cResource>): LowerResult {
+export async function lower(
+  resources: ReadonlyArray<K1cResource>,
+  options?: LowerOptions,
+): Promise<LowerResult> {
   const tables: LookupTables = {
     configMaps: new Map(),
     secrets: new Map(),
@@ -55,6 +69,7 @@ export function lower(resources: ReadonlyArray<K1cResource>): LowerResult {
   const deployments: Deployment[] = [];
   const rollouts: Rollout[] = [];
   const dispatchNamespaces: DispatchNamespace[] = [];
+  const services: ServiceResource[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -76,6 +91,9 @@ export function lower(resources: ReadonlyArray<K1cResource>): LowerResult {
       case 'DispatchNamespace':
         dispatchNamespaces.push(r);
         break;
+      case 'Service':
+        services.push(r);
+        break;
       case 'Deployment':
         deployments.push(r);
         break;
@@ -91,16 +109,135 @@ export function lower(resources: ReadonlyArray<K1cResource>): LowerResult {
   for (const b of tables.r2Buckets.values()) desired.push(lowerR2Bucket(b));
   for (const kv of tables.kvNamespaces.values()) desired.push(lowerKVNamespace(kv));
   for (const dn of dispatchNamespaces) desired.push(lowerDispatchNamespace(dn));
-  for (const d of deployments) desired.push(lowerDeployment(d, tables));
+  for (const d of deployments) desired.push(await lowerDeployment(d, tables, options));
 
   const emittedStateKvs = new Set<string>();
   for (const r of rollouts) {
-    for (const d of lowerRollout(r, tables, warnings, emittedStateKvs)) {
+    for (const d of await lowerRollout(r, tables, warnings, emittedStateKvs, options)) {
       desired.push(d);
     }
   }
 
+  for (const s of services) {
+    const out = lowerService(s, deployments, rollouts, warnings);
+    if (out !== null) desired.push(out);
+  }
+
   return { desired, warnings };
+}
+
+function lowerService(
+  s: ServiceResource,
+  deployments: ReadonlyArray<Deployment>,
+  rollouts: ReadonlyArray<Rollout>,
+  warnings: LowerWarning[],
+): DesiredResource<CustomDomainProperties> | null {
+  const ns = s.metadata.namespace ?? 'default';
+  const name = s.metadata.name;
+  const ref = refOf(s);
+  const type = s.spec.type ?? 'ClusterIP';
+
+  if (type === 'ClusterIP') {
+    warnings.push({
+      ref,
+      message: `Service ${ns}/${name}: type=ClusterIP is not yet implemented (v0.1.5); the Worker can be referenced as a service binding once support lands`,
+    });
+    return null;
+  }
+
+  const annotations = s.metadata.annotations ?? {};
+  const zoneId = annotations['cloudflare.com/zone-id'];
+  const hostname = annotations['cloudflare.com/hostname'];
+  if (!zoneId || !hostname) {
+    throw new LowerError(
+      `Service ${ns}/${name}: type=LoadBalancer requires both \`cloudflare.com/zone-id\` and \`cloudflare.com/hostname\` annotations`,
+    );
+  }
+
+  // Match the selector against Deployment / Rollout in the same namespace.
+  const target = findWorkloadBySelector(s.spec.selector, ns, deployments, rollouts);
+  if (target === null) {
+    throw new LowerError(
+      `Service ${ns}/${name}: no Deployment or Rollout in namespace "${ns}" matches selector ${JSON.stringify(s.spec.selector)}`,
+    );
+  }
+
+  const targetScriptName = `k1c--${ns}--${target.name}`;
+  return {
+    resourceType: 'CustomDomain',
+    ref,
+    label: hostname,
+    properties: {
+      hostname,
+      service: targetScriptName,
+      zoneId,
+      environment: annotations['cloudflare.com/environment'] ?? 'production',
+    },
+    dependsOn: [
+      {
+        apiVersion: target.apiVersion,
+        kind: target.kind,
+        namespace: ns,
+        name: target.name,
+      },
+    ],
+  };
+}
+
+interface SelectorMatch {
+  readonly apiVersion: string;
+  readonly kind: 'Deployment' | 'Rollout';
+  readonly name: string;
+}
+
+function findWorkloadBySelector(
+  selector: Readonly<Record<string, string>>,
+  namespace: string,
+  deployments: ReadonlyArray<Deployment>,
+  rollouts: ReadonlyArray<Rollout>,
+): SelectorMatch | null {
+  for (const d of deployments) {
+    if ((d.metadata.namespace ?? 'default') !== namespace) continue;
+    if (isSubset(selector, d.spec.selector.matchLabels)) {
+      return { apiVersion: d.apiVersion, kind: 'Deployment', name: d.metadata.name };
+    }
+  }
+  for (const r of rollouts) {
+    if ((r.metadata.namespace ?? 'default') !== namespace) continue;
+    if (isSubset(selector, r.spec.selector.matchLabels)) {
+      return { apiVersion: r.apiVersion, kind: 'Rollout', name: r.metadata.name };
+    }
+  }
+  return null;
+}
+
+function isSubset(
+  small: Readonly<Record<string, string>>,
+  large: Readonly<Record<string, string>>,
+): boolean {
+  for (const [k, v] of Object.entries(small)) {
+    if (large[k] !== v) return false;
+  }
+  return true;
+}
+
+async function defaultReadFile(path: string): Promise<Uint8Array> {
+  const fs = await import('node:fs/promises');
+  return fs.readFile(path);
+}
+
+async function hashEntrypoint(
+  props: WorkerProperties,
+  options: LowerOptions | undefined,
+): Promise<string> {
+  let bytes: Uint8Array;
+  if (props.entrypointContent !== undefined) {
+    bytes = new TextEncoder().encode(props.entrypointContent);
+  } else {
+    const reader = options?.readFile ?? defaultReadFile;
+    bytes = await reader(props.entrypoint);
+  }
+  return createHash('sha256').update(bytes).digest('hex');
 }
 
 function lowerDispatchNamespace(
@@ -156,19 +293,21 @@ function lowerKVNamespace(kv: KVNamespace): DesiredResource<KVNamespacePropertie
   };
 }
 
-function lowerDeployment(
+async function lowerDeployment(
   d: Deployment,
   tables: LookupTables,
-): DesiredResource<WorkerProperties> {
-  return buildWorkerDesired('Deployment', refOf(d), d.metadata, d.spec.template, tables);
+  options: LowerOptions | undefined,
+): Promise<DesiredResource<WorkerProperties>> {
+  return buildWorkerDesired('Deployment', refOf(d), d.metadata, d.spec.template, tables, options);
 }
 
-function lowerRollout(
+async function lowerRollout(
   r: Rollout,
   tables: LookupTables,
   warnings: LowerWarning[],
   emittedStateKvs: Set<string>,
-): ReadonlyArray<DesiredResource> {
+  options: LowerOptions | undefined,
+): Promise<ReadonlyArray<DesiredResource>> {
   const ns = r.metadata.namespace ?? 'default';
   const name = r.metadata.name;
   const ref = refOf(r);
@@ -176,7 +315,7 @@ function lowerRollout(
   const dispatchAnno = annotations['cloudflare.com/dispatch-namespace'];
 
   if (dispatchAnno !== undefined) {
-    return lowerCanaryRollout(r, dispatchAnno, tables, warnings, emittedStateKvs);
+    return lowerCanaryRollout(r, dispatchAnno, tables, warnings, emittedStateKvs, options);
   }
 
   if ('canary' in r.spec.strategy) {
@@ -193,16 +332,19 @@ function lowerRollout(
       });
     }
   }
-  return [buildWorkerDesired('Rollout', ref, r.metadata, r.spec.template, tables)];
+  return [
+    await buildWorkerDesired('Rollout', ref, r.metadata, r.spec.template, tables, options),
+  ];
 }
 
-function lowerCanaryRollout(
+async function lowerCanaryRollout(
   r: Rollout,
   dispatchAnno: string,
   tables: LookupTables,
   warnings: LowerWarning[],
   emittedStateKvs: Set<string>,
-): ReadonlyArray<DesiredResource> {
+  options: LowerOptions | undefined,
+): Promise<ReadonlyArray<DesiredResource>> {
   const ns = r.metadata.namespace ?? 'default';
   const name = r.metadata.name;
   const ref = refOf(r);
@@ -240,7 +382,14 @@ function lowerCanaryRollout(
   }
 
   // Stable Worker = the user's code, deployed into the dispatch namespace under <name>--stable.
-  const userWorker = buildWorkerDesired('Rollout', ref, r.metadata, r.spec.template, tables);
+  const userWorker = await buildWorkerDesired(
+    'Rollout',
+    ref,
+    r.metadata,
+    r.spec.template,
+    tables,
+    options,
+  );
   const stableRef: ResourceRef = { ...ref, name: `${name}--stable` };
   const stableProperties: WorkerProperties = {
     ...userWorker.properties,
@@ -263,7 +412,7 @@ function lowerCanaryRollout(
     stableName: stableScriptName,
     canaryName: canaryScriptName,
   });
-  const dispatcherProperties: WorkerProperties = {
+  const dispatcherBaseProperties: WorkerProperties = {
     scriptName: dispatcherScriptName,
     entrypoint: '<k1c-generated:dispatcher>',
     entrypointContent: dispatcherSource,
@@ -274,6 +423,10 @@ function lowerCanaryRollout(
       { type: 'dispatch_namespace', name: 'NAMESPACE', dispatchNamespace: dispatchNsCFName },
       { type: 'kv_namespace', name: 'STATE', namespaceId: `<resolved-at-apply:${stateKvK8sName}>` },
     ],
+  };
+  const dispatcherProperties: WorkerProperties = {
+    ...dispatcherBaseProperties,
+    entrypointHash: await hashEntrypoint(dispatcherBaseProperties, options),
   };
   results.push({
     resourceType: 'Worker',
@@ -300,13 +453,14 @@ function lowerCanaryRollout(
   return results;
 }
 
-function buildWorkerDesired(
+async function buildWorkerDesired(
   kind: 'Deployment' | 'Rollout',
   ref: ResourceRef,
   meta: ObjectMeta,
   template: PodTemplateSpec,
   tables: LookupTables,
-): DesiredResource<WorkerProperties> {
+  options: LowerOptions | undefined,
+): Promise<DesiredResource<WorkerProperties>> {
   const ns = meta.namespace ?? 'default';
   const name = meta.name;
   const annotations = meta.annotations ?? {};
@@ -424,7 +578,7 @@ function buildWorkerDesired(
         .filter((s) => s.length > 0)
     : undefined;
 
-  const properties: WorkerProperties = {
+  const baseProperties: WorkerProperties = {
     scriptName: `k1c--${ns}--${name}`,
     entrypoint: container.image,
     compatibilityDate:
@@ -439,6 +593,11 @@ function buildWorkerDesired(
     ...(annotations['cloudflare.com/smart-placement'] === 'smart'
       ? { placement: { mode: 'smart' as const } }
       : {}),
+  };
+
+  const properties: WorkerProperties = {
+    ...baseProperties,
+    entrypointHash: await hashEntrypoint(baseProperties, options),
   };
 
   return {

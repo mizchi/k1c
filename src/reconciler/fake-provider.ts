@@ -117,5 +117,6 @@ export function makeFakeContext(): ProviderContext {
     namespace: 'default',
     managedByLabel: 'k1c.io/managed-by=k1c',
     signal: new AbortController().signal,
+    readFile: async (path: string) => new TextEncoder().encode(`// stub for ${path}`),
   };
 }

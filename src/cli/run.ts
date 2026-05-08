@@ -4,7 +4,8 @@ import { plan } from '../reconciler/plan.ts';
 import { apply } from '../reconciler/apply.ts';
 import type { ProviderRegistry } from '../providers/registry.ts';
 import type { ProviderContext } from '../providers/types.ts';
-import type { ApplyArgs, DiffArgs } from './args.ts';
+import type { ApplyArgs, DeleteArgs, DescribeArgs, DiffArgs, GetArgs } from './args.ts';
+import { NotFound } from '../providers/types.ts';
 import { formatPlan, formatReport } from './format.ts';
 import { advanceCanaryRolloutsForApply } from './canary-integration.ts';
 import type { K1cResource } from '../manifest/types.ts';
@@ -67,9 +68,148 @@ export async function runDiff(args: DiffArgs, deps: RunDeps): Promise<number> {
   return 0;
 }
 
+export async function runGet(args: GetArgs, deps: RunDeps): Promise<number> {
+  if (!deps.registry.has(args.resourceKind)) {
+    deps.err(`unknown resource kind: ${args.resourceKind}`);
+    return 2;
+  }
+  const provider = deps.registry.get(args.resourceKind);
+  const rows: Array<{ label: string; nativeId: string }> = [];
+  try {
+    for await (const item of provider.list(deps.providerCtx)) {
+      if (args.namespace !== undefined && !item.label.startsWith(`${args.namespace}/`)) continue;
+      if (args.name !== undefined && !item.label.endsWith(`/${args.name}`)) continue;
+      rows.push({ label: item.label, nativeId: item.nativeId });
+    }
+  } catch (e) {
+    deps.err(`get failed: ${e instanceof Error ? e.message : String(e)}`);
+    return 1;
+  }
+  if (rows.length === 0) {
+    deps.out(`(no ${args.resourceKind} resources found)`);
+    return 0;
+  }
+  const labelW = Math.max(8, ...rows.map((r) => r.label.length));
+  deps.out(`${pad('LABEL', labelW)}  NATIVE_ID`);
+  for (const r of rows) deps.out(`${pad(r.label, labelW)}  ${r.nativeId}`);
+  return 0;
+}
+
+export async function runDescribe(args: DescribeArgs, deps: RunDeps): Promise<number> {
+  if (!deps.registry.has(args.resourceKind)) {
+    deps.err(`unknown resource kind: ${args.resourceKind}`);
+    return 2;
+  }
+  const provider = deps.registry.get(args.resourceKind);
+  const ns = args.namespace ?? 'default';
+  const targetLabel = `${ns}/${args.name}`;
+  let nativeId: string | null = null;
+  try {
+    for await (const item of provider.list(deps.providerCtx)) {
+      if (item.label === targetLabel) {
+        nativeId = item.nativeId;
+        break;
+      }
+    }
+  } catch (e) {
+    deps.err(`describe failed during list: ${e instanceof Error ? e.message : String(e)}`);
+    return 1;
+  }
+  if (nativeId === null) {
+    deps.err(`${args.resourceKind} ${targetLabel} not found`);
+    return 1;
+  }
+  let props;
+  try {
+    props = await provider.read(deps.providerCtx, nativeId);
+  } catch (e) {
+    deps.err(`describe failed during read: ${e instanceof Error ? e.message : String(e)}`);
+    return 1;
+  }
+  if (props === NotFound) {
+    deps.err(`${args.resourceKind} ${targetLabel} (nativeId=${nativeId}) was listed but read returned NotFound`);
+    return 1;
+  }
+  deps.out(`Kind:       ${args.resourceKind}`);
+  deps.out(`Label:      ${targetLabel}`);
+  deps.out(`NativeID:   ${nativeId}`);
+  deps.out('Properties:');
+  deps.out(indent(JSON.stringify(props, null, 2), 2));
+  return 0;
+}
+
+export async function runDelete(args: DeleteArgs, deps: RunDeps): Promise<number> {
+  const loaded = await loadParsedAndDesired(args.file, deps);
+  if (loaded === null) return 3;
+
+  const targets: Array<{ resourceType: string; label: string }> = [];
+  for (const d of loaded.desired) {
+    if (!args.cascade && (d.resourceType === 'R2Bucket' || d.resourceType === 'KVNamespace')) {
+      deps.out(`(skipping ${d.resourceType} ${d.label} — pass --cascade to delete user data)`);
+      continue;
+    }
+    targets.push({ resourceType: d.resourceType, label: d.label });
+  }
+
+  let succeeded = 0;
+  let failed = 0;
+  let skipped = 0;
+  for (const t of targets) {
+    if (!deps.registry.has(t.resourceType)) {
+      deps.err(`no provider for ${t.resourceType}; skipping ${t.label}`);
+      skipped += 1;
+      continue;
+    }
+    const provider = deps.registry.get(t.resourceType);
+    let nativeId: string | null = null;
+    try {
+      for await (const item of provider.list(deps.providerCtx)) {
+        if (item.label === t.label) {
+          nativeId = item.nativeId;
+          break;
+        }
+      }
+    } catch (e) {
+      deps.err(`delete: list failed for ${t.resourceType} ${t.label}: ${e instanceof Error ? e.message : String(e)}`);
+      failed += 1;
+      continue;
+    }
+    if (nativeId === null) {
+      deps.out(`(${t.resourceType} ${t.label} not found in cluster, skipping)`);
+      skipped += 1;
+      continue;
+    }
+    try {
+      await provider.delete(deps.providerCtx, nativeId);
+      deps.out(`deleted ${t.resourceType} ${t.label} (${nativeId})`);
+      succeeded += 1;
+    } catch (e) {
+      deps.err(`failed to delete ${t.resourceType} ${t.label}: ${e instanceof Error ? e.message : String(e)}`);
+      failed += 1;
+    }
+  }
+  deps.out(`summary: ${succeeded} deleted / ${failed} failed / ${skipped} skipped`);
+  return failed === 0 ? 0 : 1;
+}
+
+function pad(s: string, w: number): string {
+  if (s.length >= w) return s;
+  return s + ' '.repeat(w - s.length);
+}
+
+function indent(text: string, n: number): string {
+  const prefix = ' '.repeat(n);
+  return text
+    .split('\n')
+    .map((line) => prefix + line)
+    .join('\n');
+}
+
+type LowerDesired = Awaited<ReturnType<typeof lower>>['desired'];
+
 interface Loaded {
   readonly parsed: ReadonlyArray<K1cResource>;
-  readonly desired: ReadonlyArray<ReturnType<typeof lower>['desired'][number]>;
+  readonly desired: LowerDesired;
 }
 
 async function loadParsedAndDesired(file: string, deps: RunDeps): Promise<Loaded | null> {
@@ -96,7 +236,9 @@ async function loadParsedAndDesired(file: string, deps: RunDeps): Promise<Loaded
 
   let lowered;
   try {
-    lowered = lower(parsed.resources);
+    lowered = await lower(parsed.resources, {
+      readFile: deps.providerCtx.readFile,
+    });
   } catch (e) {
     deps.err(`lower error: ${e instanceof Error ? e.message : String(e)}`);
     return null;
