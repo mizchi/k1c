@@ -1,0 +1,107 @@
+import { describe, it, expect } from 'vitest';
+import type { ResourceRef } from '../manifest/types.ts';
+import type { ApplyReport, Operation, Plan } from '../reconciler/types.ts';
+import { formatPlan, formatReport } from './format.ts';
+
+const ref = (kind: ResourceRef['kind'], name: string, ns = 'default'): ResourceRef => ({
+  apiVersion: kind === 'R2Bucket' || kind === 'KVNamespace' ? 'cloudflare.k1c.io/v1alpha1' : 'apps/v1',
+  kind,
+  namespace: ns,
+  name,
+});
+
+describe('formatPlan', () => {
+  it('renders empty plan as a no-changes message', () => {
+    const out = formatPlan({ operations: [] });
+    expect(out).toMatch(/no changes/i);
+  });
+
+  it('lists operations with kind, resourceType, and label', () => {
+    const ops: Operation[] = [
+      {
+        kind: 'create',
+        resourceType: 'R2Bucket',
+        ref: ref('R2Bucket', 'media'),
+        label: 'default/media',
+        properties: {},
+      },
+      {
+        kind: 'noop',
+        resourceType: 'KVNamespace',
+        ref: ref('KVNamespace', 'cache'),
+        label: 'default/cache',
+      },
+      {
+        kind: 'delete',
+        resourceType: 'Worker',
+        nativeId: 'k1c--default--old',
+        label: 'default/old',
+      },
+    ];
+    const plan: Plan = { operations: ops };
+    const out = formatPlan(plan);
+    expect(out).toMatch(/CREATE\s+R2Bucket\s+default\/media/);
+    expect(out).toMatch(/NOOP\s+KVNamespace\s+default\/cache/);
+    expect(out).toMatch(/DELETE\s+Worker\s+default\/old/);
+  });
+});
+
+describe('formatReport', () => {
+  it('shows summary counts', () => {
+    const report: ApplyReport = {
+      results: [],
+      succeeded: 3,
+      failed: 1,
+      skipped: 2,
+    };
+    const out = formatReport(report);
+    expect(out).toMatch(/3 ok/);
+    expect(out).toMatch(/1 failed/);
+    expect(out).toMatch(/2 skipped/);
+  });
+
+  it('marks failed operations with the error code', () => {
+    const op: Operation = {
+      kind: 'create',
+      resourceType: 'Worker',
+      ref: ref('Deployment' as never, 'api'),
+      label: 'default/api',
+      properties: {},
+    };
+    const report: ApplyReport = {
+      results: [
+        {
+          op,
+          status: 'failed',
+          error: { code: 'AccessDenied', recoverable: false, message: 'forbidden' },
+        },
+      ],
+      succeeded: 0,
+      failed: 1,
+      skipped: 0,
+    };
+    const out = formatReport(report);
+    expect(out).toMatch(/FAILED/);
+    expect(out).toMatch(/AccessDenied/);
+    expect(out).toMatch(/default\/api/);
+  });
+
+  it('marks succeeded operations and includes nativeId when present', () => {
+    const op: Operation = {
+      kind: 'create',
+      resourceType: 'Worker',
+      ref: ref('Deployment' as never, 'api'),
+      label: 'default/api',
+      properties: {},
+    };
+    const report: ApplyReport = {
+      results: [{ op, status: 'succeeded', nativeId: 'native-id-1' }],
+      succeeded: 1,
+      failed: 0,
+      skipped: 0,
+    };
+    const out = formatReport(report);
+    expect(out).toMatch(/ok/);
+    expect(out).toMatch(/native-id-1/);
+  });
+});

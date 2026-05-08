@@ -1,0 +1,352 @@
+import { z } from 'zod';
+import type {
+  CloudflareResourceProvider,
+  CreateResult,
+  DeleteResult,
+  ListedResource,
+  ProviderContext,
+  UpdateResult,
+} from './types.ts';
+import { NotFound } from './types.ts';
+import { toProviderError } from './errors.ts';
+
+export interface WorkerProperties {
+  readonly scriptName: string;
+  readonly entrypoint: string;
+  readonly compatibilityDate: string;
+  readonly compatibilityFlags?: ReadonlyArray<string>;
+  readonly vars?: Readonly<Record<string, string>>;
+  // v0: key→value carried inline. Cloudflare's read-back never returns values, so
+  // this field is always considered "drifted" by propertiesEqual until k1c.io/last-applied
+  // annotation diffing is implemented.
+  readonly secrets?: Readonly<Record<string, string>>;
+  readonly bindings?: ReadonlyArray<WorkerBinding>;
+  readonly observability?: { readonly enabled: boolean };
+  readonly placement?: { readonly mode: 'smart' };
+  /**
+   * If set, the Worker is uploaded to a Workers for Platforms dispatch namespace
+   * (`scripts.update` on the namespace endpoint, no versioned deployment) instead of as a
+   * top-level Worker. Used by canary Rollouts to register the stable / candidate variants.
+   */
+  readonly dispatchNamespace?: string;
+  /**
+   * If set, this string is uploaded as the script body verbatim and `entrypoint` is
+   * ignored for I/O. Used for k1c-generated workers (dispatcher, etc.) whose source is
+   * synthesized in-process rather than read from disk.
+   */
+  readonly entrypointContent?: string;
+}
+
+export type WorkerBinding =
+  | { readonly type: 'r2_bucket'; readonly name: string; readonly bucketName: string }
+  | { readonly type: 'kv_namespace'; readonly name: string; readonly namespaceId: string }
+  | { readonly type: 'service'; readonly name: string; readonly service: string }
+  | {
+      readonly type: 'dispatch_namespace';
+      readonly name: string;
+      readonly dispatchNamespace: string;
+    };
+
+export const workerSchema: z.ZodType<WorkerProperties> = z.object({
+  scriptName: z.string(),
+  entrypoint: z.string(),
+  compatibilityDate: z.string(),
+  compatibilityFlags: z.array(z.string()).optional(),
+  vars: z.record(z.string()).optional(),
+  secrets: z.record(z.string()).optional(),
+  bindings: z
+    .array(
+      z.discriminatedUnion('type', [
+        z.object({
+          type: z.literal('r2_bucket'),
+          name: z.string(),
+          bucketName: z.string(),
+        }),
+        z.object({
+          type: z.literal('kv_namespace'),
+          name: z.string(),
+          namespaceId: z.string(),
+        }),
+        z.object({
+          type: z.literal('service'),
+          name: z.string(),
+          service: z.string(),
+        }),
+        z.object({
+          type: z.literal('dispatch_namespace'),
+          name: z.string(),
+          dispatchNamespace: z.string(),
+        }),
+      ]),
+    )
+    .optional(),
+  observability: z.object({ enabled: z.boolean() }).optional(),
+  placement: z.object({ mode: z.literal('smart') }).optional(),
+  dispatchNamespace: z.string().optional(),
+});
+
+const NAME_PREFIX = 'k1c--';
+const SEPARATOR = '--';
+const MAIN_MODULE = 'worker.mjs';
+
+function parseLabel(scriptName: string): string | null {
+  if (!scriptName.startsWith(NAME_PREFIX)) return null;
+  const rest = scriptName.slice(NAME_PREFIX.length);
+  const sepIdx = rest.indexOf(SEPARATOR);
+  if (sepIdx <= 0 || sepIdx + SEPARATOR.length === rest.length) return null;
+  const namespace = rest.slice(0, sepIdx);
+  const name = rest.slice(sepIdx + SEPARATOR.length);
+  if (!name) return null;
+  return `${namespace}/${name}`;
+}
+
+interface CFBinding {
+  readonly type: string;
+  readonly name: string;
+  readonly text?: string;
+  readonly bucket_name?: string;
+  readonly namespace_id?: string;
+  readonly service?: string;
+  readonly namespace?: string; // for dispatch_namespace bindings
+}
+
+function buildBindings(props: WorkerProperties): CFBinding[] {
+  const out: CFBinding[] = [];
+  for (const [name, text] of Object.entries(props.vars ?? {})) {
+    out.push({ type: 'plain_text', name, text });
+  }
+  for (const [name, text] of Object.entries(props.secrets ?? {})) {
+    out.push({ type: 'secret_text', name, text });
+  }
+  for (const b of props.bindings ?? []) {
+    if (b.type === 'r2_bucket') {
+      out.push({ type: 'r2_bucket', name: b.name, bucket_name: b.bucketName });
+    } else if (b.type === 'kv_namespace') {
+      out.push({ type: 'kv_namespace', name: b.name, namespace_id: b.namespaceId });
+    } else if (b.type === 'service') {
+      out.push({ type: 'service', name: b.name, service: b.service });
+    } else if (b.type === 'dispatch_namespace') {
+      out.push({ type: 'dispatch_namespace', name: b.name, namespace: b.dispatchNamespace });
+    }
+  }
+  return out;
+}
+
+function buildMetadata(ctx: ProviderContext, props: WorkerProperties) {
+  return {
+    main_module: MAIN_MODULE,
+    compatibility_date: props.compatibilityDate,
+    ...(props.compatibilityFlags !== undefined
+      ? { compatibility_flags: [...props.compatibilityFlags] }
+      : {}),
+    bindings: buildBindings(props),
+    tags: [ctx.managedByLabel],
+    ...(props.observability !== undefined
+      ? { observability: { enabled: props.observability.enabled } }
+      : {}),
+    ...(props.placement !== undefined ? { placement: { mode: props.placement.mode } } : {}),
+  };
+}
+
+async function readEntrypoint(
+  ctx: ProviderContext,
+  props: WorkerProperties,
+): Promise<Uint8Array> {
+  if (props.entrypointContent !== undefined) {
+    return new TextEncoder().encode(props.entrypointContent);
+  }
+  const reader =
+    ctx.readFile ??
+    (async (p: string) => {
+      const fs = await import('node:fs/promises');
+      return fs.readFile(p);
+    });
+  return reader(props.entrypoint);
+}
+
+async function uploadAndDeploy(
+  ctx: ProviderContext,
+  props: WorkerProperties,
+): Promise<{ scriptId: string; versionId: string }> {
+  if (props.dispatchNamespace !== undefined) {
+    return uploadToDispatchNamespace(ctx, props, props.dispatchNamespace);
+  }
+  return uploadVersionAndDeploy(ctx, props);
+}
+
+async function uploadVersionAndDeploy(
+  ctx: ProviderContext,
+  props: WorkerProperties,
+): Promise<{ scriptId: string; versionId: string }> {
+  const content = await readEntrypoint(ctx, props);
+  const file = new File([content], MAIN_MODULE, { type: 'application/javascript+module' });
+
+  // 1. Upload a new immutable version (does not deploy to traffic).
+  const versionResult = await ctx.cloudflare.workers.scripts.versions.create(
+    props.scriptName,
+    {
+      account_id: ctx.accountId,
+      metadata: buildMetadata(ctx, props),
+      [MAIN_MODULE]: [file],
+    } as never,
+  );
+  const versionId = (versionResult as { id?: string }).id;
+  if (!versionId) {
+    throw new Error('versions.create did not return a version id');
+  }
+
+  // 2. Cut over: route 100% of traffic to the new version (cutover semantics).
+  // canary.steps and blueGreen with manual promotion are not yet implemented (v0.1.2).
+  await ctx.cloudflare.workers.scripts.deployments.create(props.scriptName, {
+    account_id: ctx.accountId,
+    strategy: 'percentage',
+    versions: [{ version_id: versionId, percentage: 100 }],
+  } as never);
+
+  return { scriptId: props.scriptName, versionId };
+}
+
+async function uploadToDispatchNamespace(
+  ctx: ProviderContext,
+  props: WorkerProperties,
+  dispatchNamespace: string,
+): Promise<{ scriptId: string; versionId: string }> {
+  const content = await readEntrypoint(ctx, props);
+  const file = new File([content], MAIN_MODULE, { type: 'application/javascript+module' });
+
+  // Dispatch-namespace scripts do not currently flow through the Versions/Deployments API.
+  // The dispatcher Worker invokes them by name on each request, so a single mutable script
+  // per name is the right model.
+  await ctx.cloudflare.workersForPlatforms.dispatch.namespaces.scripts.update(
+    dispatchNamespace,
+    props.scriptName,
+    {
+      account_id: ctx.accountId,
+      metadata: buildMetadata(ctx, props),
+      files: { [MAIN_MODULE]: file },
+    } as never,
+  );
+
+  return { scriptId: props.scriptName, versionId: 'dispatched' };
+}
+
+function fromCFBinding(b: CFBinding): unknown {
+  if (b.type === 'r2_bucket' && b.bucket_name !== undefined) {
+    return { type: 'r2_bucket', name: b.name, bucketName: b.bucket_name };
+  }
+  if (b.type === 'kv_namespace' && b.namespace_id !== undefined) {
+    return { type: 'kv_namespace', name: b.name, namespaceId: b.namespace_id };
+  }
+  if (b.type === 'service' && b.service !== undefined) {
+    return { type: 'service', name: b.name, service: b.service };
+  }
+  if (b.type === 'dispatch_namespace' && b.namespace !== undefined) {
+    return { type: 'dispatch_namespace', name: b.name, dispatchNamespace: b.namespace };
+  }
+  return null;
+}
+
+export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
+  resourceType: 'Worker',
+  schema: workerSchema,
+
+  async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
+    let iter;
+    try {
+      iter = ctx.cloudflare.workers.scripts.list({ account_id: ctx.accountId });
+    } catch (raw) {
+      throw toProviderError(raw);
+    }
+    try {
+      for await (const script of iter) {
+        const id = script.id;
+        if (!id) continue;
+        const label = parseLabel(id);
+        if (label === null) continue;
+        yield { nativeId: id, label };
+      }
+    } catch (raw) {
+      throw toProviderError(raw);
+    }
+  },
+
+  async read(ctx, nativeId): Promise<WorkerProperties | NotFound> {
+    let response;
+    try {
+      response = await ctx.cloudflare.workers.scripts.scriptAndVersionSettings.get(nativeId, {
+        account_id: ctx.accountId,
+      });
+    } catch (raw) {
+      const err = toProviderError(raw);
+      if (err.code === 'NotFound') return NotFound;
+      throw err;
+    }
+    const settings = response as {
+      compatibility_date?: string;
+      compatibility_flags?: string[];
+      bindings?: CFBinding[];
+      observability?: { enabled?: boolean };
+      placement?: { mode?: 'smart' };
+    };
+
+    const vars: Record<string, string> = {};
+    const bindings: WorkerBinding[] = [];
+    for (const b of settings.bindings ?? []) {
+      if (b.type === 'plain_text' && b.text !== undefined) {
+        vars[b.name] = b.text;
+        continue;
+      }
+      if (b.type === 'secret_text') {
+        // Secret values are never returned by Cloudflare; skip silently.
+        continue;
+      }
+      const translated = fromCFBinding(b);
+      if (translated !== null) bindings.push(translated as WorkerBinding);
+    }
+
+    const props: WorkerProperties = {
+      scriptName: nativeId,
+      entrypoint: '<read-from-cluster>',
+      compatibilityDate: settings.compatibility_date ?? '2025-01-01',
+      ...(settings.compatibility_flags !== undefined
+        ? { compatibilityFlags: settings.compatibility_flags }
+        : {}),
+      ...(Object.keys(vars).length > 0 ? { vars } : {}),
+      ...(bindings.length > 0 ? { bindings } : {}),
+      ...(settings.observability?.enabled !== undefined
+        ? { observability: { enabled: settings.observability.enabled } }
+        : {}),
+      ...(settings.placement?.mode === 'smart'
+        ? { placement: { mode: 'smart' as const } }
+        : {}),
+    };
+    return props;
+  },
+
+  async create(ctx, _label, desired): Promise<CreateResult> {
+    try {
+      const { scriptId } = await uploadAndDeploy(ctx, desired);
+      return { kind: 'sync', nativeId: scriptId, properties: desired };
+    } catch (raw) {
+      throw toProviderError(raw);
+    }
+  },
+
+  async update(ctx, _nativeId, _prior, desired): Promise<UpdateResult> {
+    try {
+      const { scriptId } = await uploadAndDeploy(ctx, desired);
+      return { kind: 'sync', nativeId: scriptId, properties: desired };
+    } catch (raw) {
+      throw toProviderError(raw);
+    }
+  },
+
+  async delete(ctx, nativeId): Promise<DeleteResult> {
+    try {
+      await ctx.cloudflare.workers.scripts.delete(nativeId, { account_id: ctx.accountId });
+      return { kind: 'sync' };
+    } catch (raw) {
+      throw toProviderError(raw);
+    }
+  },
+};
