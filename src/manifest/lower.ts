@@ -2,6 +2,7 @@ import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import type {
   ConfigMapResource,
+  CronJob,
   Deployment,
   DispatchNamespace,
   K1cResource,
@@ -54,6 +55,8 @@ interface LookupTables {
   readonly secrets: Map<string, SecretResource>;
   readonly r2Buckets: Map<string, R2Bucket>;
   readonly kvNamespaces: Map<string, KVNamespace>;
+  /** Map of `<ns>/<service-name>` → target Worker script name (primary container). */
+  readonly serviceTargets: Map<string, string>;
 }
 
 export async function lower(
@@ -65,11 +68,13 @@ export async function lower(
     secrets: new Map(),
     r2Buckets: new Map(),
     kvNamespaces: new Map(),
+    serviceTargets: new Map(),
   };
   const deployments: Deployment[] = [];
   const rollouts: Rollout[] = [];
   const dispatchNamespaces: DispatchNamespace[] = [];
   const services: ServiceResource[] = [];
+  const cronJobs: CronJob[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -100,11 +105,24 @@ export async function lower(
       case 'Rollout':
         rollouts.push(r);
         break;
+      case 'CronJob':
+        cronJobs.push(r);
+        break;
     }
   }
 
   const desired: DesiredResource[] = [];
   const warnings: LowerWarning[] = [];
+
+  // Pre-pass: build the Service → target Worker map so volume serviceRef resolution
+  // works regardless of resource declaration order in the manifest.
+  for (const s of services) {
+    const target = findServiceTarget(s, deployments, rollouts);
+    if (target !== null) {
+      const ns = s.metadata.namespace ?? 'default';
+      tables.serviceTargets.set(`${ns}/${s.metadata.name}`, target);
+    }
+  }
 
   for (const b of tables.r2Buckets.values()) desired.push(lowerR2Bucket(b));
   for (const kv of tables.kvNamespaces.values()) desired.push(lowerKVNamespace(kv));
@@ -122,12 +140,47 @@ export async function lower(
     }
   }
 
+  for (const c of cronJobs) {
+    desired.push(await lowerCronJob(c, tables, options));
+  }
+
   for (const s of services) {
     const out = lowerService(s, deployments, rollouts, warnings);
     if (out !== null) desired.push(out);
   }
 
   return { desired, warnings };
+}
+
+async function lowerCronJob(
+  c: CronJob,
+  tables: LookupTables,
+  options: LowerOptions | undefined,
+): Promise<DesiredResource<WorkerProperties>> {
+  const ns = c.metadata.namespace ?? 'default';
+  const name = c.metadata.name;
+  const containers = c.spec.jobTemplate.spec.template.spec.containers;
+  if (containers.length !== 1) {
+    throw new LowerError(
+      `CronJob ${ns}/${name}: jobTemplate must have exactly one container in v0.2 (got ${containers.length})`,
+    );
+  }
+  const ref = refOf(c);
+  const workers = await buildWorkerDesireds(
+    'CronJob' as never,
+    ref,
+    c.metadata,
+    c.spec.jobTemplate.spec.template,
+    tables,
+    options,
+  );
+  const worker = workers[0]!;
+  // Suspend semantics: keep the script but clear all schedules.
+  const cronSchedules = c.spec.suspend === true ? [] : [c.spec.schedule];
+  return {
+    ...worker,
+    properties: { ...worker.properties, cronSchedules },
+  };
 }
 
 function lowerService(
@@ -142,10 +195,16 @@ function lowerService(
   const type = s.spec.type ?? 'ClusterIP';
 
   if (type === 'ClusterIP') {
-    warnings.push({
-      ref,
-      message: `Service ${ns}/${name}: type=ClusterIP is not yet implemented (v0.1.5); the Worker can be referenced as a service binding once support lands`,
-    });
+    // ClusterIP services do not produce a Cloudflare resource. They are a name → Worker
+    // mapping consumed by `volumes[].serviceRef` in other Pods (handled by the pre-pass
+    // that populates tables.serviceTargets). If no workload matches, warn so the user
+    // knows the binding will fail.
+    if (findServiceTarget(s, deployments, rollouts) === null) {
+      warnings.push({
+        ref,
+        message: `Service ${ns}/${name}: type=ClusterIP has no matching Deployment / Rollout for selector ${JSON.stringify(s.spec.selector)} (no workers will be reachable via this service)`,
+      });
+    }
     return null;
   }
 
@@ -213,6 +272,21 @@ function findWorkloadBySelector(
     }
   }
   return null;
+}
+
+/**
+ * Resolves a Service to the script name of its primary target Worker, or null when
+ * no Deployment / Rollout in the same namespace matches the Service selector.
+ */
+function findServiceTarget(
+  s: ServiceResource,
+  deployments: ReadonlyArray<Deployment>,
+  rollouts: ReadonlyArray<Rollout>,
+): string | null {
+  const ns = s.metadata.namespace ?? 'default';
+  const match = findWorkloadBySelector(s.spec.selector, ns, deployments, rollouts);
+  if (match === null) return null;
+  return `k1c--${ns}--${match.name}`;
 }
 
 function isSubset(
@@ -677,9 +751,27 @@ async function buildContainerProperties(
         namespaceId: `<resolved-at-apply:${kv.metadata.name}>`,
       });
       pushUnique(dependsOn, refOf(kv));
+    } else if (vol.serviceRef) {
+      const targetScriptName = tables.serviceTargets.get(`${ns}/${vol.serviceRef.name}`);
+      if (targetScriptName === undefined) {
+        throw new LowerError(
+          `${ctxLabel}: Service "${vol.serviceRef.name}" not found (or has no matching workload) in namespace "${ns}"`,
+        );
+      }
+      bindings.push({
+        type: 'service',
+        name: mount.mountPath,
+        service: targetScriptName,
+      });
+      pushUnique(dependsOn, {
+        apiVersion: 'v1',
+        kind: 'Service',
+        namespace: ns,
+        name: vol.serviceRef.name,
+      });
     } else {
       throw new LowerError(
-        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef or kvNamespaceRef)`,
+        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, or serviceRef)`,
       );
     }
   }

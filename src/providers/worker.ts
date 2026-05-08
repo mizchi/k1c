@@ -41,6 +41,12 @@ export interface WorkerProperties {
    * it from the live script and propertiesEqual catches file-only edits.
    */
   readonly entrypointHash?: string;
+  /**
+   * Cron expressions wired to the script via `cloudflare.workers.scripts.schedules`.
+   * Set by lowerCronJob; an empty array (or undefined) means the script has no
+   * cron triggers.
+   */
+  readonly cronSchedules?: ReadonlyArray<string>;
 }
 
 export type WorkerBinding =
@@ -91,6 +97,7 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
   dispatchNamespace: z.string().optional(),
   entrypointContent: z.string().optional(),
   entrypointHash: z.string().optional(),
+  cronSchedules: z.array(z.string()).optional(),
 });
 
 const NAME_PREFIX = 'k1c--';
@@ -225,7 +232,21 @@ async function uploadVersionAndDeploy(
     versions: [{ version_id: versionId, percentage: 100 }],
   } as never);
 
+  // 3. Sync cron triggers if the manifest declared any (CronJob path).
+  await syncCronSchedules(ctx, props);
+
   return { scriptId: props.scriptName, versionId };
+}
+
+async function syncCronSchedules(
+  ctx: ProviderContext,
+  props: WorkerProperties,
+): Promise<void> {
+  const schedules = props.cronSchedules ?? [];
+  await ctx.cloudflare.workers.scripts.schedules.update(props.scriptName, {
+    account_id: ctx.accountId,
+    body: schedules.map((cron) => ({ cron })),
+  });
 }
 
 async function uploadToDispatchNamespace(
@@ -313,6 +334,18 @@ export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
     };
     const entrypointHash = extractContentHash(settings.tags);
 
+    let cronSchedules: ReadonlyArray<string> | undefined;
+    try {
+      const sched = await ctx.cloudflare.workers.scripts.schedules.get(nativeId, {
+        account_id: ctx.accountId,
+      });
+      const list = (sched as { schedules?: Array<{ cron?: string }> }).schedules ?? [];
+      const crons = list.map((s) => s.cron).filter((c): c is string => typeof c === 'string');
+      if (crons.length > 0) cronSchedules = crons;
+    } catch {
+      // schedules.get may fail (no triggers, transient error) — treat as no schedules.
+    }
+
     const vars: Record<string, string> = {};
     const bindings: WorkerBinding[] = [];
     for (const b of settings.bindings ?? []) {
@@ -344,6 +377,7 @@ export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
         ? { placement: { mode: 'smart' as const } }
         : {}),
       ...(entrypointHash !== undefined ? { entrypointHash } : {}),
+      ...(cronSchedules !== undefined ? { cronSchedules } : {}),
     };
     return props;
   },

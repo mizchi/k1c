@@ -39,6 +39,7 @@ export interface Volume {
   readonly name: string;
   readonly r2BucketRef?: { readonly name: string };
   readonly kvNamespaceRef?: { readonly name: string };
+  readonly serviceRef?: { readonly name: string };
 }
 
 export interface PodTemplateSpec {
@@ -84,6 +85,20 @@ export interface RolloutSpec {
 }
 
 export type Rollout = BaseResource<'Rollout', 'argoproj.io/v1alpha1', RolloutSpec>;
+
+export interface JobTemplateSpec {
+  readonly spec: { readonly template: PodTemplateSpec };
+}
+
+export interface CronJobSpec {
+  readonly schedule: string;
+  readonly jobTemplate: JobTemplateSpec;
+  readonly successfulJobsHistoryLimit?: number;
+  readonly failedJobsHistoryLimit?: number;
+  readonly suspend?: boolean;
+}
+
+export type CronJob = BaseResource<'CronJob', 'batch/v1', CronJobSpec>;
 
 export interface ConfigMapResource extends BaseResource<'ConfigMap', 'v1', never> {
   readonly data?: Readonly<Record<string, string>>;
@@ -147,6 +162,7 @@ export type DispatchNamespace = BaseResource<
 export type K1cResource =
   | Deployment
   | Rollout
+  | CronJob
   | ConfigMapResource
   | SecretResource
   | NamespaceResource

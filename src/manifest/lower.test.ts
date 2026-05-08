@@ -421,6 +421,67 @@ spec:
     expect((primary.dependsOn ?? []).some((r) => r.kind === 'ConfigMap')).toBe(false);
   });
 
+  it('lowers CronJob into a Worker with cronSchedules', async () => {
+    const result = await lowerYaml(`
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: nightly-cleanup }
+spec:
+  schedule: "0 3 * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - { name: cleanup, image: ./dist/cleanup.js }
+`);
+    expect(result.desired).toHaveLength(1);
+    const w = result.desired[0]!;
+    expect(w.resourceType).toBe('Worker');
+    expect(w.label).toBe('default/nightly-cleanup');
+    const props = w.properties as Record<string, unknown>;
+    expect(props.scriptName).toBe('k1c--default--nightly-cleanup');
+    expect(props.cronSchedules).toEqual(['0 3 * * *']);
+  });
+
+  it('emits empty cronSchedules when CronJob.spec.suspend is true', async () => {
+    const result = await lowerYaml(`
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: paused }
+spec:
+  schedule: "0 3 * * *"
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - { name: c, image: ./c.js }
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    expect(props.cronSchedules).toEqual([]);
+  });
+
+  it('rejects multi-container CronJob (v0.2 limitation)', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: batch/v1
+kind: CronJob
+metadata: { name: nope }
+spec:
+  schedule: "* * * * *"
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - { name: a, image: ./a.js }
+            - { name: b, image: ./b.js }
+`),
+    ).rejects.toThrow(/exactly one container/);
+  });
+
   it('rejects multi-container Rollout in the canary path (v0.1.6 limitation)', async () => {
     await expect(
       lowerYaml(`
@@ -747,19 +808,85 @@ spec:
     ).rejects.toThrow(/cloudflare.com\/zone-id.*cloudflare.com\/hostname/);
   });
 
-  it('warns and skips Service with type=ClusterIP (not yet implemented)', async () => {
+  it('resolves volumeMount serviceRef against a ClusterIP Service to a service binding', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: auth }
+spec:
+  selector: { matchLabels: { app: auth } }
+  template:
+    spec:
+      containers: [{ name: auth, image: ./auth.js }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: auth-svc }
+spec:
+  type: ClusterIP
+  selector: { app: auth }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./api.js
+          volumeMounts:
+            - { name: auth, mountPath: AUTH }
+      volumes:
+        - { name: auth, serviceRef: { name: auth-svc } }
+`);
+    const api = result.desired.find((d) => d.label === 'default/api')!;
+    const props = api.properties as Record<string, unknown>;
+    const bindings = props.bindings as Array<Record<string, string>>;
+    expect(bindings).toContainEqual({
+      type: 'service',
+      name: 'AUTH',
+      service: 'k1c--default--auth',
+    });
+    expect(api.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'Service', name: 'auth-svc' }),
+    );
+  });
+
+  it('warns when ClusterIP Service has no matching workload', async () => {
     const result = await lowerYaml(`
 apiVersion: v1
 kind: Service
-metadata: { name: internal-api }
+metadata: { name: ghost-svc }
 spec:
   type: ClusterIP
-  selector: { app: api }
+  selector: { app: ghost }
 `);
-    const domains = result.desired.filter((d) => d.resourceType === 'CustomDomain');
-    expect(domains).toHaveLength(0);
+    expect(result.desired).toHaveLength(0);
     expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]!.message).toMatch(/ClusterIP.*not yet implemented/);
+    expect(result.warnings[0]!.message).toMatch(/no matching Deployment/);
+  });
+
+  it('throws when volume serviceRef points at an undeclared Service', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./api.js
+          volumeMounts:
+            - { name: x, mountPath: X }
+      volumes:
+        - { name: x, serviceRef: { name: missing-svc } }
+`),
+    ).rejects.toThrow(/Service "missing-svc" not found/);
   });
 
   it('hashes the entrypoint content into Worker.entrypointHash', async () => {

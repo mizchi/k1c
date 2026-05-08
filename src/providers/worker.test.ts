@@ -12,6 +12,10 @@ interface ScriptsMock {
   readonly scriptAndVersionSettings: { readonly get: ReturnType<typeof vi.fn> };
   readonly versions: { readonly create: ReturnType<typeof vi.fn> };
   readonly deployments: { readonly create: ReturnType<typeof vi.fn> };
+  readonly schedules: {
+    readonly update: ReturnType<typeof vi.fn>;
+    readonly get: ReturnType<typeof vi.fn>;
+  };
 }
 
 interface DispatchScriptsMock {
@@ -27,6 +31,10 @@ function buildScriptsMock(): ScriptsMock {
     scriptAndVersionSettings: { get: vi.fn() },
     versions: { create: vi.fn() },
     deployments: { create: vi.fn() },
+    schedules: {
+      update: vi.fn().mockResolvedValue({}),
+      get: vi.fn().mockRejectedValue({ status: 404 }),
+    },
   };
 }
 
@@ -223,6 +231,30 @@ describe('workerProvider', () => {
       expect(tags).toContain('k1c.io/content-hash=abcdef0123');
     });
 
+    it('syncs cron triggers via schedules.update when cronSchedules is set', async () => {
+      const scripts = setup();
+      await workerProvider.create(buildCtx(scripts), 'default/cleanup', {
+        ...baseProps,
+        cronSchedules: ['0 3 * * *', '*/30 * * * *'],
+      });
+      expect(scripts.schedules.update).toHaveBeenCalledWith('k1c--default--api', {
+        account_id: 'acc-123',
+        body: [{ cron: '0 3 * * *' }, { cron: '*/30 * * * *' }],
+      });
+    });
+
+    it('clears cron triggers when cronSchedules is empty (CronJob suspend)', async () => {
+      const scripts = setup();
+      await workerProvider.create(buildCtx(scripts), 'default/api', {
+        ...baseProps,
+        cronSchedules: [],
+      });
+      expect(scripts.schedules.update).toHaveBeenCalledWith('k1c--default--api', {
+        account_id: 'acc-123',
+        body: [],
+      });
+    });
+
     it('passes observability and placement when set', async () => {
       const scripts = setup();
       await workerProvider.create(buildCtx(scripts), 'default/api', {
@@ -372,6 +404,21 @@ describe('workerProvider', () => {
   });
 
   describe('read', () => {
+    it('parses cronSchedules back via schedules.get', async () => {
+      const scripts = buildScriptsMock();
+      scripts.scriptAndVersionSettings.get.mockResolvedValueOnce({
+        compatibility_date: '2025-06-01',
+        bindings: [],
+      });
+      scripts.schedules.get.mockResolvedValueOnce({
+        schedules: [{ cron: '0 3 * * *' }, { cron: '*/30 * * * *' }],
+      });
+      const result = await workerProvider.read(buildCtx(scripts), 'k1c--default--cleanup');
+      expect(result).not.toBe(NotFound);
+      const props = result as unknown as Record<string, unknown>;
+      expect(props.cronSchedules).toEqual(['0 3 * * *', '*/30 * * * *']);
+    });
+
     it('parses entrypointHash back from the content-hash tag', async () => {
       const scripts = buildScriptsMock();
       scripts.scriptAndVersionSettings.get.mockResolvedValueOnce({

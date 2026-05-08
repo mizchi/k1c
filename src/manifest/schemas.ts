@@ -31,6 +31,7 @@ const volumeSchema = z.object({
   name: z.string(),
   r2BucketRef: z.object({ name: z.string() }).optional(),
   kvNamespaceRef: z.object({ name: z.string() }).optional(),
+  serviceRef: z.object({ name: z.string() }).optional(),
 });
 
 const containerSchema = z.object({
@@ -94,6 +95,23 @@ export const rolloutSchema = z.object({
   kind: z.literal('Rollout'),
   metadata: objectMetaSchema,
   spec: rolloutSpecSchema,
+});
+
+const cronJobSpecSchema = z.object({
+  schedule: z.string().min(1),
+  jobTemplate: z.object({
+    spec: z.object({ template: podTemplateSpecSchema }),
+  }),
+  successfulJobsHistoryLimit: z.number().int().nonnegative().optional(),
+  failedJobsHistoryLimit: z.number().int().nonnegative().optional(),
+  suspend: z.boolean().optional(),
+});
+
+export const cronJobSchema = z.object({
+  apiVersion: z.literal('batch/v1'),
+  kind: z.literal('CronJob'),
+  metadata: objectMetaSchema,
+  spec: cronJobSpecSchema,
 });
 
 export const configMapSchema = z.object({
@@ -167,6 +185,7 @@ export const dispatchNamespaceSchema = z.object({
 export const k1cResourceSchema = z.discriminatedUnion('kind', [
   deploymentSchema,
   rolloutSchema,
+  cronJobSchema,
   configMapSchema,
   secretSchema,
   namespaceSchema,
