@@ -9,6 +9,9 @@ import { customDomainProvider } from './custom-domain.ts';
 import { hyperdriveProvider } from './hyperdrive.ts';
 import { d1DatabaseProvider } from './d1-database.ts';
 import { queueProvider } from './queue.ts';
+import { vectorizeProvider } from './vectorize.ts';
+import { dnsRecordProvider } from './dns-record.ts';
+import { workflowProvider } from './workflow.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -22,6 +25,9 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(hyperdriveProvider);
   r.register(d1DatabaseProvider);
   r.register(queueProvider);
+  r.register(vectorizeProvider);
+  r.register(dnsRecordProvider);
+  r.register(workflowProvider);
   return r;
 }
 

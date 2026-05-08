@@ -3,47 +3,28 @@
 Resources, mappings, and operational features that have a credible k8s-shape but are
 not yet implemented. Roughly grouped by theme; not strictly ordered.
 
-The high-priority items (StatefulSet → DurableObject, D1, Queue) are tracked separately
-because they're being worked on now; everything below sits in the queue until someone
-asks.
-
 See also `docs/future-considerations.md` for items that are explicitly waiting on
 upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 
-## Workload primitives we still don't model
+## Workload primitives still missing
 
-- **`Job` → Workflow** — k8s `batch/v1 Job` (run to completion, `backoffLimit`,
-  `restartPolicy: OnFailure`) maps cleanly to Cloudflare Workflows: each container
-  becomes a `step.do()`, retry policy carries through. Pairs naturally with the
-  existing `CronJob` story (CronJob is a scheduled Job).
 - **`Ingress` → Worker Routes** — `spec.rules[].host` + `paths[]` lowering to
   zone-scoped Workers Routes. Needs a router Worker for path-based fan-out.
   `Service` (LoadBalancer → Custom Domain) handles the simple case today.
 
 ## Data plane
 
-- **`D1Database` (CRD)** — managed SQL, the obvious peer to R2 / KV / Hyperdrive.
-  *(in progress)*
-- **`Vectorize` (CRD)** — vector index for RAG / AI workloads, same shape as D1
-  (just a different `storageClass`).
-- **`Queue` (CRD) + producer/consumer wiring** — producer Worker has a `queue`
-  binding, consumer Worker is wired via `cloudflare.com/queue-consumer: <name>`
-  annotation. *(in progress)*
-
-## Stateful patterns
-
-- **`StatefulSet` → Durable Object** — ordinal-stable identities; migration tag
-  generated from `new_classes` / `renamed_classes` / `deleted_classes`. *(in progress)*
+- *(none — R2 / KV / D1 / Hyperdrive / Vectorize are all shipped)*
 
 ## Networking & DNS
 
-- **`DNSRecord` (CRD)** under `cloudflare.k1c.io/v1alpha1`. Most useful when paired
-  with `Service type=LoadBalancer`: an annotation `cloudflare.com/manage-dns: true`
-  could auto-emit the A/AAAA/CNAME record alongside the Custom Domain.
 - **`CustomHostname` (CRD)** — Cloudflare for SaaS routing. Async SSL provisioning
   forces async polling on the provider, which is why this is gated on the polling
   feature in `future-considerations.md`.
 - **`Ingress` (`networking.k8s.io/v1`)** — see "Workload primitives".
+- **DNSRecord auto-emission** — currently `DNSRecord` is its own resource. A
+  `cloudflare.com/manage-dns: true` annotation on a `Service type=LoadBalancer`
+  could auto-emit a CNAME pointing at the Custom Domain.
 
 ## Observability / logging
 
@@ -72,6 +53,17 @@ just annotation or `volumeMounts[].xxxRef` plumbing.
 - **Version Metadata** — `cloudflare.com/version-metadata: enabled` →
   `version_metadata` binding, useful for Workers that want to know their own
   deploy id at runtime.
+
+## Recently shipped (was on this list, now done)
+
+- ~~`Job` → Workflow~~ — shipped. Job manifest emits a Worker + a `Workflow`
+  registration via `cloudflare.workflows.update`.
+- ~~`Vectorize` (CRD)~~ — shipped. Same shape as D1, with `volumes[].vectorizeRef`
+  plumbing through to a `vectorize` Worker binding.
+- ~~`DNSRecord` (CRD)~~ — shipped. Comment-based ownership marker
+  (`k1c.io/managed=<ns>/<name>`), supports `A` / `AAAA` / `CNAME` / `TXT` / `MX`.
+- ~~`D1Database` / `Queue` / `StatefulSet → DurableObject`~~ — shipped in the
+  prior round.
 
 ## Account-level configuration (out of the per-Pod manifest scope)
 

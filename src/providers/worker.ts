@@ -77,7 +77,8 @@ export type WorkerBinding =
       readonly className: string;
       /** When the DO class lives in another script, set this to that script's name. */
       readonly scriptName?: string;
-    };
+    }
+  | { readonly type: 'vectorize'; readonly name: string; readonly indexName: string };
 
 export const workerSchema: z.ZodType<WorkerProperties> = z.object({
   scriptName: z.string(),
@@ -130,6 +131,11 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
           className: z.string(),
           scriptName: z.string().optional(),
         }),
+        z.object({
+          type: z.literal('vectorize'),
+          name: z.string(),
+          indexName: z.string(),
+        }),
       ]),
     )
     .optional(),
@@ -169,6 +175,7 @@ interface CFBinding {
   readonly queue_name?: string; // for queue bindings
   readonly class_name?: string; // for durable_object_namespace bindings
   readonly script_name?: string; // for cross-script DO bindings
+  readonly index_name?: string; // for vectorize bindings
 }
 
 function buildBindings(props: WorkerProperties): CFBinding[] {
@@ -201,6 +208,8 @@ function buildBindings(props: WorkerProperties): CFBinding[] {
         class_name: b.className,
         ...(b.scriptName !== undefined ? { script_name: b.scriptName } : {}),
       });
+    } else if (b.type === 'vectorize') {
+      out.push({ type: 'vectorize', name: b.name, index_name: b.indexName });
     }
   }
   return out;
@@ -397,6 +406,9 @@ function fromCFBinding(b: CFBinding): unknown {
       className: b.class_name,
       ...(b.script_name !== undefined ? { scriptName: b.script_name } : {}),
     };
+  }
+  if (b.type === 'vectorize' && b.index_name !== undefined) {
+    return { type: 'vectorize', name: b.name, indexName: b.index_name };
   }
   return null;
 }

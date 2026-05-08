@@ -421,6 +421,123 @@ spec:
     expect((primary.dependsOn ?? []).some((r) => r.kind === 'ConfigMap')).toBe(false);
   });
 
+  it('lowers Vectorize to a DesiredResource with prefixed indexName', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Vectorize
+metadata: { name: docs }
+spec: { dimensions: 1536, metric: cosine, description: "OpenAI text-embedding-3-small" }
+`);
+    const v = result.desired[0]!;
+    expect(v.resourceType).toBe('Vectorize');
+    expect(v.label).toBe('default/docs');
+    expect(v.properties).toEqual({
+      indexName: 'k1c-default-docs',
+      dimensions: 1536,
+      metric: 'cosine',
+      description: 'OpenAI text-embedding-3-small',
+    });
+  });
+
+  it('emits vectorize Worker binding from volume.vectorizeRef', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Vectorize
+metadata: { name: docs }
+spec: { dimensions: 768, metric: cosine }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: rag }
+spec:
+  selector: { matchLabels: { app: rag } }
+  template:
+    spec:
+      containers:
+        - name: rag
+          image: ./rag.js
+          volumeMounts: [{ name: docs, mountPath: DOCS }]
+      volumes:
+        - { name: docs, vectorizeRef: { name: docs } }
+`);
+    const rag = result.desired.find((d) => d.label === 'default/rag')!;
+    const bindings = (rag.properties as Record<string, unknown>).bindings as Array<
+      Record<string, string>
+    >;
+    expect(bindings).toContainEqual({
+      type: 'vectorize',
+      name: 'DOCS',
+      indexName: 'k1c-default-docs',
+    });
+  });
+
+  it('lowers DNSRecord to a DesiredResource keyed on hostname', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: DNSRecord
+metadata: { name: api-cname }
+spec:
+  zoneId: zone-abc
+  type: CNAME
+  name: api.example.com
+  content: api.workers.dev
+  proxied: true
+`);
+    const r = result.desired[0]!;
+    expect(r.resourceType).toBe('DNSRecord');
+    expect(r.label).toBe('default/api-cname');
+    expect(r.properties).toEqual({
+      zoneId: 'zone-abc',
+      type: 'CNAME',
+      name: 'api.example.com',
+      content: 'api.workers.dev',
+      proxied: true,
+    });
+  });
+
+  it('lowers Job into a Worker + Workflow registration pair', async () => {
+    const result = await lowerYaml(`
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: import-data
+  annotations:
+    cloudflare.com/workflow-class: ImportFlow
+spec:
+  template:
+    spec:
+      containers:
+        - { name: import, image: ./import.js }
+`);
+    expect(result.desired).toHaveLength(2);
+    const worker = result.desired.find((d) => d.resourceType === 'Worker');
+    const workflow = result.desired.find((d) => d.resourceType === 'Workflow');
+    expect(worker).toBeDefined();
+    expect(workflow).toBeDefined();
+    expect(workflow!.properties).toEqual({
+      workflowName: 'k1c-default-import-data',
+      className: 'ImportFlow',
+      scriptName: 'k1c--default--import-data',
+    });
+    expect(workflow!.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'Job', name: 'import-data' }),
+    );
+  });
+
+  it('rejects Job whose derived workflow class name is invalid', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: batch/v1
+kind: Job
+metadata: { name: 1import }
+spec:
+  template:
+    spec:
+      containers: [{ name: c, image: ./c.js }]
+`),
+    ).rejects.toThrow(/not a valid JS identifier/);
+  });
+
   it('lowers StatefulSet to a Worker with durableObjectClasses derived from name', async () => {
     const result = await lowerYaml(`
 apiVersion: apps/v1

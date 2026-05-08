@@ -43,6 +43,7 @@ export interface Volume {
   readonly hyperdriveRef?: { readonly name: string };
   readonly d1DatabaseRef?: { readonly name: string };
   readonly queueRef?: { readonly name: string };
+  readonly vectorizeRef?: { readonly name: string };
 }
 
 export interface PodTemplateSpec {
@@ -215,11 +216,46 @@ export interface QueueSpec {
 
 export type Queue = BaseResource<'Queue', 'cloudflare.k1c.io/v1alpha1', QueueSpec>;
 
+export interface VectorizeSpec {
+  readonly dimensions: number;
+  readonly metric: 'cosine' | 'euclidean' | 'dot-product';
+  readonly description?: string;
+}
+
+export type Vectorize = BaseResource<
+  'Vectorize',
+  'cloudflare.k1c.io/v1alpha1',
+  VectorizeSpec
+>;
+
+export interface DNSRecordSpec {
+  readonly zoneId: string;
+  readonly type: 'A' | 'AAAA' | 'CNAME' | 'TXT' | 'MX';
+  readonly name: string;
+  readonly content: string;
+  readonly ttl?: number;
+  readonly proxied?: boolean;
+  readonly priority?: number;
+}
+
+export type DNSRecord = BaseResource<'DNSRecord', 'cloudflare.k1c.io/v1alpha1', DNSRecordSpec>;
+
+export interface JobSpec {
+  readonly template: PodTemplateSpec;
+  readonly backoffLimit?: number;
+  readonly activeDeadlineSeconds?: number;
+  readonly completions?: number;
+  readonly parallelism?: number;
+}
+
+export type Job = BaseResource<'Job', 'batch/v1', JobSpec>;
+
 export type K1cResource =
   | Deployment
   | Rollout
   | StatefulSet
   | CronJob
+  | Job
   | ConfigMapResource
   | SecretResource
   | NamespaceResource
@@ -229,7 +265,9 @@ export type K1cResource =
   | DispatchNamespace
   | Hyperdrive
   | D1Database
-  | Queue;
+  | Queue
+  | Vectorize
+  | DNSRecord;
 
 export type ResourceKind = K1cResource['kind'];
 

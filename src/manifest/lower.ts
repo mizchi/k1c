@@ -6,7 +6,9 @@ import type {
   D1Database,
   Deployment,
   DispatchNamespace,
+  DNSRecord,
   Hyperdrive,
+  Job,
   K1cResource,
   KVNamespace,
   ObjectMeta,
@@ -18,6 +20,7 @@ import type {
   SecretResource,
   ServiceResource,
   StatefulSet,
+  Vectorize,
 } from './types.ts';
 import type { DesiredResource } from '../reconciler/types.ts';
 import type { WorkerBinding, WorkerProperties } from '../providers/worker.ts';
@@ -28,6 +31,9 @@ import type { CustomDomainProperties } from '../providers/custom-domain.ts';
 import type { HyperdriveProperties } from '../providers/hyperdrive.ts';
 import type { D1DatabaseProperties } from '../providers/d1-database.ts';
 import type { QueueProperties } from '../providers/queue.ts';
+import type { VectorizeProperties } from '../providers/vectorize.ts';
+import type { DNSRecordProperties } from '../providers/dns-record.ts';
+import type { WorkflowProperties } from '../providers/workflow.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 
 export class LowerError extends Error {
@@ -65,6 +71,7 @@ interface LookupTables {
   readonly hyperdrives: Map<string, Hyperdrive>;
   readonly d1Databases: Map<string, D1Database>;
   readonly queues: Map<string, Queue>;
+  readonly vectorizes: Map<string, Vectorize>;
   /** Map of `<ns>/<service-name>` → target Worker script name (primary container). */
   readonly serviceTargets: Map<string, string>;
 }
@@ -81,6 +88,7 @@ export async function lower(
     hyperdrives: new Map(),
     d1Databases: new Map(),
     queues: new Map(),
+    vectorizes: new Map(),
     serviceTargets: new Map(),
   };
   const deployments: Deployment[] = [];
@@ -89,6 +97,8 @@ export async function lower(
   const dispatchNamespaces: DispatchNamespace[] = [];
   const services: ServiceResource[] = [];
   const cronJobs: CronJob[] = [];
+  const jobs: Job[] = [];
+  const dnsRecords: DNSRecord[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -134,6 +144,15 @@ export async function lower(
       case 'Queue':
         tables.queues.set(label, r);
         break;
+      case 'Vectorize':
+        tables.vectorizes.set(label, r);
+        break;
+      case 'DNSRecord':
+        dnsRecords.push(r);
+        break;
+      case 'Job':
+        jobs.push(r);
+        break;
     }
   }
 
@@ -158,6 +177,8 @@ export async function lower(
   for (const q of tables.queues.values()) {
     desired.push(lowerQueue(q));
   }
+  for (const v of tables.vectorizes.values()) desired.push(lowerVectorize(v));
+  for (const r of dnsRecords) desired.push(lowerDNSRecord(r));
   for (const d of deployments) {
     for (const w of await lowerDeployment(d, tables, options)) {
       desired.push(w);
@@ -179,12 +200,101 @@ export async function lower(
     desired.push(await lowerStatefulSet(s, tables, options));
   }
 
+  for (const j of jobs) {
+    for (const d of await lowerJob(j, tables, options)) {
+      desired.push(d);
+    }
+  }
+
   for (const s of services) {
     const out = lowerService(s, deployments, rollouts, warnings);
     if (out !== null) desired.push(out);
   }
 
   return { desired, warnings };
+}
+
+function lowerVectorize(v: Vectorize): DesiredResource<VectorizeProperties> {
+  const ns = v.metadata.namespace ?? 'default';
+  const name = v.metadata.name;
+  return {
+    resourceType: 'Vectorize',
+    ref: refOf(v),
+    label: `${ns}/${name}`,
+    properties: {
+      indexName: `k1c-${ns}-${name}`,
+      dimensions: v.spec.dimensions,
+      metric: v.spec.metric,
+      ...(v.spec.description !== undefined ? { description: v.spec.description } : {}),
+    },
+  };
+}
+
+function lowerDNSRecord(r: DNSRecord): DesiredResource<DNSRecordProperties> {
+  const ns = r.metadata.namespace ?? 'default';
+  const name = r.metadata.name;
+  return {
+    resourceType: 'DNSRecord',
+    ref: refOf(r),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: r.spec.zoneId,
+      type: r.spec.type,
+      name: r.spec.name,
+      content: r.spec.content,
+      ...(r.spec.ttl !== undefined ? { ttl: r.spec.ttl } : {}),
+      ...(r.spec.proxied !== undefined ? { proxied: r.spec.proxied } : {}),
+      ...(r.spec.priority !== undefined ? { priority: r.spec.priority } : {}),
+    },
+  };
+}
+
+async function lowerJob(
+  j: Job,
+  tables: LookupTables,
+  options: LowerOptions | undefined,
+): Promise<ReadonlyArray<DesiredResource>> {
+  const ns = j.metadata.namespace ?? 'default';
+  const name = j.metadata.name;
+  const containers = j.spec.template.spec.containers;
+  if (containers.length !== 1) {
+    throw new LowerError(
+      `Job ${ns}/${name}: jobTemplate must have exactly one container in v0.2 (got ${containers.length})`,
+    );
+  }
+  const annotations = j.metadata.annotations ?? {};
+  const className =
+    annotations['cloudflare.com/workflow-class'] ??
+    `${name.charAt(0).toUpperCase()}${name.slice(1).replace(/-/g, '')}`;
+  if (!/^[A-Z][A-Za-z0-9_]*$/.test(className)) {
+    throw new LowerError(
+      `Job ${ns}/${name}: derived Workflow class "${className}" is not a valid JS identifier; set \`cloudflare.com/workflow-class\` annotation explicitly`,
+    );
+  }
+  const ref = refOf(j);
+  const workers = await buildWorkerDesireds(
+    'Job' as never,
+    ref,
+    j.metadata,
+    j.spec.template,
+    tables,
+    options,
+  );
+  const worker = workers[0]!;
+  const scriptName = `k1c--${ns}--${name}`;
+  const workflowName = `k1c-${ns}-${name}`;
+  const workflowDesired: DesiredResource<WorkflowProperties> = {
+    resourceType: 'Workflow',
+    ref: { ...ref, name: `${name}--workflow` },
+    label: `${ns}/${name}`,
+    properties: {
+      workflowName,
+      className,
+      scriptName,
+    },
+    dependsOn: [ref],
+  };
+  return [worker, workflowDesired];
 }
 
 async function lowerStatefulSet(
@@ -969,9 +1079,22 @@ async function buildContainerProperties(
         queueName: `k1c-${ns}-${q.metadata.name}`,
       });
       pushUnique(dependsOn, refOf(q));
+    } else if (vol.vectorizeRef) {
+      const v = tables.vectorizes.get(`${ns}/${vol.vectorizeRef.name}`);
+      if (!v) {
+        throw new LowerError(
+          `${ctxLabel}: Vectorize "${vol.vectorizeRef.name}" not found in namespace "${ns}"`,
+        );
+      }
+      bindings.push({
+        type: 'vectorize',
+        name: mount.mountPath,
+        indexName: `k1c-${ns}-${v.metadata.name}`,
+      });
+      pushUnique(dependsOn, refOf(v));
     } else {
       throw new LowerError(
-        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, hyperdriveRef, d1DatabaseRef, or queueRef)`,
+        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, hyperdriveRef, d1DatabaseRef, queueRef, or vectorizeRef)`,
       );
     }
   }

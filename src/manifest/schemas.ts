@@ -35,6 +35,7 @@ const volumeSchema = z.object({
   hyperdriveRef: z.object({ name: z.string() }).optional(),
   d1DatabaseRef: z.object({ name: z.string() }).optional(),
   queueRef: z.object({ name: z.string() }).optional(),
+  vectorizeRef: z.object({ name: z.string() }).optional(),
 });
 
 const containerSchema = z.object({
@@ -249,11 +250,53 @@ export const queueSchema = z.object({
     .default({}),
 });
 
+export const vectorizeSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('Vectorize'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    dimensions: z.number().int().positive(),
+    metric: z.enum(['cosine', 'euclidean', 'dot-product']),
+    description: z.string().optional(),
+  }),
+});
+
+export const dnsRecordSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('DNSRecord'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string(),
+    type: z.enum(['A', 'AAAA', 'CNAME', 'TXT', 'MX']),
+    name: z.string(),
+    content: z.string(),
+    ttl: z.number().int().nonnegative().optional(),
+    proxied: z.boolean().optional(),
+    priority: z.number().int().nonnegative().optional(),
+  }),
+});
+
+const jobSpecSchema = z.object({
+  template: podTemplateSpecSchema,
+  backoffLimit: z.number().int().nonnegative().optional(),
+  activeDeadlineSeconds: z.number().int().positive().optional(),
+  completions: z.number().int().positive().optional(),
+  parallelism: z.number().int().positive().optional(),
+});
+
+export const jobSchema = z.object({
+  apiVersion: z.literal('batch/v1'),
+  kind: z.literal('Job'),
+  metadata: objectMetaSchema,
+  spec: jobSpecSchema,
+});
+
 export const k1cResourceSchema = z.discriminatedUnion('kind', [
   deploymentSchema,
   rolloutSchema,
   statefulSetSchema,
   cronJobSchema,
+  jobSchema,
   configMapSchema,
   secretSchema,
   namespaceSchema,
@@ -264,4 +307,6 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   hyperdriveSchema,
   d1DatabaseSchema,
   queueSchema,
+  vectorizeSchema,
+  dnsRecordSchema,
 ]);
