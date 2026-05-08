@@ -13,6 +13,9 @@ test:
 test-watch:
     pnpm test:watch
 
+secretlint:
+    pnpm secretlint
+
 build:
     pnpm build
 
