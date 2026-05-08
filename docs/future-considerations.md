@@ -47,22 +47,44 @@ When we revisit, write **ADR-0007 "Multiple runtime modes: CLI and Workflow"** f
 2. Manifest source abstraction (R2 fetcher initially).
 3. A `wrangler.toml`-shaped deploy story.
 
-## "Cloudflare VPC" status
+## Workers VPC (the unifying primitive — preview)
 
-Cloudflare does not ship a single product called "VPC". The pieces that approximate VPC connectivity from Workers are scattered:
+[Workers VPC](https://blog.cloudflare.com/workers-virtual-private-cloud/) was announced in 2025 as Cloudflare's unifying answer for "Workers needs to reach private resources, including AWS / GCP / on-prem". It comes in two pieces:
 
-| Cloudflare feature | What it does | k1c support |
+1. **Workers VPC** — groups Workers, R2, KV, and D1 into an isolated environment; only resources inside the same VPC can address each other.
+2. **Workers VPC Private Link** — connects a Workers VPC to an external VPC (AWS / GCP / on-prem) via Tunnel, IPsec, or Network Interconnect.
+
+The runtime contract stays fetch-binding shaped: `env.WORKERS_VPC_RESOURCE.fetch("/api/users/342")`. From the manifest layer this is the same as a `service` binding in spirit, just pointing at an external endpoint exposed through the VPC.
+
+### Why this re-frames the earlier "VPC pieces" table
+
+The Cloudflare blog explicitly calls out that:
+
+- **Hyperdrive** is the **predecessor / point-to-point** version. Workers VPC generalizes its private-DB use case to any private API and to any cloud.
+- **Cloudflare Tunnel** is one of the underlying transports (alongside IPsec and Network Interconnect) that Private Link reuses.
+- **Magic WAN / Magic Cloud Networking** are the substrate Private Link is built on.
+
+So the messy 4-row table that used to live here ("Tunnel deferred", "Magic WAN out of scope", etc.) collapses into one direction: **wait for Workers VPC, then ship a single `WorkersVPC` CRD that subsumes the lot**.
+
+### What k1c does today vs what is deferred
+
+| Capability | Today in k1c | After Workers VPC ships |
 |---|---|---|
-| **Hyperdrive** | Pooled / cached connection from a Worker to a Postgres or MySQL origin | **shipped as `Hyperdrive` CRD** (v0.2). `volumes[].hyperdriveRef` produces a `hyperdrive` Worker binding. |
-| **Cloudflare Tunnel** (`zero-trust/tunnels`) | `cloudflared` agent in the user's network → CF, lets Workers reach unpublished origins. Also feeds Hyperdrive's "Access-protected" mode. | not in k1c. Needs a `Tunnel` CRD plus the routing CRD that maps a hostname / route to the tunnel. Could ship as `cloudflare.k1c.io/v1alpha1 Tunnel`. |
-| **Magic Cloud Networking** | VPC peering and tag mirroring with AWS / GCP / Azure | not in k1c. Out of scope for personal-tier use; revisit if anyone asks. |
-| **Magic Transit / Magic WAN** | Enterprise IP routing, BGP, IPsec | out of scope. Enterprise tier only. |
+| Worker → Postgres / MySQL pool | `Hyperdrive` CRD (shipped, v0.2) | Stays as-is for the simple case; can also be modeled as a Workers VPC private endpoint. |
+| Worker → arbitrary private HTTP API | not supported | `WorkersVPC` CRD + `volumes[].workersVpcRef` → `workers_vpc` Worker binding. |
+| Worker → resource in AWS / GCP VPC | not supported | Same `WorkersVPC` CRD; Private Link config under `spec.privateLink`. |
+| Worker → on-prem behind Tunnel | not supported | Same `WorkersVPC` CRD with the tunnel referenced in `spec.privateLink.tunnel`. |
 
-For the v0.2 question "can my Worker talk to my private database", the answer in k1c is: **declare a `Hyperdrive` resource with `passwordSecretRef`, mount it via `volumes[].hyperdriveRef`**, and call `env.<mountPath>` from your Worker. If the database is behind a Cloudflare Tunnel, configure the tunnel manually for now and point Hyperdrive at its hostname; the manifest-side `Tunnel` CRD is on the deferred list.
+### Status and decision
+
+- Workers VPC is **early preview at the time of writing**. The cloudflare-typescript SDK 4.5 does not yet expose a `workers/vpc` resource (only `magic-network-monitoring/vpc-flows`, which is monitoring of someone else's VPC, unrelated).
+- We do **not** ship a CRD stub now. Reasoning: a stub that fails at apply time is misleading in an experimental project, and the preview API may rename fields before GA. Hyperdrive covers the most common "Worker → private DB" case for free in the meantime.
+- When the SDK adds `workers/vpc.*`, the implementation pattern is identical to Hyperdrive's: a `WorkersVPC` CRD, a provider with CRUD, a `workers_vpc` Worker binding kind, and `volumes[].workersVpcRef` plumbed through `buildContainerProperties`.
+
+A short ADR (likely **ADR-0008 "Workers VPC integration"**) gets written at that point, with the deliberate decisions about `Tunnel` / `Hyperdrive` co-existence and the "should an existing `Hyperdrive` resource be auto-migrated into a Workers VPC member" question.
 
 ## Other deferred items (briefly)
 
-- **Tunnel + tunnel routing CRD** — the obvious next step for "VPC-like" private connectivity, see the table above.
 - **Rollout v0.1.2** — implement `canary.steps` (state machine across multiple applies, traffic-split via `deployments.create` with two `version_id`s) and `blueGreen.autoPromotionEnabled=false` (separate `k1c rollout promote` command, deploys staged version at 0% then 100% on promote).
 - **Worker.create on a fresh script** — assumes `scripts.versions.create` auto-creates the script. Needs verification against real Cloudflare; if it 404s, add a fallback to `scripts.update` for the first version.
 - **Async polling via `status()`** — provider interface has the hook, reconciler is sync-only. Custom Hostname SSL provisioning will force this.
