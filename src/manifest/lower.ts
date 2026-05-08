@@ -11,6 +11,7 @@ import type {
   Job,
   K1cResource,
   KVNamespace,
+  LogpushJob,
   ObjectMeta,
   PodTemplateSpec,
   Queue,
@@ -34,6 +35,7 @@ import type { QueueProperties } from '../providers/queue.ts';
 import type { VectorizeProperties } from '../providers/vectorize.ts';
 import type { DNSRecordProperties } from '../providers/dns-record.ts';
 import type { WorkflowProperties } from '../providers/workflow.ts';
+import type { LogpushJobProperties } from '../providers/logpush-job.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 
 export class LowerError extends Error {
@@ -99,6 +101,7 @@ export async function lower(
   const cronJobs: CronJob[] = [];
   const jobs: Job[] = [];
   const dnsRecords: DNSRecord[] = [];
+  const logpushJobs: LogpushJob[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -153,6 +156,9 @@ export async function lower(
       case 'Job':
         jobs.push(r);
         break;
+      case 'LogpushJob':
+        logpushJobs.push(r);
+        break;
     }
   }
 
@@ -179,6 +185,7 @@ export async function lower(
   }
   for (const v of tables.vectorizes.values()) desired.push(lowerVectorize(v));
   for (const r of dnsRecords) desired.push(lowerDNSRecord(r));
+  for (const j of logpushJobs) desired.push(lowerLogpushJob(j));
   for (const d of deployments) {
     for (const w of await lowerDeployment(d, tables, options)) {
       desired.push(w);
@@ -226,6 +233,26 @@ function lowerVectorize(v: Vectorize): DesiredResource<VectorizeProperties> {
       dimensions: v.spec.dimensions,
       metric: v.spec.metric,
       ...(v.spec.description !== undefined ? { description: v.spec.description } : {}),
+    },
+  };
+}
+
+function lowerLogpushJob(l: LogpushJob): DesiredResource<LogpushJobProperties> {
+  const ns = l.metadata.namespace ?? 'default';
+  const name = l.metadata.name;
+  const scope =
+    l.spec.zoneId !== undefined ? { zoneId: l.spec.zoneId } : { accountId: l.spec.accountId! };
+  return {
+    resourceType: 'LogpushJob',
+    ref: refOf(l),
+    label: `${ns}/${name}`,
+    properties: {
+      jobName: `k1c-${ns}-${name}`,
+      scope,
+      dataset: l.spec.dataset,
+      destinationConf: l.spec.destinationConf,
+      ...(l.spec.enabled !== undefined ? { enabled: l.spec.enabled } : {}),
+      ...(l.spec.filter !== undefined ? { filter: l.spec.filter } : {}),
     },
   };
 }
@@ -1092,11 +1119,39 @@ async function buildContainerProperties(
         indexName: `k1c-${ns}-${v.metadata.name}`,
       });
       pushUnique(dependsOn, refOf(v));
+    } else if (vol.analyticsEngineRef) {
+      bindings.push({
+        type: 'analytics_engine',
+        name: mount.mountPath,
+        dataset: vol.analyticsEngineRef.dataset,
+      });
     } else {
       throw new LowerError(
-        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, hyperdriveRef, d1DatabaseRef, queueRef, or vectorizeRef)`,
+        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, hyperdriveRef, d1DatabaseRef, queueRef, vectorizeRef, or analyticsEngineRef)`,
       );
     }
+  }
+
+  // Pod-level annotations for the no-config bindings: AI, Browser Rendering,
+  // Version Metadata. Value `enabled` uses the default JS binding name; any other
+  // string overrides it.
+  const aiAnno = annotations['cloudflare.com/ai'];
+  if (aiAnno !== undefined) {
+    bindings.push({ type: 'ai', name: aiAnno === 'enabled' ? 'AI' : aiAnno });
+  }
+  const browserAnno = annotations['cloudflare.com/browser-rendering'];
+  if (browserAnno !== undefined) {
+    bindings.push({
+      type: 'browser',
+      name: browserAnno === 'enabled' ? 'BROWSER' : browserAnno,
+    });
+  }
+  const vmAnno = annotations['cloudflare.com/version-metadata'];
+  if (vmAnno !== undefined) {
+    bindings.push({
+      type: 'version_metadata',
+      name: vmAnno === 'enabled' ? 'CF_VERSION' : vmAnno,
+    });
   }
 
   // Annotations are pod-level: every container in the Pod inherits compatibility-date,

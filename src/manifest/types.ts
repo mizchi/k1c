@@ -44,6 +44,7 @@ export interface Volume {
   readonly d1DatabaseRef?: { readonly name: string };
   readonly queueRef?: { readonly name: string };
   readonly vectorizeRef?: { readonly name: string };
+  readonly analyticsEngineRef?: { readonly dataset: string };
 }
 
 export interface PodTemplateSpec {
@@ -250,6 +251,31 @@ export interface JobSpec {
 
 export type Job = BaseResource<'Job', 'batch/v1', JobSpec>;
 
+export interface LogpushJobSpec {
+  /** Either zoneId or accountId is required (mutually exclusive). */
+  readonly zoneId?: string;
+  readonly accountId?: string;
+  readonly dataset:
+    | 'http_requests'
+    | 'workers_trace_events'
+    | 'firewall_events'
+    | 'access_requests'
+    | 'audit_logs'
+    | 'dns_logs'
+    | 'spectrum_events'
+    | 'nel_reports'
+    | 'gateway_dns'
+    | 'gateway_http'
+    | 'gateway_network'
+    | 'magic_ids_detections'
+    | 'network_analytics_logs';
+  readonly destinationConf: string;
+  readonly enabled?: boolean;
+  readonly filter?: string;
+}
+
+export type LogpushJob = BaseResource<'LogpushJob', 'cloudflare.k1c.io/v1alpha1', LogpushJobSpec>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -267,7 +293,8 @@ export type K1cResource =
   | D1Database
   | Queue
   | Vectorize
-  | DNSRecord;
+  | DNSRecord
+  | LogpushJob;
 
 export type ResourceKind = K1cResource['kind'];
 

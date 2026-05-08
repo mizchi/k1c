@@ -36,6 +36,7 @@ const volumeSchema = z.object({
   d1DatabaseRef: z.object({ name: z.string() }).optional(),
   queueRef: z.object({ name: z.string() }).optional(),
   vectorizeRef: z.object({ name: z.string() }).optional(),
+  analyticsEngineRef: z.object({ dataset: z.string() }).optional(),
 });
 
 const containerSchema = z.object({
@@ -291,6 +292,38 @@ export const jobSchema = z.object({
   spec: jobSpecSchema,
 });
 
+export const logpushJobSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('LogpushJob'),
+  metadata: objectMetaSchema,
+  spec: z
+    .object({
+      zoneId: z.string().optional(),
+      accountId: z.string().optional(),
+      dataset: z.enum([
+        'http_requests',
+        'workers_trace_events',
+        'firewall_events',
+        'access_requests',
+        'audit_logs',
+        'dns_logs',
+        'spectrum_events',
+        'nel_reports',
+        'gateway_dns',
+        'gateway_http',
+        'gateway_network',
+        'magic_ids_detections',
+        'network_analytics_logs',
+      ]),
+      destinationConf: z.string().min(1),
+      enabled: z.boolean().optional(),
+      filter: z.string().optional(),
+    })
+    .refine((s) => (s.zoneId !== undefined) !== (s.accountId !== undefined), {
+      message: 'LogpushJob.spec must specify exactly one of zoneId / accountId',
+    }),
+});
+
 export const k1cResourceSchema = z.discriminatedUnion('kind', [
   deploymentSchema,
   rolloutSchema,
@@ -309,4 +342,5 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   queueSchema,
   vectorizeSchema,
   dnsRecordSchema,
+  logpushJobSchema,
 ]);

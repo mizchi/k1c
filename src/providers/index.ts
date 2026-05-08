@@ -12,6 +12,7 @@ import { queueProvider } from './queue.ts';
 import { vectorizeProvider } from './vectorize.ts';
 import { dnsRecordProvider } from './dns-record.ts';
 import { workflowProvider } from './workflow.ts';
+import { logpushJobProvider } from './logpush-job.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -28,6 +29,7 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(vectorizeProvider);
   r.register(dnsRecordProvider);
   r.register(workflowProvider);
+  r.register(logpushJobProvider);
   return r;
 }
 

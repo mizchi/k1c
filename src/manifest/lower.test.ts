@@ -421,6 +421,106 @@ spec:
     expect((primary.dependsOn ?? []).some((r) => r.kind === 'ConfigMap')).toBe(false);
   });
 
+  it('emits ai / browser / version_metadata bindings from Pod annotations', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  annotations:
+    cloudflare.com/ai: enabled
+    cloudflare.com/browser-rendering: HEADLESS
+    cloudflare.com/version-metadata: enabled
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    const bindings = props.bindings as Array<Record<string, string>>;
+    expect(bindings).toContainEqual({ type: 'ai', name: 'AI' });
+    expect(bindings).toContainEqual({ type: 'browser', name: 'HEADLESS' });
+    expect(bindings).toContainEqual({ type: 'version_metadata', name: 'CF_VERSION' });
+  });
+
+  it('emits analytics_engine binding from volume.analyticsEngineRef', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./api.js
+          volumeMounts: [{ name: ae, mountPath: METRICS }]
+      volumes:
+        - { name: ae, analyticsEngineRef: { dataset: my_dataset } }
+`);
+    const bindings = (result.desired[0]!.properties as Record<string, unknown>)
+      .bindings as Array<Record<string, string>>;
+    expect(bindings).toContainEqual({
+      type: 'analytics_engine',
+      name: 'METRICS',
+      dataset: 'my_dataset',
+    });
+  });
+
+  it('lowers LogpushJob (zone-scoped) to a DesiredResource', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: LogpushJob
+metadata: { name: workers-trace }
+spec:
+  zoneId: zone-abc
+  dataset: workers_trace_events
+  destinationConf: r2://my-bucket/path
+  enabled: true
+`);
+    const j = result.desired[0]!;
+    expect(j.resourceType).toBe('LogpushJob');
+    expect(j.label).toBe('default/workers-trace');
+    expect(j.properties).toEqual({
+      jobName: 'k1c-default-workers-trace',
+      scope: { zoneId: 'zone-abc' },
+      dataset: 'workers_trace_events',
+      destinationConf: 'r2://my-bucket/path',
+      enabled: true,
+    });
+  });
+
+  it('lowers LogpushJob (account-scoped) to a DesiredResource', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: LogpushJob
+metadata: { name: audit }
+spec:
+  accountId: acc-1
+  dataset: audit_logs
+  destinationConf: r2://audit-bucket
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    expect(props.scope).toEqual({ accountId: 'acc-1' });
+  });
+
+  it('rejects LogpushJob with both zoneId and accountId', () => {
+    expect(() =>
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: LogpushJob
+metadata: { name: bad }
+spec:
+  zoneId: z
+  accountId: a
+  dataset: dns_logs
+  destinationConf: r2://x
+`),
+    ).toThrow(/exactly one of zoneId/);
+  });
+
   it('lowers Vectorize to a DesiredResource with prefixed indexName', async () => {
     const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1

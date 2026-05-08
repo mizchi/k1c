@@ -28,8 +28,7 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 
 ## Observability / logging
 
-- **`LogpushJob` (CRD)** — per-zone or per-account log push to S3 / GCS / R2 / etc.
-  Roughly the manifest analog of a Fluent Bit DaemonSet config in real k8s.
+- *(all caught up — `LogpushJob` shipped)*
 
 ## Identity / authorization (Zero Trust)
 
@@ -44,18 +43,24 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 These are bound to Workers via `WorkerBinding` kinds; no separate CRD needed,
 just annotation or `volumeMounts[].xxxRef` plumbing.
 
-- **Workers AI** — `cloudflare.com/ai: enabled` annotation → `ai` binding on the
-  Worker. No separate CF resource.
-- **Browser Rendering** — `cloudflare.com/browser: enabled` annotation → `browser`
-  binding. Same shape as Workers AI.
-- **Analytics Engine** — annotation → `analytics_engine` binding with a dataset
-  name. Already in the SDK binding union.
-- **Version Metadata** — `cloudflare.com/version-metadata: enabled` →
-  `version_metadata` binding, useful for Workers that want to know their own
-  deploy id at runtime.
+- ~~**Workers AI**~~ — shipped. `cloudflare.com/ai: <name>` (or `enabled` for
+  default `AI`) Pod annotation.
+- ~~**Browser Rendering**~~ — shipped. `cloudflare.com/browser-rendering: <name>`
+  (or `enabled` for default `BROWSER`).
+- ~~**Analytics Engine**~~ — shipped. `volumes[].analyticsEngineRef.dataset` →
+  `analytics_engine` binding via volumeMount.
+- ~~**Version Metadata**~~ — shipped. `cloudflare.com/version-metadata: <name>`
+  (or `enabled` for default `CF_VERSION`).
+- **MTLS Certificate** — annotation or volume → `mtls_certificate` binding.
+  Not yet shipped; the `mTLSCertificates` SDK is there if needed.
+- **Pipelines** — `pipelines` binding. Cloudflare's event-ingestion pipeline product.
 
 ## Recently shipped (was on this list, now done)
 
+- ~~`LogpushJob` (CRD)~~ — shipped. Zone- or account-scoped log push to R2 / S3 /
+  GCS / etc. Ownership marker via the `name` prefix `k1c-<ns>-<name>`.
+- ~~AI / Browser / VersionMetadata bindings via Pod annotation~~ — shipped.
+- ~~Analytics Engine binding via `volumes[].analyticsEngineRef`~~ — shipped.
 - ~~`Job` → Workflow~~ — shipped. Job manifest emits a Worker + a `Workflow`
   registration via `cloudflare.workflows.update`.
 - ~~`Vectorize` (CRD)~~ — shipped. Same shape as D1, with `volumes[].vectorizeRef`

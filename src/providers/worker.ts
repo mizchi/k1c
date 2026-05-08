@@ -78,7 +78,11 @@ export type WorkerBinding =
       /** When the DO class lives in another script, set this to that script's name. */
       readonly scriptName?: string;
     }
-  | { readonly type: 'vectorize'; readonly name: string; readonly indexName: string };
+  | { readonly type: 'vectorize'; readonly name: string; readonly indexName: string }
+  | { readonly type: 'ai'; readonly name: string }
+  | { readonly type: 'browser'; readonly name: string }
+  | { readonly type: 'version_metadata'; readonly name: string }
+  | { readonly type: 'analytics_engine'; readonly name: string; readonly dataset: string };
 
 export const workerSchema: z.ZodType<WorkerProperties> = z.object({
   scriptName: z.string(),
@@ -136,6 +140,14 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
           name: z.string(),
           indexName: z.string(),
         }),
+        z.object({ type: z.literal('ai'), name: z.string() }),
+        z.object({ type: z.literal('browser'), name: z.string() }),
+        z.object({ type: z.literal('version_metadata'), name: z.string() }),
+        z.object({
+          type: z.literal('analytics_engine'),
+          name: z.string(),
+          dataset: z.string(),
+        }),
       ]),
     )
     .optional(),
@@ -176,6 +188,7 @@ interface CFBinding {
   readonly class_name?: string; // for durable_object_namespace bindings
   readonly script_name?: string; // for cross-script DO bindings
   readonly index_name?: string; // for vectorize bindings
+  readonly dataset?: string; // for analytics_engine bindings
 }
 
 function buildBindings(props: WorkerProperties): CFBinding[] {
@@ -210,6 +223,10 @@ function buildBindings(props: WorkerProperties): CFBinding[] {
       });
     } else if (b.type === 'vectorize') {
       out.push({ type: 'vectorize', name: b.name, index_name: b.indexName });
+    } else if (b.type === 'ai' || b.type === 'browser' || b.type === 'version_metadata') {
+      out.push({ type: b.type, name: b.name });
+    } else if (b.type === 'analytics_engine') {
+      out.push({ type: 'analytics_engine', name: b.name, dataset: b.dataset });
     }
   }
   return out;
@@ -409,6 +426,12 @@ function fromCFBinding(b: CFBinding): unknown {
   }
   if (b.type === 'vectorize' && b.index_name !== undefined) {
     return { type: 'vectorize', name: b.name, indexName: b.index_name };
+  }
+  if (b.type === 'ai' || b.type === 'browser' || b.type === 'version_metadata') {
+    return { type: b.type, name: b.name };
+  }
+  if (b.type === 'analytics_engine' && b.dataset !== undefined) {
+    return { type: 'analytics_engine', name: b.name, dataset: b.dataset };
   }
   return null;
 }
