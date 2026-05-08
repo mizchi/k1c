@@ -353,8 +353,8 @@ spec:
     await expect(lowerYaml(yaml)).rejects.toThrow(/volumeMount.*missing/);
   });
 
-  it('throws when Deployment has multiple containers (v0 limitation)', async () => {
-    const yaml = `
+  it('lowers a multi-container Deployment into N Workers wired by service bindings', async () => {
+    const result = await lowerYaml(`
 apiVersion: apps/v1
 kind: Deployment
 metadata: { name: api }
@@ -363,10 +363,88 @@ spec:
   template:
     spec:
       containers:
+        - { name: gateway, image: ./gateway.js }
+        - { name: sidecar, image: ./sidecar.js }
+`);
+    expect(result.desired).toHaveLength(2);
+    const primary = result.desired.find((d) => d.label === 'default/api')!;
+    const sidecar = result.desired.find((d) => d.label === 'default/api--sidecar')!;
+    expect(primary).toBeDefined();
+    expect(sidecar).toBeDefined();
+
+    const primaryProps = primary.properties as Record<string, unknown>;
+    const sidecarProps = sidecar.properties as Record<string, unknown>;
+    expect(primaryProps.scriptName).toBe('k1c--default--api');
+    expect(sidecarProps.scriptName).toBe('k1c--default--api--sidecar');
+
+    expect(primaryProps.bindings as Array<Record<string, string>>).toContainEqual({
+      type: 'service',
+      name: 'sidecar',
+      service: 'k1c--default--api--sidecar',
+    });
+    expect(sidecarProps.bindings as Array<Record<string, string>>).toContainEqual({
+      type: 'service',
+      name: 'gateway',
+      service: 'k1c--default--api',
+    });
+  });
+
+  it('keeps per-container env / volumes isolated in multi-container Deployment', async () => {
+    const result = await lowerYaml(`
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: cfg }
+data: { LEVEL: info }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - name: gateway
+          image: ./gateway.js
+          env: [{ name: ROLE, value: gateway }]
+        - name: sidecar
+          image: ./sidecar.js
+          env:
+            - name: LEVEL
+              valueFrom: { configMapKeyRef: { name: cfg, key: LEVEL } }
+`);
+    const primary = result.desired.find((d) => d.label === 'default/api')!;
+    const sidecar = result.desired.find((d) => d.label === 'default/api--sidecar')!;
+    expect((primary.properties as Record<string, unknown>).vars).toEqual({ ROLE: 'gateway' });
+    expect((sidecar.properties as Record<string, unknown>).vars).toEqual({ LEVEL: 'info' });
+    expect((sidecar.dependsOn ?? []).some((r) => r.kind === 'ConfigMap')).toBe(true);
+    expect((primary.dependsOn ?? []).some((r) => r.kind === 'ConfigMap')).toBe(false);
+  });
+
+  it('rejects multi-container Rollout in the canary path (v0.1.6 limitation)', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: DispatchNamespace
+metadata: { name: production }
+spec: {}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: api
+  annotations:
+    cloudflare.com/dispatch-namespace: production
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
         - { name: a, image: ./a.js }
         - { name: b, image: ./b.js }
-`;
-    await expect(lowerYaml(yaml)).rejects.toThrow(/single-container/);
+  strategy: { blueGreen: { autoPromotionEnabled: true } }
+`),
+    ).rejects.toThrow(/single container only/);
   });
 
   it('rejects cross-namespace ConfigMap reference', async () => {

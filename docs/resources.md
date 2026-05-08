@@ -9,11 +9,40 @@ Goal: a single Worker app with config, secrets, and persistent state can be appl
 | Manifest kind | API group | Cloudflare resource | Provider | Notes |
 |---|---|---|---|---|
 | `Namespace` | `v1` | logical scope | (no provider) | Resource ownership label `k1c.io/namespace=<name>`. No Cloudflare object. |
-| `Deployment` | `apps/v1` | Worker script | `worker` | `replicas` ignored; `template.spec.containers[0].image` parsed for the JS bundle reference. Single-container only in v0. |
+| `Deployment` | `apps/v1` | Worker script(s) | `worker` | `replicas` ignored. `template.spec.containers[*].image` is each Worker's JS bundle. Single-container Pods become one Worker; multi-container Pods become N Workers (primary unsuffixed, sidecars suffixed `--<container-name>`) with auto-wired `service` bindings between siblings — see "multi-container Pods" below. |
 | `ConfigMap` | `v1` | Worker `[vars]` (plain bindings) | `configmap` | Mount style: env-var only. `data` keys become `vars` on the binding worker. |
 | `Secret` | `v1` | Worker secret | `secret` | `stringData`/`data` (base64) decoded and uploaded via `PUT /accounts/.../workers/scripts/.../secrets`. Sensitive at rest in CF only. |
 | `R2Bucket` (CRD) | `cloudflare.k1c.io/v1alpha1` | R2 bucket | `r2-bucket` | Bound to a Worker via `Deployment.spec.template.spec.volumes[].r2BucketRef`. |
 | `KVNamespace` (CRD) | `cloudflare.k1c.io/v1alpha1` | KV namespace | `kv-namespace` | Bound via `volumes[].kvNamespaceRef`. |
+
+### Multi-container Pods (v0.1.6)
+
+A Pod with N containers lowers to N Workers, all top-level. The first container is the primary front-door and keeps the unsuffixed script name; subsequent containers are sidecars.
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - { name: gateway, image: ./dist/gateway.js }   # → k1c--default--api
+        - { name: sidecar, image: ./dist/sidecar.js }   # → k1c--default--api--sidecar
+```
+
+| Container | Worker script name | Public reachable | Service bindings |
+|---|---|---|---|
+| `containers[0]` (primary) | `k1c--<ns>--<name>` | yes (Custom Domain etc.) | `env.<sibling-name>` for each other container |
+| `containers[i]` (i > 0) | `k1c--<ns>--<name>--<container-name>` | no — sidecar | same |
+
+Inside a Worker, the sibling is reached as `env.<container-name>.fetch(req)`. Container names follow Kubernetes DNS rules; if the name has a hyphen (e.g. `my-sidecar`), use `env['my-sidecar']`.
+
+**Limitations**:
+- ConfigMap / Secret / volume bindings are per-container (each container's `env` and `volumeMounts` resolve independently).
+- Pod-level annotations (compatibility-date, observability, smart-placement) apply to every container in the Pod.
+- `Rollout` with `cloudflare.com/dispatch-namespace` annotation (canary path) currently rejects multi-container manifests; per-container canary lifecycles are deferred.
 
 ### v0 binding model
 

@@ -109,7 +109,11 @@ export async function lower(
   for (const b of tables.r2Buckets.values()) desired.push(lowerR2Bucket(b));
   for (const kv of tables.kvNamespaces.values()) desired.push(lowerKVNamespace(kv));
   for (const dn of dispatchNamespaces) desired.push(lowerDispatchNamespace(dn));
-  for (const d of deployments) desired.push(await lowerDeployment(d, tables, options));
+  for (const d of deployments) {
+    for (const w of await lowerDeployment(d, tables, options)) {
+      desired.push(w);
+    }
+  }
 
   const emittedStateKvs = new Set<string>();
   for (const r of rollouts) {
@@ -297,8 +301,15 @@ async function lowerDeployment(
   d: Deployment,
   tables: LookupTables,
   options: LowerOptions | undefined,
-): Promise<DesiredResource<WorkerProperties>> {
-  return buildWorkerDesired('Deployment', refOf(d), d.metadata, d.spec.template, tables, options);
+): Promise<ReadonlyArray<DesiredResource<WorkerProperties>>> {
+  return buildWorkerDesireds(
+    'Deployment',
+    refOf(d),
+    d.metadata,
+    d.spec.template,
+    tables,
+    options,
+  );
 }
 
 async function lowerRollout(
@@ -332,9 +343,7 @@ async function lowerRollout(
       });
     }
   }
-  return [
-    await buildWorkerDesired('Rollout', ref, r.metadata, r.spec.template, tables, options),
-  ];
+  return buildWorkerDesireds('Rollout', ref, r.metadata, r.spec.template, tables, options);
 }
 
 async function lowerCanaryRollout(
@@ -381,8 +390,16 @@ async function lowerCanaryRollout(
     });
   }
 
+  // Canary path is single-container in v0.1.6. Multi-container Rollout-with-dispatch
+  // would need per-container canary lifecycles, deferred to a future ADR.
+  if (r.spec.template.spec.containers.length !== 1) {
+    throw new LowerError(
+      `Rollout ${ns}/${name}: canary Rollouts (with cloudflare.com/dispatch-namespace) currently support a single container only; got ${r.spec.template.spec.containers.length}`,
+    );
+  }
+
   // Stable Worker = the user's code, deployed into the dispatch namespace under <name>--stable.
-  const userWorker = await buildWorkerDesired(
+  const userWorkers = await buildWorkerDesireds(
     'Rollout',
     ref,
     r.metadata,
@@ -390,6 +407,7 @@ async function lowerCanaryRollout(
     tables,
     options,
   );
+  const userWorker = userWorkers[0]!;
   const stableRef: ResourceRef = { ...ref, name: `${name}--stable` };
   const stableProperties: WorkerProperties = {
     ...userWorker.properties,
@@ -453,29 +471,125 @@ async function lowerCanaryRollout(
   return results;
 }
 
-async function buildWorkerDesired(
+/**
+ * Lowers a Pod template into one Worker per container. The first container is the
+ * "primary" front-door and keeps the unsuffixed script name (`k1c--<ns>--<name>`); any
+ * additional container becomes a sidecar Worker named `k1c--<ns>--<name>--<container>`.
+ *
+ * When the Pod has multiple containers, every Worker gets `service` bindings to all of
+ * its siblings, addressable inside the Worker as `env.<container-name>.fetch(req)`.
+ * This preserves the k8s "containers in a Pod talk to each other" mental model on top
+ * of Cloudflare's flat Worker namespace.
+ */
+async function buildWorkerDesireds(
   kind: 'Deployment' | 'Rollout',
   ref: ResourceRef,
   meta: ObjectMeta,
   template: PodTemplateSpec,
   tables: LookupTables,
   options: LowerOptions | undefined,
-): Promise<DesiredResource<WorkerProperties>> {
+): Promise<ReadonlyArray<DesiredResource<WorkerProperties>>> {
   const ns = meta.namespace ?? 'default';
   const name = meta.name;
-  const annotations = meta.annotations ?? {};
-
   const containers = template.spec.containers;
-  if (containers.length !== 1) {
-    throw new LowerError(
-      `${kind} ${ns}/${name}: only single-container Pods are supported in v0 (got ${containers.length})`,
-    );
+  if (containers.length === 0) {
+    throw new LowerError(`${kind} ${ns}/${name}: at least one container is required`);
   }
-  const container = containers[0]!;
 
+  const baseScriptName = `k1c--${ns}--${name}`;
+  const scriptNames = containers.map((c, i) =>
+    i === 0 ? baseScriptName : `${baseScriptName}--${c.name}`,
+  );
+
+  const results: DesiredResource<WorkerProperties>[] = [];
+  for (let i = 0; i < containers.length; i += 1) {
+    const container = containers[i]!;
+    const scriptName = scriptNames[i]!;
+    const containerRef: ResourceRef =
+      i === 0 ? ref : { ...ref, name: `${name}--${container.name}` };
+    const containerLabel = i === 0 ? `${ns}/${name}` : `${ns}/${name}--${container.name}`;
+
+    const built = await buildContainerProperties(
+      kind,
+      ns,
+      name,
+      scriptName,
+      container,
+      template,
+      meta.annotations ?? {},
+      tables,
+    );
+
+    // Auto-wire sibling service bindings for multi-container Pods.
+    let bindings = built.bindings;
+    if (containers.length > 1) {
+      const siblings: WorkerBinding[] = [];
+      for (let j = 0; j < containers.length; j += 1) {
+        if (j === i) continue;
+        siblings.push({
+          type: 'service',
+          name: containers[j]!.name,
+          service: scriptNames[j]!,
+        });
+      }
+      bindings = [...bindings, ...siblings];
+    }
+
+    const baseProperties: WorkerProperties = {
+      scriptName,
+      entrypoint: container.image,
+      compatibilityDate: built.compatibilityDate,
+      ...(built.compatibilityFlags !== undefined
+        ? { compatibilityFlags: built.compatibilityFlags }
+        : {}),
+      ...(Object.keys(built.vars).length > 0 ? { vars: built.vars } : {}),
+      ...(Object.keys(built.secrets).length > 0 ? { secrets: built.secrets } : {}),
+      ...(bindings.length > 0 ? { bindings } : {}),
+      ...(built.observability !== undefined
+        ? { observability: built.observability }
+        : {}),
+      ...(built.placement !== undefined ? { placement: built.placement } : {}),
+    };
+    const properties: WorkerProperties = {
+      ...baseProperties,
+      entrypointHash: await hashEntrypoint(baseProperties, options),
+    };
+    results.push({
+      resourceType: 'Worker',
+      ref: containerRef,
+      label: containerLabel,
+      properties,
+      ...(built.dependsOn.length > 0 ? { dependsOn: built.dependsOn } : {}),
+    });
+  }
+  return results;
+}
+
+interface ContainerProperties {
+  readonly vars: Record<string, string>;
+  readonly secrets: Record<string, string>;
+  readonly bindings: WorkerBinding[];
+  readonly dependsOn: ResourceRef[];
+  readonly compatibilityDate: string;
+  readonly compatibilityFlags: ReadonlyArray<string> | undefined;
+  readonly observability: { readonly enabled: boolean } | undefined;
+  readonly placement: { readonly mode: 'smart' } | undefined;
+}
+
+async function buildContainerProperties(
+  kind: 'Deployment' | 'Rollout',
+  ns: string,
+  name: string,
+  scriptName: string,
+  container: PodTemplateSpec['spec']['containers'][number],
+  template: PodTemplateSpec,
+  annotations: Readonly<Record<string, string>>,
+  tables: LookupTables,
+): Promise<ContainerProperties> {
   const dependsOn: ResourceRef[] = [];
   const vars: Record<string, string> = {};
   const secrets: Record<string, string> = {};
+  const ctxLabel = `${kind} ${ns}/${name}/${container.name}`;
 
   for (const env of container.env ?? []) {
     if (env.value !== undefined) {
@@ -485,7 +599,7 @@ async function buildWorkerDesired(
     const valueFrom = env.valueFrom;
     if (!valueFrom) {
       throw new LowerError(
-        `${kind} ${ns}/${name}: env "${env.name}" has neither value nor valueFrom`,
+        `${ctxLabel}: env "${env.name}" has neither value nor valueFrom`,
       );
     }
     if (valueFrom.configMapKeyRef) {
@@ -493,13 +607,13 @@ async function buildWorkerDesired(
       const cm = tables.configMaps.get(`${ns}/${cmRef.name}`);
       if (!cm) {
         throw new LowerError(
-          `${kind} ${ns}/${name}: ConfigMap "${cmRef.name}" not found in namespace "${ns}" (env ${env.name})`,
+          `${ctxLabel}: ConfigMap "${cmRef.name}" not found in namespace "${ns}" (env ${env.name})`,
         );
       }
       const value = cm.data?.[cmRef.key];
       if (value === undefined) {
         throw new LowerError(
-          `${kind} ${ns}/${name}: ConfigMap "${cmRef.name}" has no key "${cmRef.key}"`,
+          `${ctxLabel}: ConfigMap "${cmRef.name}" has no key "${cmRef.key}"`,
         );
       }
       vars[env.name] = value;
@@ -509,20 +623,20 @@ async function buildWorkerDesired(
       const sec = tables.secrets.get(`${ns}/${sRef.name}`);
       if (!sec) {
         throw new LowerError(
-          `${kind} ${ns}/${name}: Secret "${sRef.name}" not found in namespace "${ns}" (env ${env.name})`,
+          `${ctxLabel}: Secret "${sRef.name}" not found in namespace "${ns}" (env ${env.name})`,
         );
       }
       const value = secretValue(sec, sRef.key);
       if (value === undefined) {
         throw new LowerError(
-          `${kind} ${ns}/${name}: Secret "${sRef.name}" has no key "${sRef.key}"`,
+          `${ctxLabel}: Secret "${sRef.name}" has no key "${sRef.key}"`,
         );
       }
       secrets[env.name] = value;
       pushUnique(dependsOn, refOf(sec));
     } else {
       throw new LowerError(
-        `${kind} ${ns}/${name}: env "${env.name}" valueFrom must specify configMapKeyRef or secretKeyRef`,
+        `${ctxLabel}: env "${env.name}" valueFrom must specify configMapKeyRef or secretKeyRef`,
       );
     }
   }
@@ -534,14 +648,14 @@ async function buildWorkerDesired(
     const vol = volumesByName.get(mount.name);
     if (!vol) {
       throw new LowerError(
-        `${kind} ${ns}/${name}: volumeMount "${mount.name}" has no matching volume`,
+        `${ctxLabel}: volumeMount "${mount.name}" has no matching volume`,
       );
     }
     if (vol.r2BucketRef) {
       const b = tables.r2Buckets.get(`${ns}/${vol.r2BucketRef.name}`);
       if (!b) {
         throw new LowerError(
-          `${kind} ${ns}/${name}: R2Bucket "${vol.r2BucketRef.name}" not found in namespace "${ns}"`,
+          `${ctxLabel}: R2Bucket "${vol.r2BucketRef.name}" not found in namespace "${ns}"`,
         );
       }
       bindings.push({
@@ -554,7 +668,7 @@ async function buildWorkerDesired(
       const kv = tables.kvNamespaces.get(`${ns}/${vol.kvNamespaceRef.name}`);
       if (!kv) {
         throw new LowerError(
-          `${kind} ${ns}/${name}: KVNamespace "${vol.kvNamespaceRef.name}" not found in namespace "${ns}"`,
+          `${ctxLabel}: KVNamespace "${vol.kvNamespaceRef.name}" not found in namespace "${ns}"`,
         );
       }
       bindings.push({
@@ -565,47 +679,40 @@ async function buildWorkerDesired(
       pushUnique(dependsOn, refOf(kv));
     } else {
       throw new LowerError(
-        `${kind} ${ns}/${name}: volume "${vol.name}" has no recognised reference (r2BucketRef or kvNamespaceRef)`,
+        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef or kvNamespaceRef)`,
       );
     }
   }
 
+  // Annotations are pod-level: every container in the Pod inherits compatibility-date,
+  // observability, smart-placement, etc. This matches kubectl semantics.
   const flagsAnno = annotations['cloudflare.com/compatibility-flags'];
-  const flags = flagsAnno
+  const compatibilityFlags = flagsAnno
     ? flagsAnno
         .split(',')
         .map((s) => s.trim())
         .filter((s) => s.length > 0)
     : undefined;
-
-  const baseProperties: WorkerProperties = {
-    scriptName: `k1c--${ns}--${name}`,
-    entrypoint: container.image,
-    compatibilityDate:
-      annotations['cloudflare.com/compatibility-date'] ?? DEFAULT_COMPATIBILITY_DATE,
-    ...(flags !== undefined ? { compatibilityFlags: flags } : {}),
-    ...(Object.keys(vars).length > 0 ? { vars } : {}),
-    ...(Object.keys(secrets).length > 0 ? { secrets } : {}),
-    ...(bindings.length > 0 ? { bindings } : {}),
-    ...(annotations['cloudflare.com/observability'] === 'enabled'
-      ? { observability: { enabled: true } }
-      : {}),
-    ...(annotations['cloudflare.com/smart-placement'] === 'smart'
-      ? { placement: { mode: 'smart' as const } }
-      : {}),
-  };
-
-  const properties: WorkerProperties = {
-    ...baseProperties,
-    entrypointHash: await hashEntrypoint(baseProperties, options),
-  };
+  // scriptName is parameter-only so the function compiles cleanly without referencing it
+  // outside the result; the caller wires it into WorkerProperties.
+  void scriptName;
 
   return {
-    resourceType: 'Worker',
-    ref,
-    label: `${ns}/${name}`,
-    properties,
-    ...(dependsOn.length > 0 ? { dependsOn } : {}),
+    vars,
+    secrets,
+    bindings,
+    dependsOn,
+    compatibilityDate:
+      annotations['cloudflare.com/compatibility-date'] ?? DEFAULT_COMPATIBILITY_DATE,
+    compatibilityFlags,
+    observability:
+      annotations['cloudflare.com/observability'] === 'enabled'
+        ? { enabled: true }
+        : undefined,
+    placement:
+      annotations['cloudflare.com/smart-placement'] === 'smart'
+        ? { mode: 'smart' as const }
+        : undefined,
   };
 }
 
