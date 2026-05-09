@@ -2,8 +2,12 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": false,
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    // Pin rootDir so emit lands at `dist/cli/main.js`, not `dist/src/cli/main.js`.
+    // The base tsconfig drops rootDir so it can also include `tests/**` for
+    // typecheck — but the build only takes `src/**`, so we re-pin it here.
+    "rootDir": "src"
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["dist", "node_modules", "src/**/*.test.ts"]
+  "exclude": ["dist", "node_modules", "src/**/*.test.ts", "tests"]
 }

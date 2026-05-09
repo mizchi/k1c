@@ -6,6 +6,25 @@ standard k8s resource carrying the label `k1c.io/managed=true`, then
 forwards changes to Cloudflare via the same lower / plan / apply core
 the CLI uses.
 
+## Image format
+
+The image is published to GHCR as an **OCI v1.1 multi-arch image**
+(`linux/amd64` + `linux/arm64`) on every release-please tag.
+
+  ghcr.io/mizchi/k1c-operator:latest
+  ghcr.io/mizchi/k1c-operator:0.9.0
+  ghcr.io/mizchi/k1c-operator:v0.9.0
+
+OCI annotations carry source / revision / version, plus the
+`docker/build-push-action` SLSA provenance + SBOM attestations are
+attached so consumers can verify the image came from this workflow run.
+
+A wasm-component build (WASI 0.2 + `componentize-js`, packaged as an
+OCI artifact for runwasi / containerd-shim-wasmtime) is on the roadmap
+once `@kubernetes/client-node` has a wasm-friendly path; the same source
+tree compiles to both targets so wasm runtimes can drop in without a
+fork.
+
 ## Architecture
 
 ```

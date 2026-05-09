@@ -1,0 +1,10 @@
+node_modules
+dist
+.git
+.github
+tests
+**/*.test.ts
+**/*.test.js
+*.log
+.DS_Store
+.k1c
