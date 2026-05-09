@@ -7,6 +7,9 @@ import type {
   AccessPolicy,
   AccessRule,
   CacheRule,
+  TransformRule,
+  WAFCustomRule,
+  RateLimitRule,
   ConfigMapResource,
   CronJob,
   D1Database,
@@ -50,6 +53,9 @@ import type {
   AccessRuleWire,
 } from '../providers/access-application.ts';
 import type { CacheRuleProperties } from '../providers/cache-rule.ts';
+import type { TransformRuleProperties } from '../providers/transform-rule.ts';
+import type { WAFCustomRuleProperties } from '../providers/waf-custom-rule.ts';
+import type { RateLimitRuleProperties } from '../providers/rate-limit-rule.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -124,6 +130,9 @@ export async function lower(
   const accessApplications: AccessApplication[] = [];
   const accessPolicies: AccessPolicy[] = [];
   const cacheRules: CacheRule[] = [];
+  const transformRules: TransformRule[] = [];
+  const wafCustomRules: WAFCustomRule[] = [];
+  const rateLimitRules: RateLimitRule[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -192,6 +201,15 @@ export async function lower(
         break;
       case 'CacheRule':
         cacheRules.push(r);
+        break;
+      case 'TransformRule':
+        transformRules.push(r);
+        break;
+      case 'WAFCustomRule':
+        wafCustomRules.push(r);
+        break;
+      case 'RateLimitRule':
+        rateLimitRules.push(r);
         break;
     }
   }
@@ -270,7 +288,71 @@ export async function lower(
     desired.push(lowerCacheRule(cr));
   }
 
+  for (const tr of transformRules) {
+    desired.push(lowerTransformRule(tr));
+  }
+
+  for (const wr of wafCustomRules) {
+    desired.push(lowerWAFCustomRule(wr));
+  }
+
+  for (const rr of rateLimitRules) {
+    desired.push(lowerRateLimitRule(rr));
+  }
+
   return { desired, warnings };
+}
+
+function lowerTransformRule(tr: TransformRule): DesiredResource<TransformRuleProperties> {
+  const ns = tr.metadata.namespace ?? 'default';
+  const name = tr.metadata.name;
+  return {
+    resourceType: 'TransformRule',
+    ref: refOf(tr),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: tr.spec.zoneId,
+      expression: tr.spec.expression,
+      enabled: tr.spec.enabled ?? true,
+      headers: { ...tr.spec.headers },
+      ...(tr.spec.description !== undefined ? { description: tr.spec.description } : {}),
+    },
+  };
+}
+
+function lowerWAFCustomRule(wr: WAFCustomRule): DesiredResource<WAFCustomRuleProperties> {
+  const ns = wr.metadata.namespace ?? 'default';
+  const name = wr.metadata.name;
+  return {
+    resourceType: 'WAFCustomRule',
+    ref: refOf(wr),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: wr.spec.zoneId,
+      expression: wr.spec.expression,
+      action: wr.spec.action,
+      enabled: wr.spec.enabled ?? true,
+      ...(wr.spec.description !== undefined ? { description: wr.spec.description } : {}),
+    },
+  };
+}
+
+function lowerRateLimitRule(rr: RateLimitRule): DesiredResource<RateLimitRuleProperties> {
+  const ns = rr.metadata.namespace ?? 'default';
+  const name = rr.metadata.name;
+  return {
+    resourceType: 'RateLimitRule',
+    ref: refOf(rr),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: rr.spec.zoneId,
+      expression: rr.spec.expression,
+      action: rr.spec.action,
+      enabled: rr.spec.enabled ?? true,
+      ratelimit: { ...rr.spec.ratelimit, characteristics: [...rr.spec.ratelimit.characteristics] },
+      ...(rr.spec.description !== undefined ? { description: rr.spec.description } : {}),
+    },
+  };
 }
 
 function lowerAccessPolicy(

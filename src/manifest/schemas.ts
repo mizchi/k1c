@@ -408,6 +408,60 @@ export const cacheRuleSchema = z.object({
   }),
 });
 
+const transformHeaderActionSchema = z.object({
+  operation: z.enum(['set', 'add', 'remove']),
+  value: z.string().optional(),
+});
+
+export const transformRuleSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('TransformRule'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    expression: z.string().min(1),
+    enabled: z.boolean().optional(),
+    headers: z.record(transformHeaderActionSchema),
+    description: z.string().optional(),
+  }),
+});
+
+export const wafCustomRuleSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('WAFCustomRule'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    expression: z.string().min(1),
+    action: z.enum(['block', 'challenge', 'managed_challenge', 'js_challenge', 'log', 'skip']),
+    enabled: z.boolean().optional(),
+    description: z.string().optional(),
+  }),
+});
+
+const ratelimitConfigSpecSchema = z.object({
+  characteristics: z.array(z.string()).min(1),
+  period: z.number().int().positive(),
+  requestsPerPeriod: z.number().int().positive(),
+  mitigationTimeout: z.number().int().nonnegative().optional(),
+  countingExpression: z.string().optional(),
+  requestsToOrigin: z.boolean().optional(),
+});
+
+export const rateLimitRuleSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('RateLimitRule'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    expression: z.string().min(1),
+    action: z.enum(['block', 'managed_challenge', 'js_challenge', 'log']),
+    enabled: z.boolean().optional(),
+    ratelimit: ratelimitConfigSpecSchema,
+    description: z.string().optional(),
+  }),
+});
+
 const accessApplicationSpecSchema = z
   .object({
     domain: z.string().min(1),
@@ -486,4 +540,7 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   accessApplicationSchema,
   accessPolicySchema,
   cacheRuleSchema,
+  transformRuleSchema,
+  wafCustomRuleSchema,
+  rateLimitRuleSchema,
 ]);

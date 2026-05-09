@@ -1,0 +1,43 @@
+# Zone-scoped Ruleset family. All four CRDs (Cache / Transform / WAF / RateLimit)
+# share the same RMW pattern: each k1c rule lives inside the zone's per-phase
+# entrypoint ruleset, and ownership is tracked in the description field via
+# the `k1c.io/managed=<label>` marker.
+#
+# Apply with: K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f examples/zone-rules.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TransformRule
+metadata: { name: add-internal-auth }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  expression: '(http.request.uri.path matches "^/api/.*$")'
+  headers:
+    X-Internal-Auth:
+      operation: set
+      value: 'shared-secret-replace-me'
+    X-Forwarded-For:
+      operation: remove
+  description: 'add internal auth header on /api routes'
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WAFCustomRule
+metadata: { name: block-known-bots }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  expression: '(cf.client.bot)'
+  action: block
+  description: 'block requests classified as known bots'
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: RateLimitRule
+metadata: { name: api-throttle }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  expression: '(http.request.uri.path matches "^/api/.*$")'
+  action: block
+  ratelimit:
+    characteristics: [ip.src, cf.colo.id]
+    period: 60
+    requestsPerPeriod: 100
+    mitigationTimeout: 600
+  description: '100 req/min per IP per colo on /api'

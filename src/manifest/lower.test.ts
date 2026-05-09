@@ -1937,6 +1937,67 @@ spec:
     expect((result.desired[0]!.properties as { enabled: boolean }).enabled).toBe(false);
   });
 
+  it('lowers TransformRule with header set + remove operations', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TransformRule
+metadata: { name: api-headers }
+spec:
+  zoneId: zone-abc
+  expression: '(http.request.uri.path matches "^/api/.*$")'
+  headers:
+    X-Internal-Auth: { operation: set, value: 'shhh' }
+    X-Forwarded-For: { operation: remove }
+`);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('TransformRule');
+    expect((d.properties as { enabled: boolean }).enabled).toBe(true);
+    expect((d.properties as { headers: Record<string, unknown> }).headers).toEqual({
+      'X-Internal-Auth': { operation: 'set', value: 'shhh' },
+      'X-Forwarded-For': { operation: 'remove' },
+    });
+  });
+
+  it('lowers WAFCustomRule with action=block', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WAFCustomRule
+metadata: { name: block-bots }
+spec:
+  zoneId: zone-abc
+  expression: '(cf.client.bot)'
+  action: block
+`);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('WAFCustomRule');
+    expect(d.properties).toMatchObject({ action: 'block', enabled: true });
+  });
+
+  it('lowers RateLimitRule preserving ratelimit characteristics + threshold', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: RateLimitRule
+metadata: { name: api-throttle }
+spec:
+  zoneId: zone-abc
+  expression: '(http.request.uri.path matches "^/api/.*$")'
+  action: block
+  ratelimit:
+    characteristics: [ip.src, cf.colo.id]
+    period: 60
+    requestsPerPeriod: 100
+    mitigationTimeout: 600
+`);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('RateLimitRule');
+    expect((d.properties as { ratelimit: unknown }).ratelimit).toEqual({
+      characteristics: ['ip.src', 'cf.colo.id'],
+      period: 60,
+      requestsPerPeriod: 100,
+      mitigationTimeout: 600,
+    });
+  });
+
   it('hashes the entrypoint content into Worker.entrypointHash', async () => {
     const { resources } = parseManifest(`
 apiVersion: apps/v1

@@ -195,6 +195,9 @@ function deletePriority(resourceType: string): number {
     case 'Workflow':
     case 'AccessApplication':
     case 'CacheRule':
+    case 'TransformRule':
+    case 'WAFCustomRule':
+    case 'RateLimitRule':
       return 0;
     case 'Worker':
       return 1;

@@ -88,13 +88,17 @@ These are zone- or account-level and feel awkward to express as Pod-shaped
 manifests. Likely better as their own top-level k1c CRD group rather than
 dragged into `Deployment`.
 
-- ~~**Cache Rules**~~ — shipped as `CacheRule` CRD. Each k1c CacheRule maps to
-  one rule inside the zone's `http_request_cache_settings` phase ruleset;
-  ownership is tracked via the rule's description (`k1c.io/managed=<label>`)
-  and non-k1c rules in the same ruleset are preserved across mutations.
-- **Transform Rules** (zone-scoped, request / response rewrites).
-- **WAF Custom Rules** (zone-scoped).
-- **Rate Limiting Rules**.
+- ~~**Cache Rules**~~ — shipped as `CacheRule` CRD.
+- ~~**Transform Rules**~~ — shipped as `TransformRule` CRD (request header
+  rewrites in `http_request_late_transform`). URI rewrites and response header
+  rewrites are separate phases; adding them is an additional CRD per phase,
+  not an extension of this one.
+- ~~**WAF Custom Rules**~~ — shipped as `WAFCustomRule` CRD (block / challenge /
+  log in `http_request_firewall_custom`). Cloudflare-managed rule groups live
+  in a different phase and are not in scope.
+- ~~**Rate Limiting Rules**~~ — shipped as `RateLimitRule` CRD (in `http_ratelimit`).
+  All four ruleset CRDs share `_ruleset-shared.ts` for the read-modify-write
+  plumbing.
 - **Page Rules** (legacy).
 - **Email Routing** rules.
 

@@ -53,6 +53,9 @@ $ K1C_ACCOUNT_ID=...  CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f manifest.yaml
 | `AccessApplication` (CRD, `self_hosted` / `ssh` / `vnc` / `bookmark`) | Cloudflare Access app with inline or referenced policies (bookmark = App Launcher tile) | working |
 | `AccessPolicy` (CRD) | reusable account-level Access policy (referenced by `policies[].ref`) | working |
 | `CacheRule` (CRD) | Cache Rule inside the zone's cache_settings phase ruleset | working |
+| `TransformRule` (CRD) | request header rewrite inside the late_transform phase ruleset | working |
+| `WAFCustomRule` (CRD) | block / challenge / log inside the firewall_custom phase ruleset | working |
+| `RateLimitRule` (CRD) | request-rate threshold inside the http_ratelimit phase ruleset | working |
 | `CustomHostname` | — | not implemented (see [`TODO.md`](TODO.md)) |
 
 See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,

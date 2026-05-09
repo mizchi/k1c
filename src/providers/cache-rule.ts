@@ -9,6 +9,13 @@ import type {
 } from './types.ts';
 import { NotFound } from './types.ts';
 import { toProviderError } from './errors.ts';
+import {
+  buildDescription,
+  getPhaseRules,
+  parseDescription,
+  putPhaseRules,
+} from './_ruleset-shared.ts';
+import type { CFRule } from './_ruleset-shared.ts';
 
 export type CacheRuleTtlMode = 'respect_origin' | 'bypass_by_default' | 'override_origin';
 
@@ -43,48 +50,11 @@ export const cacheRulePropertiesSchema: z.ZodType<CacheRuleProperties> = z.objec
 });
 
 const PHASE = 'http_request_cache_settings' as const;
-const MARKER_PREFIX = 'k1c.io/managed=';
 
 interface CFCacheActionParameters {
   readonly cache?: boolean;
   readonly edge_ttl?: { mode: CacheRuleTtlMode; default?: number };
   readonly browser_ttl?: { mode: CacheRuleTtlMode; default?: number };
-}
-
-interface CFRule {
-  readonly id?: string;
-  readonly action?: string;
-  readonly action_parameters?: CFCacheActionParameters;
-  readonly description?: string;
-  readonly enabled?: boolean;
-  readonly expression?: string;
-}
-
-interface CFRuleset {
-  readonly id?: string;
-  readonly rules?: ReadonlyArray<CFRule>;
-}
-
-function buildDescription(label: string, userDescription: string | undefined): string {
-  if (userDescription === undefined || userDescription.length === 0) {
-    return `${MARKER_PREFIX}${label}`;
-  }
-  return `${MARKER_PREFIX}${label}: ${userDescription}`;
-}
-
-interface ParsedDescription {
-  readonly label: string;
-  readonly userDescription?: string;
-}
-
-function parseDescription(description: string | undefined): ParsedDescription | null {
-  if (!description?.startsWith(MARKER_PREFIX)) return null;
-  const rest = description.slice(MARKER_PREFIX.length);
-  const colon = rest.indexOf(':');
-  if (colon < 0) return { label: rest.trim() };
-  const label = rest.slice(0, colon).trim();
-  const userDesc = rest.slice(colon + 1).trim();
-  return userDesc.length > 0 ? { label, userDescription: userDesc } : { label };
 }
 
 function ruleFromProps(props: CacheRuleProperties, label: string, id?: string): CFRule {
@@ -113,7 +83,7 @@ function ruleFromProps(props: CacheRuleProperties, label: string, id?: string): 
 
 function rulePropsFromCF(rule: CFRule, zoneId: string): CacheRuleProperties | null {
   if (!rule.expression || rule.action !== 'set_cache_settings') return null;
-  const ap = rule.action_parameters ?? {};
+  const ap = (rule.action_parameters ?? {}) as CFCacheActionParameters;
   const parsed = parseDescription(rule.description);
   return {
     zoneId,
@@ -142,34 +112,6 @@ function rulePropsFromCF(rule: CFRule, zoneId: string): CacheRuleProperties | nu
   };
 }
 
-async function getPhaseRules(ctx: ProviderContext, zoneId: string): Promise<CFRule[]> {
-  try {
-    const rs = (await ctx.cloudflare.rulesets.phases.get(PHASE, {
-      zone_id: zoneId,
-    })) as CFRuleset;
-    return [...(rs.rules ?? [])];
-  } catch (raw) {
-    const err = toProviderError(raw);
-    if (err.code === 'NotFound') return [];
-    throw err;
-  }
-}
-
-async function putPhaseRules(
-  ctx: ProviderContext,
-  zoneId: string,
-  rules: ReadonlyArray<CFRule>,
-): Promise<CFRule[]> {
-  // The PUT requires `rules` (not full ruleset object). The SDK accepts a typed
-  // discriminated union but Cache Rules are a single arm of it; cast through
-  // unknown to silence the over-eager param type.
-  const rs = (await ctx.cloudflare.rulesets.phases.update(PHASE, {
-    zone_id: zoneId,
-    rules: rules as unknown as never,
-  })) as CFRuleset;
-  return [...(rs.rules ?? [])];
-}
-
 /**
  * Cache Rules live inside the per-zone, per-phase entrypoint ruleset. A k1c
  * `CacheRule` resource maps to exactly one rule inside that shared ruleset;
@@ -187,7 +129,7 @@ export const cacheRuleProvider: CloudflareResourceProvider<CacheRuleProperties> 
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     if (ctx.zoneId === undefined) return;
-    const rules = await getPhaseRules(ctx, ctx.zoneId);
+    const rules = await getPhaseRules(ctx, ctx.zoneId, PHASE);
     for (const rule of rules) {
       if (rule.action !== 'set_cache_settings') continue;
       const parsed = parseDescription(rule.description);
@@ -198,7 +140,7 @@ export const cacheRuleProvider: CloudflareResourceProvider<CacheRuleProperties> 
 
   async read(ctx, nativeId) {
     if (ctx.zoneId === undefined) return NotFound;
-    const rules = await getPhaseRules(ctx, ctx.zoneId);
+    const rules = await getPhaseRules(ctx, ctx.zoneId, PHASE);
     const rule = rules.find((r) => r.id === nativeId);
     if (!rule) return NotFound;
     const props = rulePropsFromCF(rule, ctx.zoneId);
@@ -208,9 +150,9 @@ export const cacheRuleProvider: CloudflareResourceProvider<CacheRuleProperties> 
 
   async create(ctx, label, desired): Promise<CreateResult> {
     try {
-      const existing = await getPhaseRules(ctx, desired.zoneId);
+      const existing = await getPhaseRules(ctx, desired.zoneId, PHASE);
       const newRule = ruleFromProps(desired, label);
-      const updated = await putPhaseRules(ctx, desired.zoneId, [...existing, newRule]);
+      const updated = await putPhaseRules(ctx, desired.zoneId, PHASE, [...existing, newRule]);
       // Find the newly inserted rule by description match (Cloudflare assigns the id).
       const targetDesc = newRule.description!;
       const created = updated.find((r) => r.description === targetDesc);
@@ -229,7 +171,7 @@ export const cacheRuleProvider: CloudflareResourceProvider<CacheRuleProperties> 
 
   async update(ctx, nativeId, _prior, desired): Promise<UpdateResult> {
     try {
-      const existing = await getPhaseRules(ctx, desired.zoneId);
+      const existing = await getPhaseRules(ctx, desired.zoneId, PHASE);
       const idx = existing.findIndex((r) => r.id === nativeId);
       if (idx < 0) {
         throw {
@@ -242,7 +184,7 @@ export const cacheRuleProvider: CloudflareResourceProvider<CacheRuleProperties> 
       // Keep the same id so Cloudflare patches the existing rule rather than appending.
       const label = parseDescription(existing[idx]!.description)?.label ?? '';
       replaced[idx] = ruleFromProps(desired, label, nativeId);
-      const updated = await putPhaseRules(ctx, desired.zoneId, replaced);
+      const updated = await putPhaseRules(ctx, desired.zoneId, PHASE, replaced);
       const next = updated.find((r) => r.id === nativeId) ?? updated[idx];
       return { kind: 'sync', nativeId: next?.id ?? nativeId, properties: desired };
     } catch (raw) {
@@ -259,13 +201,13 @@ export const cacheRuleProvider: CloudflareResourceProvider<CacheRuleProperties> 
       };
     }
     try {
-      const existing = await getPhaseRules(ctx, ctx.zoneId);
+      const existing = await getPhaseRules(ctx, ctx.zoneId, PHASE);
       const filtered = existing.filter((r) => r.id !== nativeId);
       if (filtered.length === existing.length) {
         // Already gone; treat as success.
         return { kind: 'sync' };
       }
-      await putPhaseRules(ctx, ctx.zoneId, filtered);
+      await putPhaseRules(ctx, ctx.zoneId, PHASE, filtered);
       return { kind: 'sync' };
     } catch (raw) {
       throw toProviderError(raw);

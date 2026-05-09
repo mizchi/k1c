@@ -17,6 +17,9 @@ import { workerRouteProvider } from './worker-route.ts';
 import { accessApplicationProvider } from './access-application.ts';
 import { cacheRuleProvider } from './cache-rule.ts';
 import { accessPolicyProvider } from './access-policy.ts';
+import { transformRuleProvider } from './transform-rule.ts';
+import { wafCustomRuleProvider } from './waf-custom-rule.ts';
+import { rateLimitRuleProvider } from './rate-limit-rule.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -38,6 +41,9 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(accessApplicationProvider);
   r.register(cacheRuleProvider);
   r.register(accessPolicyProvider);
+  r.register(transformRuleProvider);
+  r.register(wafCustomRuleProvider);
+  r.register(rateLimitRuleProvider);
   return r;
 }
 

@@ -394,6 +394,75 @@ export interface CacheRuleSpec {
 
 export type CacheRule = BaseResource<'CacheRule', 'cloudflare.k1c.io/v1alpha1', CacheRuleSpec>;
 
+export type TransformHeaderOperation = 'set' | 'add' | 'remove';
+
+export interface TransformHeaderAction {
+  readonly operation: TransformHeaderOperation;
+  readonly value?: string;
+}
+
+export interface TransformRuleSpec {
+  readonly zoneId: string;
+  readonly expression: string;
+  readonly enabled?: boolean;
+  readonly headers: Readonly<Record<string, TransformHeaderAction>>;
+  readonly description?: string;
+}
+
+export type TransformRule = BaseResource<
+  'TransformRule',
+  'cloudflare.k1c.io/v1alpha1',
+  TransformRuleSpec
+>;
+
+export type WAFAction =
+  | 'block'
+  | 'challenge'
+  | 'managed_challenge'
+  | 'js_challenge'
+  | 'log'
+  | 'skip';
+
+export interface WAFCustomRuleSpec {
+  readonly zoneId: string;
+  readonly expression: string;
+  readonly action: WAFAction;
+  readonly enabled?: boolean;
+  readonly description?: string;
+}
+
+export type WAFCustomRule = BaseResource<
+  'WAFCustomRule',
+  'cloudflare.k1c.io/v1alpha1',
+  WAFCustomRuleSpec
+>;
+
+export type RateLimitAction = 'block' | 'managed_challenge' | 'js_challenge' | 'log';
+
+export interface RateLimitConfig {
+  readonly characteristics: ReadonlyArray<string>;
+  readonly period: number;
+  readonly requestsPerPeriod: number;
+  readonly mitigationTimeout?: number;
+  readonly countingExpression?: string;
+  readonly requestsToOrigin?: boolean;
+}
+
+export interface RateLimitRuleSpec {
+  readonly zoneId: string;
+  readonly expression: string;
+  readonly action: RateLimitAction;
+  readonly enabled?: boolean;
+  readonly ratelimit: RateLimitConfig;
+  readonly description?: string;
+}
+
+export type RateLimitRule = BaseResource<
+  'RateLimitRule',
+  'cloudflare.k1c.io/v1alpha1',
+  RateLimitRuleSpec
+>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -416,7 +485,10 @@ export type K1cResource =
   | Ingress
   | AccessApplication
   | AccessPolicy
-  | CacheRule;
+  | CacheRule
+  | TransformRule
+  | WAFCustomRule
+  | RateLimitRule;
 
 export type ResourceKind = K1cResource['kind'];
 
