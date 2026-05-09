@@ -84,6 +84,22 @@ $ kubectl get r2bucket media -o jsonpath='{.status.conditions}' | jq
 A `Ready=False` / `reason=ReconcileFailed` condition includes the
 underlying provider error in `message` (e.g. `[NotFound] 404 ...`).
 
+### Metrics + dashboard
+
+The operator exposes `/metrics` (Prometheus 0.0.4 text format),
+`/healthz`, and `/readyz` on port 9090. The helm chart can emit a
+`monitoring.coreos.com/v1 ServiceMonitor` for kube-prometheus
+auto-discovery — set `serviceMonitor.enabled=true`. A starter
+Grafana dashboard sits at
+[`grafana-dashboard.json`](grafana-dashboard.json) — import via
+`Grafana → Dashboards → Import`. Panels:
+
+  * Up / Leader / Managed-resource counts
+  * Reconcile pass outcome (1m rate, by `outcome`)
+  * Per-op result (1m rate, by `result`)
+  * Watch events (1m rate, by `kind`)
+  * Reconcile duration (avg over 1m)
+
 ## Install
 
 ```sh

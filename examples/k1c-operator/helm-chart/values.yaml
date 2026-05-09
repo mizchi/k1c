@@ -44,6 +44,21 @@ metricsService:
   enabled: true
   type: ClusterIP
 
+# ServiceMonitor for kube-prometheus / prometheus-operator. Only
+# rendered if your cluster has the `monitoring.coreos.com` group
+# registered. Off by default so plain installs don't ship dangling
+# resources.
+serviceMonitor:
+  enabled: false
+  # Empty = uses release namespace; some kube-prometheus deploys
+  # require a specific monitoring namespace.
+  namespace: ""
+  interval: 30s
+  scrapeTimeout: 10s
+  # Extra labels for the Prometheus operator's `serviceMonitorSelector`
+  # (commonly `release: kube-prometheus`).
+  additionalLabels: {}
+
 resources:
   requests:
     cpu: 50m
