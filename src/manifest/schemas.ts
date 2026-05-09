@@ -27,18 +27,14 @@ const volumeMountSchema = z.object({
   mountPath: z.string(),
 });
 
+const csiVolumeSchema = z.object({
+  driver: z.string().min(1),
+  volumeAttributes: z.record(z.string()).optional(),
+});
+
 const volumeSchema = z.object({
-  name: z.string(),
-  r2BucketRef: z.object({ name: z.string() }).optional(),
-  kvNamespaceRef: z.object({ name: z.string() }).optional(),
-  serviceRef: z.object({ name: z.string() }).optional(),
-  hyperdriveRef: z.object({ name: z.string() }).optional(),
-  d1DatabaseRef: z.object({ name: z.string() }).optional(),
-  queueRef: z.object({ name: z.string() }).optional(),
-  vectorizeRef: z.object({ name: z.string() }).optional(),
-  analyticsEngineRef: z.object({ dataset: z.string() }).optional(),
-  mtlsCertificateRef: z.object({ certificateId: z.string() }).optional(),
-  pipelinesRef: z.object({ pipelineId: z.string() }).optional(),
+  name: z.string().min(1),
+  csi: csiVolumeSchema.optional(),
 });
 
 const containerSchema = z.object({

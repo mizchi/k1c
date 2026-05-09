@@ -241,10 +241,12 @@ spec:
         - name: api
           image: ./dist/worker.js
           volumeMounts:
-            - { name: bucket, mountPath: R2_MEDIA }
+            - { name: r2-media, mountPath: /mnt/r2-media }
       volumes:
-        - name: bucket
-          r2BucketRef: { name: media }
+        - name: r2-media
+          csi:
+            driver: r2.k1c.io
+            volumeAttributes: { bucketRef: media }
 `);
     const worker = result.desired.find((d) => d.resourceType === 'Worker')!;
     const props = worker.properties as Record<string, unknown>;
@@ -274,10 +276,12 @@ spec:
         - name: api
           image: ./dist/worker.js
           volumeMounts:
-            - { name: kv, mountPath: KV_CACHE }
+            - { name: kv-cache, mountPath: /mnt/kv-cache }
       volumes:
-        - name: kv
-          kvNamespaceRef: { name: cache }
+        - name: kv-cache
+          csi:
+            driver: kv.k1c.io
+            volumeAttributes: { namespaceRef: cache }
 `);
     const worker = result.desired.find((d) => d.resourceType === 'Worker')!;
     const props = worker.properties as Record<string, unknown>;
@@ -457,10 +461,12 @@ spec:
         - name: api
           image: ./api.js
           volumeMounts:
-            - { name: cert, mountPath: MTLS }
+            - { name: mtls, mountPath: /mnt/mtls }
       volumes:
-        - name: cert
-          mtlsCertificateRef: { certificateId: cert-abc-123 }
+        - name: mtls
+          csi:
+            driver: mtls.k1c.io
+            volumeAttributes: { certificateId: cert-abc-123 }
 `);
     const props = result.desired[0]!.properties as Record<string, unknown>;
     const bindings = props.bindings as ReadonlyArray<Record<string, string>>;
@@ -484,10 +490,12 @@ spec:
         - name: api
           image: ./api.js
           volumeMounts:
-            - { name: pipe, mountPath: EVENTS }
+            - { name: events, mountPath: /mnt/events }
       volumes:
-        - name: pipe
-          pipelinesRef: { pipelineId: pipe-xyz }
+        - name: events
+          csi:
+            driver: pipelines.k1c.io
+            volumeAttributes: { pipelineId: pipe-xyz }
 `);
     const props = result.desired[0]!.properties as Record<string, unknown>;
     const bindings = props.bindings as ReadonlyArray<Record<string, string>>;
@@ -510,9 +518,12 @@ spec:
       containers:
         - name: api
           image: ./api.js
-          volumeMounts: [{ name: ae, mountPath: METRICS }]
+          volumeMounts: [{ name: metrics, mountPath: /mnt/metrics }]
       volumes:
-        - { name: ae, analyticsEngineRef: { dataset: my_dataset } }
+        - name: metrics
+          csi:
+            driver: analytics-engine.k1c.io
+            volumeAttributes: { dataset: my_dataset }
 `);
     const bindings = (result.desired[0]!.properties as Record<string, unknown>)
       .bindings as Array<Record<string, string>>;
@@ -610,9 +621,12 @@ spec:
       containers:
         - name: rag
           image: ./rag.js
-          volumeMounts: [{ name: docs, mountPath: DOCS }]
+          volumeMounts: [{ name: docs, mountPath: /mnt/docs }]
       volumes:
-        - { name: docs, vectorizeRef: { name: docs } }
+        - name: docs
+          csi:
+            driver: vectorize.k1c.io
+            volumeAttributes: { ref: docs }
 `);
     const rag = result.desired.find((d) => d.label === 'default/rag')!;
     const bindings = (rag.properties as Record<string, unknown>).bindings as Array<
@@ -779,9 +793,12 @@ spec:
         - name: api
           image: ./api.js
           volumeMounts:
-            - { name: db, mountPath: DB }
+            - { name: db, mountPath: /mnt/db }
       volumes:
-        - { name: db, d1DatabaseRef: { name: app-db } }
+        - name: db
+          csi:
+            driver: d1.k1c.io
+            volumeAttributes: { ref: app-db }
 `);
     const api = result.desired.find((d) => d.label === 'default/api')!;
     const bindings = (api.properties as Record<string, unknown>).bindings as Array<
@@ -810,9 +827,12 @@ spec:
       containers:
         - name: producer
           image: ./producer.js
-          volumeMounts: [{ name: q, mountPath: JOBS }]
+          volumeMounts: [{ name: jobs, mountPath: /mnt/jobs }]
       volumes:
-        - { name: q, queueRef: { name: jobs } }
+        - name: jobs
+          csi:
+            driver: queue.k1c.io
+            volumeAttributes: { ref: jobs }
 `);
     const queue = result.desired.find((d) => d.resourceType === 'Queue')!;
     expect(queue.label).toBe('default/jobs');
@@ -934,9 +954,12 @@ spec:
         - name: api
           image: ./api.js
           volumeMounts:
-            - { name: db, mountPath: DB }
+            - { name: db, mountPath: /mnt/db }
       volumes:
-        - { name: db, hyperdriveRef: { name: app-db } }
+        - name: db
+          csi:
+            driver: hyperdrive.k1c.io
+            volumeAttributes: { ref: app-db }
 `);
     const api = result.desired.find((d) => d.label === 'default/api')!;
     const bindings = (api.properties as Record<string, unknown>).bindings as Array<
@@ -1457,9 +1480,12 @@ spec:
         - name: api
           image: ./api.js
           volumeMounts:
-            - { name: auth, mountPath: AUTH }
+            - { name: auth, mountPath: /mnt/auth }
       volumes:
-        - { name: auth, serviceRef: { name: auth-svc } }
+        - name: auth
+          csi:
+            driver: service.k1c.io
+            volumeAttributes: { ref: auth-svc }
 `);
     const api = result.desired.find((d) => d.label === 'default/api')!;
     const props = api.properties as Record<string, unknown>;
@@ -1502,9 +1528,12 @@ spec:
         - name: api
           image: ./api.js
           volumeMounts:
-            - { name: x, mountPath: X }
+            - { name: x, mountPath: /mnt/x }
       volumes:
-        - { name: x, serviceRef: { name: missing-svc } }
+        - name: x
+          csi:
+            driver: service.k1c.io
+            volumeAttributes: { ref: missing-svc }
 `),
     ).rejects.toThrow(/Service "missing-svc" not found/);
   });

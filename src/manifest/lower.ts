@@ -1762,7 +1762,7 @@ async function buildWorkerDesireds(
 
     const baseProperties: WorkerProperties = {
       scriptName,
-      entrypoint: container.image,
+      entrypoint: resolveContainerSource(container, meta.annotations ?? {}),
       compatibilityDate: built.compatibilityDate,
       ...(built.compatibilityFlags !== undefined
         ? { compatibilityFlags: built.compatibilityFlags }
@@ -1876,124 +1876,204 @@ async function buildContainerProperties(
         `${ctxLabel}: volumeMount "${mount.name}" has no matching volume`,
       );
     }
-    if (vol.r2BucketRef) {
-      const b = tables.r2Buckets.get(`${ns}/${vol.r2BucketRef.name}`);
-      if (!b) {
-        throw new LowerError(
-          `${ctxLabel}: R2Bucket "${vol.r2BucketRef.name}" not found in namespace "${ns}"`,
-        );
+    if (!vol.csi) {
+      // Plain k8s volumes (configMap / secret / emptyDir) are intentionally
+      // ignored: env+secret folding handles ConfigMap/Secret already, and
+      // there is no Worker analog of the others. The volume entry is left in
+      // place so a real k8s admission controller still sees a valid Pod.
+      continue;
+    }
+    const driver = vol.csi.driver;
+    const attrs = vol.csi.volumeAttributes ?? {};
+    const bindingName =
+      attrs['bindingName'] ?? defaultBindingName(vol.name);
+    switch (driver) {
+      case 'r2.k1c.io': {
+        const ref = attrs['bucketRef'];
+        if (!ref) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver r2.k1c.io requires volumeAttributes.bucketRef`,
+          );
+        }
+        const b = tables.r2Buckets.get(`${ns}/${ref}`);
+        if (!b) {
+          throw new LowerError(
+            `${ctxLabel}: R2Bucket "${ref}" not found in namespace "${ns}"`,
+          );
+        }
+        bindings.push({
+          type: 'r2_bucket',
+          name: bindingName,
+          bucketName: `k1c-${ns}-${b.metadata.name}`,
+        });
+        pushUnique(dependsOn, refOf(b));
+        break;
       }
-      bindings.push({
-        type: 'r2_bucket',
-        name: mount.mountPath,
-        bucketName: `k1c-${ns}-${b.metadata.name}`,
-      });
-      pushUnique(dependsOn, refOf(b));
-    } else if (vol.kvNamespaceRef) {
-      const kv = tables.kvNamespaces.get(`${ns}/${vol.kvNamespaceRef.name}`);
-      if (!kv) {
-        throw new LowerError(
-          `${ctxLabel}: KVNamespace "${vol.kvNamespaceRef.name}" not found in namespace "${ns}"`,
-        );
+      case 'kv.k1c.io': {
+        const ref = attrs['namespaceRef'];
+        if (!ref) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver kv.k1c.io requires volumeAttributes.namespaceRef`,
+          );
+        }
+        const kv = tables.kvNamespaces.get(`${ns}/${ref}`);
+        if (!kv) {
+          throw new LowerError(
+            `${ctxLabel}: KVNamespace "${ref}" not found in namespace "${ns}"`,
+          );
+        }
+        bindings.push({
+          type: 'kv_namespace',
+          name: bindingName,
+          namespaceId: placeholder('KVNamespace', `${ns}/${kv.metadata.name}`),
+        });
+        pushUnique(dependsOn, refOf(kv));
+        break;
       }
-      bindings.push({
-        type: 'kv_namespace',
-        name: mount.mountPath,
-        namespaceId: placeholder('KVNamespace', `${ns}/${kv.metadata.name}`),
-      });
-      pushUnique(dependsOn, refOf(kv));
-    } else if (vol.serviceRef) {
-      const targetScriptName = tables.serviceTargets.get(`${ns}/${vol.serviceRef.name}`);
-      if (targetScriptName === undefined) {
-        throw new LowerError(
-          `${ctxLabel}: Service "${vol.serviceRef.name}" not found (or has no matching workload) in namespace "${ns}"`,
-        );
+      case 'service.k1c.io': {
+        const ref = attrs['ref'];
+        if (!ref) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver service.k1c.io requires volumeAttributes.ref`,
+          );
+        }
+        const targetScriptName = tables.serviceTargets.get(`${ns}/${ref}`);
+        if (targetScriptName === undefined) {
+          throw new LowerError(
+            `${ctxLabel}: Service "${ref}" not found (or has no matching workload) in namespace "${ns}"`,
+          );
+        }
+        bindings.push({
+          type: 'service',
+          name: bindingName,
+          service: targetScriptName,
+        });
+        pushUnique(dependsOn, {
+          apiVersion: 'v1',
+          kind: 'Service',
+          namespace: ns,
+          name: ref,
+        });
+        break;
       }
-      bindings.push({
-        type: 'service',
-        name: mount.mountPath,
-        service: targetScriptName,
-      });
-      pushUnique(dependsOn, {
-        apiVersion: 'v1',
-        kind: 'Service',
-        namespace: ns,
-        name: vol.serviceRef.name,
-      });
-    } else if (vol.hyperdriveRef) {
-      const h = tables.hyperdrives.get(`${ns}/${vol.hyperdriveRef.name}`);
-      if (!h) {
-        throw new LowerError(
-          `${ctxLabel}: Hyperdrive "${vol.hyperdriveRef.name}" not found in namespace "${ns}"`,
-        );
+      case 'hyperdrive.k1c.io': {
+        const ref = attrs['ref'];
+        if (!ref) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver hyperdrive.k1c.io requires volumeAttributes.ref`,
+          );
+        }
+        const h = tables.hyperdrives.get(`${ns}/${ref}`);
+        if (!h) {
+          throw new LowerError(
+            `${ctxLabel}: Hyperdrive "${ref}" not found in namespace "${ns}"`,
+          );
+        }
+        bindings.push({
+          type: 'hyperdrive',
+          name: bindingName,
+          hyperdriveId: placeholder('Hyperdrive', `${ns}/${h.metadata.name}`),
+        });
+        pushUnique(dependsOn, refOf(h));
+        break;
       }
-      bindings.push({
-        type: 'hyperdrive',
-        name: mount.mountPath,
-        hyperdriveId: placeholder('Hyperdrive', `${ns}/${h.metadata.name}`),
-      });
-      pushUnique(dependsOn, refOf(h));
-    } else if (vol.d1DatabaseRef) {
-      const d = tables.d1Databases.get(`${ns}/${vol.d1DatabaseRef.name}`);
-      if (!d) {
-        throw new LowerError(
-          `${ctxLabel}: D1Database "${vol.d1DatabaseRef.name}" not found in namespace "${ns}"`,
-        );
+      case 'd1.k1c.io': {
+        const ref = attrs['ref'];
+        if (!ref) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver d1.k1c.io requires volumeAttributes.ref`,
+          );
+        }
+        const d = tables.d1Databases.get(`${ns}/${ref}`);
+        if (!d) {
+          throw new LowerError(
+            `${ctxLabel}: D1Database "${ref}" not found in namespace "${ns}"`,
+          );
+        }
+        bindings.push({
+          type: 'd1',
+          name: bindingName,
+          databaseId: placeholder('D1Database', `${ns}/${d.metadata.name}`),
+        });
+        pushUnique(dependsOn, refOf(d));
+        break;
       }
-      bindings.push({
-        type: 'd1',
-        name: mount.mountPath,
-        databaseId: placeholder('D1Database', `${ns}/${d.metadata.name}`),
-      });
-      pushUnique(dependsOn, refOf(d));
-    } else if (vol.queueRef) {
-      const q = tables.queues.get(`${ns}/${vol.queueRef.name}`);
-      if (!q) {
-        throw new LowerError(
-          `${ctxLabel}: Queue "${vol.queueRef.name}" not found in namespace "${ns}"`,
-        );
+      case 'queue.k1c.io': {
+        const ref = attrs['ref'];
+        if (!ref) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver queue.k1c.io requires volumeAttributes.ref`,
+          );
+        }
+        const q = tables.queues.get(`${ns}/${ref}`);
+        if (!q) {
+          throw new LowerError(
+            `${ctxLabel}: Queue "${ref}" not found in namespace "${ns}"`,
+          );
+        }
+        bindings.push({
+          type: 'queue',
+          name: bindingName,
+          queueName: `k1c-${ns}-${q.metadata.name}`,
+        });
+        pushUnique(dependsOn, refOf(q));
+        break;
       }
-      bindings.push({
-        type: 'queue',
-        name: mount.mountPath,
-        queueName: `k1c-${ns}-${q.metadata.name}`,
-      });
-      pushUnique(dependsOn, refOf(q));
-    } else if (vol.vectorizeRef) {
-      const v = tables.vectorizes.get(`${ns}/${vol.vectorizeRef.name}`);
-      if (!v) {
-        throw new LowerError(
-          `${ctxLabel}: Vectorize "${vol.vectorizeRef.name}" not found in namespace "${ns}"`,
-        );
+      case 'vectorize.k1c.io': {
+        const ref = attrs['ref'];
+        if (!ref) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver vectorize.k1c.io requires volumeAttributes.ref`,
+          );
+        }
+        const v = tables.vectorizes.get(`${ns}/${ref}`);
+        if (!v) {
+          throw new LowerError(
+            `${ctxLabel}: Vectorize "${ref}" not found in namespace "${ns}"`,
+          );
+        }
+        bindings.push({
+          type: 'vectorize',
+          name: bindingName,
+          indexName: `k1c-${ns}-${v.metadata.name}`,
+        });
+        pushUnique(dependsOn, refOf(v));
+        break;
       }
-      bindings.push({
-        type: 'vectorize',
-        name: mount.mountPath,
-        indexName: `k1c-${ns}-${v.metadata.name}`,
-      });
-      pushUnique(dependsOn, refOf(v));
-    } else if (vol.analyticsEngineRef) {
-      bindings.push({
-        type: 'analytics_engine',
-        name: mount.mountPath,
-        dataset: vol.analyticsEngineRef.dataset,
-      });
-    } else if (vol.mtlsCertificateRef) {
-      bindings.push({
-        type: 'mtls_certificate',
-        name: mount.mountPath,
-        certificateId: vol.mtlsCertificateRef.certificateId,
-      });
-    } else if (vol.pipelinesRef) {
-      bindings.push({
-        type: 'pipelines',
-        name: mount.mountPath,
-        pipeline: vol.pipelinesRef.pipelineId,
-      });
-    } else {
-      throw new LowerError(
-        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, hyperdriveRef, d1DatabaseRef, queueRef, vectorizeRef, analyticsEngineRef, mtlsCertificateRef, or pipelinesRef)`,
-      );
+      case 'analytics-engine.k1c.io': {
+        const dataset = attrs['dataset'];
+        if (!dataset) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver analytics-engine.k1c.io requires volumeAttributes.dataset`,
+          );
+        }
+        bindings.push({ type: 'analytics_engine', name: bindingName, dataset });
+        break;
+      }
+      case 'mtls.k1c.io': {
+        const certId = attrs['certificateId'];
+        if (!certId) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver mtls.k1c.io requires volumeAttributes.certificateId`,
+          );
+        }
+        bindings.push({ type: 'mtls_certificate', name: bindingName, certificateId: certId });
+        break;
+      }
+      case 'pipelines.k1c.io': {
+        const pipeId = attrs['pipelineId'];
+        if (!pipeId) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver pipelines.k1c.io requires volumeAttributes.pipelineId`,
+          );
+        }
+        bindings.push({ type: 'pipelines', name: bindingName, pipeline: pipeId });
+        break;
+      }
+      default:
+        throw new LowerError(
+          `${ctxLabel}: unknown CSI driver "${driver}" on volume "${vol.name}". Known drivers: r2.k1c.io / kv.k1c.io / d1.k1c.io / hyperdrive.k1c.io / queue.k1c.io / vectorize.k1c.io / service.k1c.io / analytics-engine.k1c.io / mtls.k1c.io / pipelines.k1c.io`,
+        );
     }
   }
 
@@ -2057,6 +2137,30 @@ function secretValue(sec: SecretResource, key: string): string | undefined {
   const fromData = sec.data?.[key];
   if (fromData !== undefined) return Buffer.from(fromData, 'base64').toString('utf-8');
   return undefined;
+}
+
+/**
+ * Convert a k8s-style DNS-1123 volume name (lowercase, hyphens) into the
+ * upper-snake conventional Worker binding name. `r2-media` → `R2_MEDIA`.
+ * Used as the default when `volumeAttributes.bindingName` is not provided.
+ */
+function defaultBindingName(volumeName: string): string {
+  return volumeName.replaceAll('-', '_').toUpperCase();
+}
+
+/**
+ * Resolve a container's Worker source path. The k8s-compatible form puts
+ * the path in a Pod-level annotation `cloudflare.com/source.<container>`;
+ * the legacy form (still accepted as a fallback so existing manifests
+ * keep working) reads from `container.image`. The annotation wins when
+ * both are set.
+ */
+function resolveContainerSource(
+  container: PodTemplateSpec['spec']['containers'][number],
+  annotations: Readonly<Record<string, string>>,
+): string {
+  const fromAnnotation = annotations[`cloudflare.com/source.${container.name}`];
+  return fromAnnotation ?? container.image;
 }
 
 function pushUnique(list: ResourceRef[], ref: ResourceRef): void {

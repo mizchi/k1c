@@ -35,18 +35,24 @@ export interface VolumeMount {
   readonly mountPath: string;
 }
 
+/**
+ * Volume source modeled on k8s `Pod.spec.volumes[]` so a k1c manifest passes
+ * `kubectl apply --dry-run=server`. Cloudflare-specific bindings (R2 / KV /
+ * D1 / Hyperdrive / Vectorize / Queue / Service binding / etc.) ride on the
+ * standard `csi` field with a k1c-specific driver name. CSI is part of the
+ * upstream PodSpec schema, so admission controllers validate it without
+ * complaint — the Cloudflare CSI drivers just never exist on a real cluster,
+ * so the Pod stays pending. k1c reads the driver + volumeAttributes directly
+ * to wire the corresponding Worker binding.
+ */
+export interface CSIVolumeSource {
+  readonly driver: string;
+  readonly volumeAttributes?: Readonly<Record<string, string>>;
+}
+
 export interface Volume {
   readonly name: string;
-  readonly r2BucketRef?: { readonly name: string };
-  readonly kvNamespaceRef?: { readonly name: string };
-  readonly serviceRef?: { readonly name: string };
-  readonly hyperdriveRef?: { readonly name: string };
-  readonly d1DatabaseRef?: { readonly name: string };
-  readonly queueRef?: { readonly name: string };
-  readonly vectorizeRef?: { readonly name: string };
-  readonly analyticsEngineRef?: { readonly dataset: string };
-  readonly mtlsCertificateRef?: { readonly certificateId: string };
-  readonly pipelinesRef?: { readonly pipelineId: string };
+  readonly csi?: CSIVolumeSource;
 }
 
 export interface PodTemplateSpec {

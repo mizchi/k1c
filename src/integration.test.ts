@@ -64,11 +64,17 @@ spec:
             - name: TOKEN
               valueFrom: { secretKeyRef: { name: creds, key: TOKEN } }
           volumeMounts:
-            - { name: bucket, mountPath: R2_MEDIA }
-            - { name: kv, mountPath: KV_CACHE }
+            - { name: r2-media, mountPath: /mnt/r2-media }
+            - { name: kv-cache, mountPath: /mnt/kv-cache }
       volumes:
-        - { name: bucket, r2BucketRef: { name: media } }
-        - { name: kv, kvNamespaceRef: { name: cache } }
+        - name: r2-media
+          csi:
+            driver: r2.k1c.io
+            volumeAttributes: { bucketRef: media }
+        - name: kv-cache
+          csi:
+            driver: kv.k1c.io
+            volumeAttributes: { namespaceRef: cache }
 `;
 
 describe('integration: parse → lower → plan → apply', () => {
