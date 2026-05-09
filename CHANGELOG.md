@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/mizchi/k1c/compare/v0.3.0...v0.4.0) (2026-05-09)
+
+
+### Features
+
+* bind Ingress wildcard hosts via Workers Routes ([5f9b422](https://github.com/mizchi/k1c/commit/5f9b422b4adba25d146d6728ff5bf38a46603f07))
+* implement AccessApplication CRD (Zero Trust self-hosted) ([70092e9](https://github.com/mizchi/k1c/commit/70092e97f79a75226254aefaba2c0c430f029987))
+
 ## [0.3.0](https://github.com/mizchi/k1c/compare/v0.2.0...v0.3.0) (2026-05-09)
 
 
