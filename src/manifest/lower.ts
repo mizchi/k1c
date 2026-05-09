@@ -12,6 +12,7 @@ import type {
   RateLimitRule,
   CustomHostname,
   WAFManagedRuleset,
+  EmailRoutingRule,
   ConfigMapResource,
   CronJob,
   D1Database,
@@ -60,6 +61,7 @@ import type { WAFCustomRuleProperties } from '../providers/waf-custom-rule.ts';
 import type { RateLimitRuleProperties } from '../providers/rate-limit-rule.ts';
 import type { CustomHostnameProperties } from '../providers/custom-hostname.ts';
 import type { WAFManagedRulesetProperties } from '../providers/waf-managed-ruleset.ts';
+import type { EmailRoutingRuleProperties } from '../providers/email-routing-rule.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -139,6 +141,7 @@ export async function lower(
   const rateLimitRules: RateLimitRule[] = [];
   const customHostnames: CustomHostname[] = [];
   const wafManagedRulesets: WAFManagedRuleset[] = [];
+  const emailRoutingRules: EmailRoutingRule[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -222,6 +225,9 @@ export async function lower(
         break;
       case 'WAFManagedRuleset':
         wafManagedRulesets.push(r);
+        break;
+      case 'EmailRoutingRule':
+        emailRoutingRules.push(r);
         break;
     }
   }
@@ -321,7 +327,33 @@ export async function lower(
     desired.push(lowerWAFManagedRuleset(wm));
   }
 
+  for (const er of emailRoutingRules) {
+    desired.push(lowerEmailRoutingRule(er));
+  }
+
   return { desired, warnings };
+}
+
+function lowerEmailRoutingRule(
+  er: EmailRoutingRule,
+): DesiredResource<EmailRoutingRuleProperties> {
+  const ns = er.metadata.namespace ?? 'default';
+  const name = er.metadata.name;
+  return {
+    resourceType: 'EmailRoutingRule',
+    ref: refOf(er),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: er.spec.zoneId,
+      ruleName: er.spec.ruleName,
+      enabled: er.spec.enabled ?? true,
+      ...(er.spec.priority !== undefined ? { priority: er.spec.priority } : {}),
+      matchers: er.spec.matchers.map((m) => ({ ...m })),
+      actions: er.spec.actions.map((a) =>
+        a.type === 'forward' ? { type: 'forward' as const, to: [...a.to] } : { ...a },
+      ),
+    },
+  };
 }
 
 function lowerWAFManagedRuleset(

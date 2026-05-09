@@ -106,7 +106,9 @@ dragged into `Deployment`.
   All four ruleset CRDs share `_ruleset-shared.ts` for the read-modify-write
   plumbing.
 - **Page Rules** (legacy).
-- **Email Routing** rules.
+- ~~**Email Routing**~~ — shipped as `EmailRoutingRule` CRD. Supports
+  literal-`to` and catch-all matchers; forward / drop / worker actions.
+  Ownership encoded in the rule's `name` field via `k1c:` prefix.
 
 ## Media-heavy products (low fit, defer)
 

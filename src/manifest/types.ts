@@ -523,6 +523,31 @@ export type WAFManagedRuleset = BaseResource<
   WAFManagedRulesetSpec
 >;
 
+export type EmailRoutingMatcher =
+  | { readonly type: 'all' }
+  | { readonly type: 'literal'; readonly field: 'to'; readonly value: string };
+
+export type EmailRoutingAction =
+  | { readonly type: 'drop' }
+  | { readonly type: 'forward'; readonly to: ReadonlyArray<string> }
+  | { readonly type: 'worker'; readonly worker: string };
+
+export interface EmailRoutingRuleSpec {
+  readonly zoneId: string;
+  /** User-facing rule name shown in the dashboard (k1c prefixes it for ownership). */
+  readonly ruleName: string;
+  readonly enabled?: boolean;
+  readonly priority?: number;
+  readonly matchers: ReadonlyArray<EmailRoutingMatcher>;
+  readonly actions: ReadonlyArray<EmailRoutingAction>;
+}
+
+export type EmailRoutingRule = BaseResource<
+  'EmailRoutingRule',
+  'cloudflare.k1c.io/v1alpha1',
+  EmailRoutingRuleSpec
+>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -550,7 +575,8 @@ export type K1cResource =
   | WAFCustomRule
   | RateLimitRule
   | CustomHostname
-  | WAFManagedRuleset;
+  | WAFManagedRuleset
+  | EmailRoutingRule;
 
 export type ResourceKind = K1cResource['kind'];
 

@@ -22,6 +22,7 @@ import { wafCustomRuleProvider } from './waf-custom-rule.ts';
 import { rateLimitRuleProvider } from './rate-limit-rule.ts';
 import { customHostnameProvider } from './custom-hostname.ts';
 import { wafManagedRulesetProvider } from './waf-managed-ruleset.ts';
+import { emailRoutingRuleProvider } from './email-routing-rule.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -48,6 +49,7 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(rateLimitRuleProvider);
   r.register(customHostnameProvider);
   r.register(wafManagedRulesetProvider);
+  r.register(emailRoutingRuleProvider);
   return r;
 }
 

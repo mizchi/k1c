@@ -1,0 +1,50 @@
+# Email Routing rules: forward me@<your-domain> to your real inbox, drop
+# obvious spam, and route everything else to a Worker for custom handling.
+#
+# Apply with: K1C_ACCOUNT_ID=... K1C_ZONE_ID=... CLOUDFLARE_API_TOKEN=... \
+#             pnpm k1c apply -f examples/email-routing.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: EmailRoutingRule
+metadata:
+  name: forward-me
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  ruleName: 'me-to-gmail'
+  matchers:
+    - type: literal
+      field: to
+      value: me@example.com
+  actions:
+    - type: forward
+      to: [me@gmail.com]
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: EmailRoutingRule
+metadata:
+  name: drop-spam-pattern
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  ruleName: 'drop-honeypot'
+  matchers:
+    - type: literal
+      field: to
+      value: honeypot@example.com
+  actions:
+    - type: drop
+---
+# Catch-all: any other inbound mail is dispatched to a Worker (must already
+# be deployed via a Deployment manifest with email-handler bindings).
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: EmailRoutingRule
+metadata:
+  name: catchall
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  ruleName: 'catchall-to-worker'
+  priority: 100
+  matchers:
+    - type: all
+  actions:
+    - type: worker
+      worker: 'k1c--default--inbox'

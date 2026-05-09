@@ -448,6 +448,35 @@ const ratelimitConfigSpecSchema = z.object({
   requestsToOrigin: z.boolean().optional(),
 });
 
+const emailRoutingMatcherSchema = z.union([
+  z.object({ type: z.literal('all') }).strict(),
+  z.object({
+    type: z.literal('literal'),
+    field: z.literal('to'),
+    value: z.string().min(1),
+  }).strict(),
+]);
+
+const emailRoutingActionSchema = z.union([
+  z.object({ type: z.literal('drop') }).strict(),
+  z.object({ type: z.literal('forward'), to: z.array(z.string().min(1)).min(1) }).strict(),
+  z.object({ type: z.literal('worker'), worker: z.string().min(1) }).strict(),
+]);
+
+export const emailRoutingRuleSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('EmailRoutingRule'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    ruleName: z.string().min(1),
+    enabled: z.boolean().optional(),
+    priority: z.number().int().nonnegative().optional(),
+    matchers: z.array(emailRoutingMatcherSchema).min(1),
+    actions: z.array(emailRoutingActionSchema).min(1),
+  }),
+});
+
 export const wafManagedRulesetSchema = z.object({
   apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
   kind: z.literal('WAFManagedRuleset'),
@@ -607,4 +636,5 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   rateLimitRuleSchema,
   customHostnameSchema,
   wafManagedRulesetSchema,
+  emailRoutingRuleSchema,
 ]);

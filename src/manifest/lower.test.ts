@@ -2089,6 +2089,52 @@ spec:
     });
   });
 
+  it('lowers EmailRoutingRule to a DesiredResource with literal matcher + forward action', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: EmailRoutingRule
+metadata: { name: forward-me }
+spec:
+  zoneId: zone-abc
+  ruleName: 'me-to-gmail'
+  matchers:
+    - { type: literal, field: to, value: me@example.com }
+  actions:
+    - { type: forward, to: [me@gmail.com] }
+`);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('EmailRoutingRule');
+    expect(d.label).toBe('default/forward-me');
+    expect(d.properties).toEqual({
+      zoneId: 'zone-abc',
+      ruleName: 'me-to-gmail',
+      enabled: true,
+      matchers: [{ type: 'literal', field: 'to', value: 'me@example.com' }],
+      actions: [{ type: 'forward', to: ['me@gmail.com'] }],
+    });
+  });
+
+  it('lowers EmailRoutingRule with type=all matcher and worker action', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: EmailRoutingRule
+metadata: { name: catchall }
+spec:
+  zoneId: zone-abc
+  ruleName: 'catchall'
+  matchers:
+    - { type: all }
+  actions:
+    - { type: worker, worker: 'k1c--default--inbox' }
+`);
+    expect((result.desired[0]!.properties as { matchers: unknown }).matchers).toEqual([
+      { type: 'all' },
+    ]);
+    expect((result.desired[0]!.properties as { actions: unknown }).actions).toEqual([
+      { type: 'worker', worker: 'k1c--default--inbox' },
+    ]);
+  });
+
   it('lowers WAFManagedRuleset to a DesiredResource with prefixed ruleset id + override action', async () => {
     const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1

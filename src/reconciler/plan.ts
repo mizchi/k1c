@@ -203,6 +203,7 @@ function deletePriority(resourceType: string): number {
     case 'RateLimitRule':
     case 'CustomHostname':
     case 'WAFManagedRuleset':
+    case 'EmailRoutingRule':
       return 0;
     case 'Worker':
       return 1;
