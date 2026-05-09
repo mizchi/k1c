@@ -12,7 +12,6 @@ apiVersion: cloudflare.k1c.io/v1alpha1
 kind: StreamLiveInput
 metadata:
   name: front-entrance
-  namespace: media
 spec:
   defaultCreator: ops-team
   # Keep recordings for 30 days, then auto-purge.
