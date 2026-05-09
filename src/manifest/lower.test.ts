@@ -1298,6 +1298,97 @@ spec:
     );
   });
 
+  it('auto-emits a proxied CNAME DNSRecord when Service carries cloudflare.com/manage-dns: true', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-domain
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+    cloudflare.com/hostname: api.example.com
+    cloudflare.com/manage-dns: 'true'
+spec:
+  type: LoadBalancer
+  selector: { app: api }
+`);
+    const dns = result.desired.find((d) => d.resourceType === 'DNSRecord');
+    expect(dns).toBeDefined();
+    expect(dns!.label).toBe('default/api-domain--dns');
+    expect(dns!.properties).toEqual({
+      zoneId: 'zone-abc',
+      type: 'CNAME',
+      name: 'api.example.com',
+      content: 'api.example.com',
+      proxied: true,
+    });
+    expect(dns!.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'Service', name: 'api-domain' }),
+    );
+  });
+
+  it('honors cloudflare.com/dns-content override when auto-emitting DNS', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-domain
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+    cloudflare.com/hostname: api.example.com
+    cloudflare.com/manage-dns: 'true'
+    cloudflare.com/dns-content: api.workers.dev
+spec:
+  type: LoadBalancer
+  selector: { app: api }
+`);
+    const dns = result.desired.find((d) => d.resourceType === 'DNSRecord');
+    expect((dns!.properties as Record<string, unknown>).content).toBe('api.workers.dev');
+  });
+
+  it('does NOT emit a DNSRecord when manage-dns is missing or set to anything other than "true"', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-domain
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+    cloudflare.com/hostname: api.example.com
+spec:
+  type: LoadBalancer
+  selector: { app: api }
+`);
+    expect(result.desired.find((d) => d.resourceType === 'DNSRecord')).toBeUndefined();
+  });
+
   it('throws when LoadBalancer Service has no matching Deployment/Rollout', async () => {
     await expect(
       lowerYaml(`

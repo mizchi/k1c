@@ -278,8 +278,9 @@ export async function lower(
   }
 
   for (const s of services) {
-    const out = lowerService(s, deployments, rollouts, warnings);
-    if (out !== null) desired.push(out);
+    for (const out of lowerService(s, deployments, rollouts, warnings)) {
+      desired.push(out);
+    }
   }
 
   for (const ing of ingresses) {
@@ -710,7 +711,7 @@ function lowerService(
   deployments: ReadonlyArray<Deployment>,
   rollouts: ReadonlyArray<Rollout>,
   warnings: LowerWarning[],
-): DesiredResource<CustomDomainProperties> | null {
+): ReadonlyArray<DesiredResource> {
   const ns = s.metadata.namespace ?? 'default';
   const name = s.metadata.name;
   const ref = refOf(s);
@@ -727,7 +728,7 @@ function lowerService(
         message: `Service ${ns}/${name}: type=ClusterIP has no matching Deployment / Rollout for selector ${JSON.stringify(s.spec.selector)} (no workers will be reachable via this service)`,
       });
     }
-    return null;
+    return [];
   }
 
   const annotations = s.metadata.annotations ?? {};
@@ -748,9 +749,10 @@ function lowerService(
   }
 
   const targetScriptName = `k1c--${ns}--${target.name}`;
-  return {
+  const cdRef = ref;
+  const customDomain: DesiredResource<CustomDomainProperties> = {
     resourceType: 'CustomDomain',
-    ref,
+    ref: cdRef,
     label: hostname,
     properties: {
       hostname,
@@ -767,6 +769,32 @@ function lowerService(
       },
     ],
   };
+
+  // Optional DNS auto-emission: when the user opts in via
+  // `cloudflare.com/manage-dns: true`, also emit a proxied CNAME from the
+  // hostname back to itself (`<host>.cdn.cloudflare.net` is the conventional
+  // target for a Custom Domain, but the dashboard emits a self-CNAME with
+  // `proxied: true` and Cloudflare resolves it; that's what we mimic).
+  // The user can override the record content via `cloudflare.com/dns-content`
+  // if they need to point elsewhere.
+  const manageDns = annotations['cloudflare.com/manage-dns'];
+  if (manageDns !== 'true') return [customDomain];
+  const content = annotations['cloudflare.com/dns-content'] ?? hostname;
+  const dnsRef: ResourceRef = { ...ref, name: `${name}--dns` };
+  const dnsRecord: DesiredResource<DNSRecordProperties> = {
+    resourceType: 'DNSRecord',
+    ref: dnsRef,
+    label: `${ns}/${name}--dns`,
+    properties: {
+      zoneId,
+      type: 'CNAME',
+      name: hostname,
+      content,
+      proxied: true,
+    },
+    dependsOn: [cdRef],
+  };
+  return [customDomain, dnsRecord];
 }
 
 async function lowerIngress(

@@ -22,9 +22,10 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
   `custom_metadata['k1c.io/managed']` field on each hostname. In-place SSL
   config update is supported via `customHostnames.edit`; hostname rename
   still surfaces as `NotUpdatable` + `suggest=recreate`.
-- **DNSRecord auto-emission** — currently `DNSRecord` is its own resource. A
-  `cloudflare.com/manage-dns: true` annotation on a `Service type=LoadBalancer`
-  could auto-emit a CNAME pointing at the Custom Domain.
+- ~~**DNSRecord auto-emission**~~ — shipped. `Service type=LoadBalancer` with
+  `cloudflare.com/manage-dns: 'true'` now auto-emits a proxied CNAME record
+  pointing at the hostname (override the content with
+  `cloudflare.com/dns-content: ...`).
 
 ## Observability / logging
 
