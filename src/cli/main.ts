@@ -5,6 +5,7 @@ import { resolve as resolvePath } from 'node:path';
 import Cloudflare from 'cloudflare';
 import { parseArgs, USAGE, type ApplyArgs, type RolloutArgs } from './args.ts';
 import { runApply, runDelete, runDescribe, runDiff, runGet, type RunDeps } from './run.ts';
+import { runLogs, runPortForward } from './wrangler.ts';
 import { createDefaultRegistry } from '../providers/index.ts';
 import type { ProviderContext } from '../providers/types.ts';
 import { runRolloutCommand } from '../canary/rollout-command.ts';
@@ -73,6 +74,8 @@ async function main(): Promise<number> {
   if (parsed.kind === 'describe') return runDescribe(parsed, deps);
   if (parsed.kind === 'delete') return runDelete(parsed, deps);
   if (parsed.kind === 'rollout') return runRollout(parsed, cloudflare, accountId);
+  if (parsed.kind === 'logs') return runLogs(parsed);
+  if (parsed.kind === 'port-forward') return runPortForward(parsed);
   return 2;
 }
 

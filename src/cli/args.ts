@@ -47,6 +47,29 @@ export interface DeleteArgs {
   readonly cascade: boolean;
 }
 
+export interface LogsArgs {
+  readonly kind: 'logs';
+  /** Resource kind. Currently only `Worker` (or its k8s analogues) is supported. */
+  readonly resourceKind: string;
+  readonly name: string;
+  readonly namespace?: string;
+  /** `wrangler tail` --format flag. */
+  readonly format: 'json' | 'pretty';
+  /** Pass-through filter on log status (`error` / `ok` / etc.). */
+  readonly status?: string;
+  /** Stop tailing after N lines (0 = stream forever). */
+  readonly limit: number;
+}
+
+export interface PortForwardArgs {
+  readonly kind: 'port-forward';
+  readonly resourceKind: string;
+  readonly name: string;
+  readonly namespace?: string;
+  /** Local port to bind. */
+  readonly localPort: number;
+}
+
 export interface HelpArgs {
   readonly kind: 'help';
 }
@@ -63,6 +86,8 @@ export type ParsedArgs =
   | GetArgs
   | DescribeArgs
   | DeleteArgs
+  | LogsArgs
+  | PortForwardArgs
   | VersionArgs
   | HelpArgs
   | ErrorArgs;
@@ -80,7 +105,111 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   if (first === 'get') return parseGet(argv.slice(1));
   if (first === 'describe') return parseDescribe(argv.slice(1));
   if (first === 'delete') return parseDelete(argv.slice(1));
+  if (first === 'logs') return parseLogs(argv.slice(1));
+  if (first === 'port-forward') return parsePortForward(argv.slice(1));
   return { kind: 'error', message: `unknown command: ${first}` };
+}
+
+function parseLogs(rest: ReadonlyArray<string>): ParsedArgs {
+  const resourceKind = rest[0];
+  const name = rest[1];
+  if (resourceKind === undefined || resourceKind.startsWith('-')) {
+    return { kind: 'error', message: 'logs requires a resource kind (e.g. Worker, Deployment)' };
+  }
+  if (name === undefined || name.startsWith('-')) {
+    return { kind: 'error', message: 'logs requires a resource name' };
+  }
+  let namespace: string | undefined;
+  let format: 'json' | 'pretty' = 'pretty';
+  let status: string | undefined;
+  let limit = 0;
+  for (let i = 2; i < rest.length; i += 1) {
+    const arg = rest[i]!;
+    if (arg === '-n' || arg === '--namespace') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      namespace = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '--format') {
+      const value = rest[i + 1];
+      if (value !== 'json' && value !== 'pretty') {
+        return { kind: 'error', message: `--format must be one of: json, pretty (got "${value}")` };
+      }
+      format = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '--status') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: '--status requires a value' };
+      status = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '--limit') {
+      const value = rest[i + 1];
+      const parsed = value !== undefined ? Number.parseInt(value, 10) : NaN;
+      if (Number.isNaN(parsed) || parsed < 0) {
+        return { kind: 'error', message: '--limit requires a non-negative integer' };
+      }
+      limit = parsed;
+      i += 1;
+      continue;
+    }
+    return { kind: 'error', message: `unknown flag for logs: ${arg}` };
+  }
+  return {
+    kind: 'logs',
+    resourceKind,
+    name,
+    format,
+    limit,
+    ...(namespace !== undefined ? { namespace } : {}),
+    ...(status !== undefined ? { status } : {}),
+  };
+}
+
+function parsePortForward(rest: ReadonlyArray<string>): ParsedArgs {
+  const resourceKind = rest[0];
+  const name = rest[1];
+  if (resourceKind === undefined || resourceKind.startsWith('-')) {
+    return { kind: 'error', message: 'port-forward requires a resource kind' };
+  }
+  if (name === undefined || name.startsWith('-')) {
+    return { kind: 'error', message: 'port-forward requires a resource name' };
+  }
+  let namespace: string | undefined;
+  let localPort = 8787;
+  for (let i = 2; i < rest.length; i += 1) {
+    const arg = rest[i]!;
+    if (arg === '-n' || arg === '--namespace') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      namespace = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '--port' || arg === '-p') {
+      const value = rest[i + 1];
+      const parsed = value !== undefined ? Number.parseInt(value, 10) : NaN;
+      if (Number.isNaN(parsed) || parsed <= 0 || parsed > 65535) {
+        return { kind: 'error', message: '--port requires an integer in 1-65535' };
+      }
+      localPort = parsed;
+      i += 1;
+      continue;
+    }
+    return { kind: 'error', message: `unknown flag for port-forward: ${arg}` };
+  }
+  return {
+    kind: 'port-forward',
+    resourceKind,
+    name,
+    localPort,
+    ...(namespace !== undefined ? { namespace } : {}),
+  };
 }
 
 function parseOutput(value: string | undefined): OutputFormat | { error: string } {
@@ -292,6 +421,8 @@ usage:
   k1c get      <kind> [name] [-n <namespace>] [-o text|json]
   k1c describe <kind> <name> [-n <namespace>] [-o text|json]
   k1c rollout  {status|promote|abort} <ns>/<name> --dispatch <name>
+  k1c logs     <kind> <name> [-n <namespace>] [--format pretty|json] [--status <s>] [--limit N]
+  k1c port-forward <kind> <name> [-n <namespace>] [--port 8787]
   k1c version
 
 environment:
