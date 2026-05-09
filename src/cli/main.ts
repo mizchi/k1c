@@ -6,6 +6,7 @@ import Cloudflare from 'cloudflare';
 import { parseArgs, USAGE, type ApplyArgs, type RolloutArgs } from './args.ts';
 import { runApply, runDelete, runDescribe, runDiff, runGet, type RunDeps } from './run.ts';
 import { runLogs, runPortForward } from './wrangler.ts';
+import { readManifestSource } from './manifest-source.ts';
 import { createDefaultRegistry } from '../providers/index.ts';
 import type { ProviderContext } from '../providers/types.ts';
 import { runRolloutCommand } from '../canary/rollout-command.ts';
@@ -58,10 +59,7 @@ async function main(): Promise<number> {
   const deps = {
     registry: createDefaultRegistry(),
     providerCtx: ctx,
-    readManifest: async (path: string) => {
-      const buf = await readFile(path);
-      return buf.toString('utf-8');
-    },
+    readManifest: readManifestSource,
     out: quiet ? () => {} : (msg: string) => process.stdout.write(`${msg}\n`),
     err: (msg: string) => process.stderr.write(`${msg}\n`),
   };
@@ -80,6 +78,10 @@ async function main(): Promise<number> {
 }
 
 async function runApplyWatch(args: ApplyArgs, deps: RunDeps): Promise<number> {
+  if (args.file === '-') {
+    process.stderr.write('--watch is not compatible with stdin (-) input\n');
+    return 2;
+  }
   const filePath = resolvePath(args.file);
   process.stdout.write(`(watching ${filePath} — initial apply)\n`);
   await runApply(args, deps);

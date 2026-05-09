@@ -415,9 +415,9 @@ function parseDiff(rest: ReadonlyArray<string>): ParsedArgs {
 export const USAGE = `k1c — apply a subset of Kubernetes manifests to Cloudflare
 
 usage:
-  k1c apply    -f <manifest.yaml> [--dry-run | --watch] [--quiet | -q]
-  k1c diff     -f <manifest.yaml> [-o text|json]
-  k1c delete   -f <manifest.yaml> [--cascade]
+  k1c apply    -f <file|dir|-> [--dry-run | --watch] [--quiet | -q]
+  k1c diff     -f <file|dir|-> [-o text|json]
+  k1c delete   -f <file|dir|-> [--cascade]
   k1c get      <kind> [name] [-n <namespace>] [-o text|json]
   k1c describe <kind> <name> [-n <namespace>] [-o text|json]
   k1c rollout  {status|promote|abort} <ns>/<name> --dispatch <name>
