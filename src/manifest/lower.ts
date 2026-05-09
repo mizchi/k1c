@@ -8,6 +8,7 @@ import type {
   DispatchNamespace,
   DNSRecord,
   Hyperdrive,
+  Ingress,
   Job,
   K1cResource,
   KVNamespace,
@@ -37,6 +38,7 @@ import type { DNSRecordProperties } from '../providers/dns-record.ts';
 import type { WorkflowProperties } from '../providers/workflow.ts';
 import type { LogpushJobProperties } from '../providers/logpush-job.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
+import { generateRouter, type RouterRoute } from '../ingress/router-template.ts';
 
 export class LowerError extends Error {
   constructor(message: string) {
@@ -102,6 +104,7 @@ export async function lower(
   const jobs: Job[] = [];
   const dnsRecords: DNSRecord[] = [];
   const logpushJobs: LogpushJob[] = [];
+  const ingresses: Ingress[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -158,6 +161,9 @@ export async function lower(
         break;
       case 'LogpushJob':
         logpushJobs.push(r);
+        break;
+      case 'Ingress':
+        ingresses.push(r);
         break;
     }
   }
@@ -216,6 +222,12 @@ export async function lower(
   for (const s of services) {
     const out = lowerService(s, deployments, rollouts, warnings);
     if (out !== null) desired.push(out);
+  }
+
+  for (const ing of ingresses) {
+    for (const out of await lowerIngress(ing, tables, warnings, options)) {
+      desired.push(out);
+    }
   }
 
   return { desired, warnings };
@@ -455,6 +467,158 @@ function lowerService(
       },
     ],
   };
+}
+
+async function lowerIngress(
+  ing: Ingress,
+  tables: LookupTables,
+  warnings: LowerWarning[],
+  options: LowerOptions | undefined,
+): Promise<ReadonlyArray<DesiredResource>> {
+  const ns = ing.metadata.namespace ?? 'default';
+  const name = ing.metadata.name;
+  const ref = refOf(ing);
+  const annotations = ing.metadata.annotations ?? {};
+
+  const zoneId = annotations['cloudflare.com/zone-id'];
+  if (!zoneId) {
+    throw new LowerError(
+      `Ingress ${ns}/${name}: missing required annotation \`cloudflare.com/zone-id\``,
+    );
+  }
+
+  const literalHosts = new Set<string>();
+  let hasWildcardHost = false;
+  for (const rule of ing.spec.rules) {
+    if (rule.host === undefined) continue;
+    if (rule.host.startsWith('*.')) {
+      hasWildcardHost = true;
+    } else {
+      literalHosts.add(rule.host);
+    }
+  }
+  if (literalHosts.size === 0) {
+    throw new LowerError(
+      `Ingress ${ns}/${name}: at least one rule must specify a literal (non-wildcard) host so a Custom Domain can be created`,
+    );
+  }
+  if (hasWildcardHost) {
+    warnings.push({
+      ref,
+      message: `Ingress ${ns}/${name}: wildcard hosts are matched in-router only; create a Workers Route or extra Custom Domain manifest to actually receive traffic for the wildcard`,
+    });
+  }
+
+  // Assign one binding name per unique backend Service.
+  const backendBindings = new Map<string, string>(); // serviceName -> bindingName
+  const serviceDeps: ResourceRef[] = [];
+  function bindingFor(serviceName: string): string {
+    const existing = backendBindings.get(serviceName);
+    if (existing !== undefined) return existing;
+    const id = `b${backendBindings.size}`;
+    backendBindings.set(serviceName, id);
+    return id;
+  }
+  function resolveBackendScript(serviceName: string, where: string): string {
+    const target = tables.serviceTargets.get(`${ns}/${serviceName}`);
+    if (target === undefined) {
+      throw new LowerError(
+        `Ingress ${ns}/${name}: backend Service "${serviceName}" referenced by ${where} is not found (or has no matching workload) in namespace "${ns}"`,
+      );
+    }
+    pushUnique(serviceDeps, {
+      apiVersion: 'v1',
+      kind: 'Service',
+      namespace: ns,
+      name: serviceName,
+    });
+    return target;
+  }
+
+  // Pre-walk to collect bindings and validate.
+  const routes: RouterRoute[] = [];
+  for (const rule of ing.spec.rules) {
+    const paths = [...rule.http.paths]
+      .map((p) => ({
+        path: p.path,
+        pathType: p.pathType,
+        backend: p.backend,
+      }))
+      // Longest path first so prefix matching picks the most specific.
+      .sort((a, b) => b.path.length - a.path.length);
+
+    const routerPaths = paths.map((p) => {
+      const sName = p.backend.service.name;
+      resolveBackendScript(sName, `rule host=${rule.host ?? '<any>'} path=${p.path}`);
+      return {
+        path: p.path,
+        pathType: p.pathType,
+        backendBinding: bindingFor(sName),
+      };
+    });
+
+    routes.push({ host: rule.host ?? null, paths: routerPaths });
+  }
+
+  let defaultBackendBinding: string | null = null;
+  if (ing.spec.defaultBackend !== undefined) {
+    const sName = ing.spec.defaultBackend.service.name;
+    resolveBackendScript(sName, 'defaultBackend');
+    defaultBackendBinding = bindingFor(sName);
+  }
+
+  // Build the router Worker.
+  const routerScriptName = `k1c--${ns}--${name}--ingress`;
+  const routerSource = generateRouter({ routes, defaultBackend: defaultBackendBinding });
+  const bindings: WorkerBinding[] = [];
+  for (const [serviceName, bindingName] of backendBindings) {
+    const target = tables.serviceTargets.get(`${ns}/${serviceName}`)!;
+    bindings.push({ type: 'service', name: bindingName, service: target });
+  }
+
+  const baseProperties: WorkerProperties = {
+    scriptName: routerScriptName,
+    entrypoint: '<k1c-generated:ingress-router>',
+    entrypointContent: routerSource,
+    compatibilityDate:
+      annotations['cloudflare.com/compatibility-date'] ?? DEFAULT_COMPATIBILITY_DATE,
+    bindings,
+  };
+  const properties: WorkerProperties = {
+    ...baseProperties,
+    entrypointHash: await hashEntrypoint(baseProperties, options),
+  };
+
+  const routerRef: ResourceRef = { ...ref, name: `${name}--router` };
+  const results: DesiredResource[] = [
+    {
+      resourceType: 'Worker',
+      ref: routerRef,
+      label: `${ns}/${name}--router`,
+      properties,
+      ...(serviceDeps.length > 0 ? { dependsOn: serviceDeps } : {}),
+    },
+  ];
+
+  // One Custom Domain per literal host, all pointing at the router Worker.
+  const environment = annotations['cloudflare.com/environment'] ?? 'production';
+  for (const host of literalHosts) {
+    const cdRef: ResourceRef = { ...ref, name: `${name}--cd--${host}` };
+    results.push({
+      resourceType: 'CustomDomain',
+      ref: cdRef,
+      label: host,
+      properties: {
+        hostname: host,
+        service: routerScriptName,
+        zoneId,
+        environment,
+      },
+      dependsOn: [routerRef],
+    });
+  }
+
+  return results;
 }
 
 interface SelectorMatch {

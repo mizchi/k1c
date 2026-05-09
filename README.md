@@ -49,7 +49,8 @@ $ K1C_ACCOUNT_ID=...  CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f manifest.yaml
 | `DNSRecord` (CRD) | DNS records | working |
 | `LogpushJob` (CRD) | Logpush (zone- or account-scoped) | working |
 | `ai` / `browser` / `version_metadata` / `analytics_engine` Worker bindings | annotation- / volume-driven | working |
-| `Ingress` / `CustomHostname` / Zero Trust Access | — | not implemented (see [`TODO.md`](TODO.md)) |
+| `Ingress` (`networking.k8s.io/v1`) | generated router Worker + Custom Domain per host | working |
+| `CustomHostname` / Zero Trust Access | — | not implemented (see [`TODO.md`](TODO.md)) |
 
 See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,
 and [`TODO.md`](TODO.md) for what's queued.

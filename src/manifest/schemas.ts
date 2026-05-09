@@ -324,6 +324,39 @@ export const logpushJobSchema = z.object({
     }),
 });
 
+const ingressBackendSchema = z.object({
+  service: z.object({
+    name: z.string().min(1),
+    port: z
+      .object({
+        number: z.number().int().positive().optional(),
+        name: z.string().optional(),
+      })
+      .optional(),
+  }),
+});
+
+const ingressPathSchema = z.object({
+  path: z.string().min(1),
+  pathType: z.enum(['Prefix', 'Exact', 'ImplementationSpecific']),
+  backend: ingressBackendSchema,
+});
+
+const ingressRuleSchema = z.object({
+  host: z.string().min(1).optional(),
+  http: z.object({ paths: z.array(ingressPathSchema).min(1) }),
+});
+
+export const ingressSchema = z.object({
+  apiVersion: z.literal('networking.k8s.io/v1'),
+  kind: z.literal('Ingress'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    rules: z.array(ingressRuleSchema).min(1),
+    defaultBackend: ingressBackendSchema.optional(),
+  }),
+});
+
 export const k1cResourceSchema = z.discriminatedUnion('kind', [
   deploymentSchema,
   rolloutSchema,
@@ -343,4 +376,5 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   vectorizeSchema,
   dnsRecordSchema,
   logpushJobSchema,
+  ingressSchema,
 ]);

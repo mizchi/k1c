@@ -1364,6 +1364,233 @@ spec:
     ).rejects.toThrow(/Service "missing-svc" not found/);
   });
 
+  it('lowers Ingress to a router Worker + per-host CustomDomain', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: web }
+spec:
+  selector: { matchLabels: { app: web } }
+  template:
+    spec:
+      containers: [{ name: web, image: ./web.js }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-svc }
+spec:
+  selector: { app: api }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web-svc }
+spec:
+  selector: { app: web }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: site
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+spec:
+  rules:
+    - host: example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend: { service: { name: api-svc, port: { number: 80 } } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: web-svc, port: { number: 80 } } }
+`);
+    const router = result.desired.find(
+      (d) => d.resourceType === 'Worker' && d.label === 'default/site--router',
+    );
+    expect(router).toBeDefined();
+    const props = router!.properties as Record<string, unknown>;
+    expect(props.scriptName).toBe('k1c--default--site--ingress');
+    expect(typeof props.entrypointContent).toBe('string');
+    const bindings = props.bindings as ReadonlyArray<Record<string, string>>;
+    // Two service bindings, one per backend Service.
+    expect(bindings.filter((b) => b.type === 'service')).toHaveLength(2);
+    const services = new Set(bindings.map((b) => b.service));
+    expect(services.has('k1c--default--api')).toBe(true);
+    expect(services.has('k1c--default--web')).toBe(true);
+
+    const cd = result.desired.find((d) => d.resourceType === 'CustomDomain');
+    expect(cd).toBeDefined();
+    expect(cd!.label).toBe('example.com');
+    expect((cd!.properties as Record<string, string>).service).toBe(
+      'k1c--default--site--ingress',
+    );
+    expect(cd!.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'Ingress', name: 'site--router' }),
+    );
+  });
+
+  it('lowers Ingress with multiple hosts into one CustomDomain per host', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-svc }
+spec:
+  selector: { app: api }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: multi
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+spec:
+  rules:
+    - host: a.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: api-svc } }
+    - host: b.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: api-svc } }
+`);
+    const cds = result.desired.filter((d) => d.resourceType === 'CustomDomain');
+    expect(cds).toHaveLength(2);
+    const hostnames = cds.map((d) => (d.properties as Record<string, string>).hostname).sort();
+    expect(hostnames).toEqual(['a.example.com', 'b.example.com']);
+  });
+
+  it('warns when Ingress mixes a wildcard host with literal hosts', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-svc }
+spec:
+  selector: { app: api }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wild
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+spec:
+  rules:
+    - host: example.com
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: api-svc } } }
+    - host: '*.example.com'
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: api-svc } } }
+`);
+    expect(result.warnings.some((w) => /wildcard host/.test(w.message))).toBe(true);
+    // Only the literal host gets a CustomDomain.
+    const cds = result.desired.filter((d) => d.resourceType === 'CustomDomain');
+    expect(cds).toHaveLength(1);
+  });
+
+  it('rejects Ingress without any literal host', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-svc }
+spec:
+  selector: { app: api }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oops
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+spec:
+  rules:
+    - http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: api-svc } } }
+`),
+    ).rejects.toThrow(/at least one rule must specify a literal/);
+  });
+
+  it('rejects Ingress backend referencing a non-existent Service', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: oops
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+spec:
+  rules:
+    - host: example.com
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: ghost } } }
+`),
+    ).rejects.toThrow(/backend Service "ghost" .* not found/);
+  });
+
+  it('rejects Ingress missing the cloudflare.com/zone-id annotation', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: { name: oops }
+spec:
+  rules:
+    - host: example.com
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: anything } } }
+`),
+    ).rejects.toThrow(/cloudflare.com\/zone-id/);
+  });
+
   it('hashes the entrypoint content into Worker.entrypointHash', async () => {
     const { resources } = parseManifest(`
 apiVersion: apps/v1

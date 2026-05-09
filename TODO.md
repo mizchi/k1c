@@ -8,9 +8,7 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 
 ## Workload primitives still missing
 
-- **`Ingress` → Worker Routes** — `spec.rules[].host` + `paths[]` lowering to
-  zone-scoped Workers Routes. Needs a router Worker for path-based fan-out.
-  `Service` (LoadBalancer → Custom Domain) handles the simple case today.
+- *(none — `Ingress` shipped via generated router Worker + per-host Custom Domain)*
 
 ## Data plane
 
@@ -21,7 +19,10 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 - **`CustomHostname` (CRD)** — Cloudflare for SaaS routing. Async SSL provisioning
   forces async polling on the provider, which is why this is gated on the polling
   feature in `future-considerations.md`.
-- **`Ingress` (`networking.k8s.io/v1`)** — see "Workload primitives".
+- **Ingress wildcard host binding** — wildcard hosts (`*.example.com`) currently
+  match in-router only; a Workers Route binding (zone-scoped) is needed to
+  actually receive wildcard traffic. Issuing wildcard Workers Routes via SDK is
+  a small follow-up.
 - **DNSRecord auto-emission** — currently `DNSRecord` is its own resource. A
   `cloudflare.com/manage-dns: true` annotation on a `Service type=LoadBalancer`
   could auto-emit a CNAME pointing at the Custom Domain.
@@ -57,6 +58,10 @@ just annotation or `volumeMounts[].xxxRef` plumbing.
 
 ## Recently shipped (was on this list, now done)
 
+- ~~`Ingress` (`networking.k8s.io/v1`)~~ — shipped. Generates a router Worker
+  with `service` bindings to backend Services, plus one Custom Domain per
+  literal host. k8s `Prefix` semantics (segment-wise prefix); longest-path-first
+  match within a host. Wildcard hosts match in-router only — see entry above.
 - ~~`LogpushJob` (CRD)~~ — shipped. Zone- or account-scoped log push to R2 / S3 /
   GCS / etc. Ownership marker via the `name` prefix `k1c-<ns>-<name>`.
 - ~~AI / Browser / VersionMetadata bindings via Pod annotation~~ — shipped.
@@ -91,10 +96,11 @@ dragged into `Deployment`.
 
 ## Operational features
 
-- **`k1c apply --watch`** — re-apply on file change. Pairs with content hashing.
+- ~~**`k1c apply --watch`**~~ — shipped.
+- ~~**JSON output mode**~~ — shipped (`-o json` on `get` / `describe` / `diff`).
 - **`k1c logs <kind> <name>`** — wrap `wrangler tail`.
 - **`k1c port-forward`** — only meaningful if running against `wrangler dev`.
-- **JSON output mode** (`--output=json`) for `get` / `describe` / `diff`.
+- **`--quiet` mode** — suppress non-error output for scripting.
 - **Real Cloudflare e2e tests** — env-gated, in `tests/e2e/`. Currently every
   provider is exercised through SDK mocks only.
 - **Reverse-topo on deletes** (see `future-considerations.md`).
@@ -107,4 +113,4 @@ dragged into `Deployment`.
   we accept whatever YAML the parser sees, but a doc page on the supported subset
   would help).
 - **Renovate / dependabot config** for the repo itself.
-- **`pnpm publish` / npm package** distribution so `npm i -g @mizchi/k1c` works.
+- ~~**npm package** distribution~~ — shipped (`@mizchi/k1c` on npm via release-please + OIDC).

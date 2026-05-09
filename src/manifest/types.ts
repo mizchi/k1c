@@ -276,6 +276,30 @@ export interface LogpushJobSpec {
 
 export type LogpushJob = BaseResource<'LogpushJob', 'cloudflare.k1c.io/v1alpha1', LogpushJobSpec>;
 
+export type IngressPathType = 'Prefix' | 'Exact' | 'ImplementationSpecific';
+
+export interface IngressBackend {
+  readonly service: { readonly name: string; readonly port?: { readonly number?: number; readonly name?: string } };
+}
+
+export interface IngressPath {
+  readonly path: string;
+  readonly pathType: IngressPathType;
+  readonly backend: IngressBackend;
+}
+
+export interface IngressRule {
+  readonly host?: string;
+  readonly http: { readonly paths: ReadonlyArray<IngressPath> };
+}
+
+export interface IngressSpec {
+  readonly rules: ReadonlyArray<IngressRule>;
+  readonly defaultBackend?: IngressBackend;
+}
+
+export type Ingress = BaseResource<'Ingress', 'networking.k8s.io/v1', IngressSpec>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -294,7 +318,8 @@ export type K1cResource =
   | Queue
   | Vectorize
   | DNSRecord
-  | LogpushJob;
+  | LogpushJob
+  | Ingress;
 
 export type ResourceKind = K1cResource['kind'];
 

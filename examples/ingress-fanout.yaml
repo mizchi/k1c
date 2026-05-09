@@ -1,0 +1,61 @@
+# Path-based fan-out via k1c Ingress.
+# /api/* goes to the `api` Worker, everything else goes to `web`.
+# k1c will generate a router Worker (`k1c--default--site--ingress`) with
+# `service` bindings to both backends, and one Custom Domain at example.com
+# pointing at the router.
+#
+# Apply with: K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f examples/ingress-fanout.yaml --dry-run
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - { name: api, image: ./examples/hello-worker.mjs }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  selector: { matchLabels: { app: web } }
+  template:
+    spec:
+      containers:
+        - { name: web, image: ./examples/hello-worker.mjs }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-svc }
+spec:
+  selector: { app: api }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web-svc }
+spec:
+  selector: { app: web }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: site
+  annotations:
+    cloudflare.com/zone-id: REPLACE_WITH_YOUR_ZONE_ID
+spec:
+  rules:
+    - host: example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service: { name: api-svc, port: { number: 80 } }
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: web-svc, port: { number: 80 } }
