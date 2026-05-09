@@ -137,13 +137,14 @@ Versioning is automated via [release-please](https://github.com/googleapis/relea
 - Conventional Commit messages on `main` (`feat:`, `fix:`, `chore:`, etc.) feed
   into a release PR that bumps `package.json`, updates `CHANGELOG.md`, and
   cuts a Git tag plus a GitHub Release.
-- Merging that release PR triggers `.github/workflows/publish.yml`, which
-  publishes `@mizchi/k1c` to npm via [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers)
-  (no `NPM_TOKEN` involved) with `--provenance` SLSA attestation.
+- The same `release-please.yml` workflow then runs a `publish` job (gated on
+  `release_created == true`) that publishes `@mizchi/k1c` to npm via
+  [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers)
+  (no `NPM_TOKEN`) with `--provenance` SLSA attestation.
 
 The npm package must be registered as a trusted publisher on `npmjs.com` once,
-pointing at `mizchi/k1c` + the `publish.yml` workflow. After that the entire
-flow (PR → merge → tag → npm) is hands-off.
+pointing at `mizchi/k1c` + the `release-please.yml` workflow. After that the
+entire flow (PR → merge → tag → npm) is hands-off.
 
 ## License
 

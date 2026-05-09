@@ -3,13 +3,15 @@ name: release-please
 on:
   push:
     branches: [main]
-  # Manual escape hatch for retries (needed once after enabling
-  # "Allow GitHub Actions to create and approve pull requests" in repo settings).
+  # Manual escape hatch: lets us re-run after toggling repo settings or
+  # republish a tag (the publish job re-checks release_created and skips
+  # if no new release was cut).
   workflow_dispatch: {}
 
 permissions:
   contents: write
   pull-requests: write
+  id-token: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -17,8 +19,48 @@ env:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - id: release
+        uses: googleapis/release-please-action@v4
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: typecheck
+        run: pnpm typecheck
+
+      - name: test
+        run: pnpm test
+
+      - name: build
+        run: pnpm build
+
+      # OIDC trusted publishing — no NPM_TOKEN. `--provenance` uploads the
+      # SLSA attestation that ties the tarball to this exact workflow run.
+      - name: publish
+        run: npm publish --provenance --access public
