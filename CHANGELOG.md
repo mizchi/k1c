@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/mizchi/k1c/compare/v0.2.0...v0.3.0) (2026-05-09)
+
+
+### Features
+
+* add mtls_certificate and pipelines Worker bindings ([6ffcab1](https://github.com/mizchi/k1c/commit/6ffcab1e30bd960465186bb81e2685c85670a1b4))
+* implement Ingress (networking.k8s.io/v1) ([1351116](https://github.com/mizchi/k1c/commit/13511169cb6ab90b4d0576d403c96d24c0323301))
+
+
+### Bug Fixes
+
+* **cli:** render provider errors instead of "[object Object]" ([38493ed](https://github.com/mizchi/k1c/commit/38493eda8e9f1e22d1e44e485d20512e71e2d18f))
+* order deletes by reverse type priority ([28e57c0](https://github.com/mizchi/k1c/commit/28e57c008a70b5b7d9979e8b6eb076e87868a62c))
+
 ## [0.2.0](https://github.com/mizchi/k1c/compare/v0.1.0...v0.2.0) (2026-05-09)
 
 
