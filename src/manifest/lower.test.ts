@@ -1537,7 +1537,7 @@ spec:
     expect(hostnames).toEqual(['a.example.com', 'b.example.com']);
   });
 
-  it('warns when Ingress mixes a wildcard host with literal hosts', async () => {
+  it('emits a WorkerRoute for each wildcard host alongside literal CustomDomains', async () => {
     const result = await lowerYaml(`
 apiVersion: apps/v1
 kind: Deployment
@@ -1571,13 +1571,53 @@ spec:
         paths:
           - { path: /, pathType: Prefix, backend: { service: { name: api-svc } } }
 `);
-    expect(result.warnings.some((w) => /wildcard host/.test(w.message))).toBe(true);
-    // Only the literal host gets a CustomDomain.
     const cds = result.desired.filter((d) => d.resourceType === 'CustomDomain');
     expect(cds).toHaveLength(1);
+    const routes = result.desired.filter((d) => d.resourceType === 'WorkerRoute');
+    expect(routes).toHaveLength(1);
+    expect(routes[0]!.label).toBe('*.example.com/*');
+    expect(routes[0]!.properties).toEqual({
+      zoneId: 'zone-abc',
+      pattern: '*.example.com/*',
+      scriptName: 'k1c--default--wild--ingress',
+    });
   });
 
-  it('rejects Ingress without any literal host', async () => {
+  it('accepts a wildcard-only Ingress and binds via WorkerRoute', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: api-svc }
+spec:
+  selector: { app: api }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tenants
+  annotations:
+    cloudflare.com/zone-id: zone-abc
+spec:
+  rules:
+    - host: '*.tenants.example.com'
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: api-svc } } }
+`);
+    expect(result.desired.filter((d) => d.resourceType === 'CustomDomain')).toHaveLength(0);
+    expect(result.desired.filter((d) => d.resourceType === 'WorkerRoute')).toHaveLength(1);
+  });
+
+  it('rejects Ingress without any host', async () => {
     await expect(
       lowerYaml(`
 apiVersion: apps/v1
@@ -1607,7 +1647,7 @@ spec:
         paths:
           - { path: /, pathType: Prefix, backend: { service: { name: api-svc } } }
 `),
-    ).rejects.toThrow(/at least one rule must specify a literal/);
+    ).rejects.toThrow(/at least one rule must specify a host/);
   });
 
   it('rejects Ingress backend referencing a non-existent Service', async () => {

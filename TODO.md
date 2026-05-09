@@ -19,10 +19,6 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 - **`CustomHostname` (CRD)** — Cloudflare for SaaS routing. Async SSL provisioning
   forces async polling on the provider, which is why this is gated on the polling
   feature in `future-considerations.md`.
-- **Ingress wildcard host binding** — wildcard hosts (`*.example.com`) currently
-  match in-router only; a Workers Route binding (zone-scoped) is needed to
-  actually receive wildcard traffic. Issuing wildcard Workers Routes via SDK is
-  a small follow-up.
 - **DNSRecord auto-emission** — currently `DNSRecord` is its own resource. A
   `cloudflare.com/manage-dns: true` annotation on a `Service type=LoadBalancer`
   could auto-emit a CNAME pointing at the Custom Domain.
@@ -63,7 +59,8 @@ just annotation or `volumeMounts[].xxxRef` plumbing.
 - ~~`Ingress` (`networking.k8s.io/v1`)~~ — shipped. Generates a router Worker
   with `service` bindings to backend Services, plus one Custom Domain per
   literal host. k8s `Prefix` semantics (segment-wise prefix); longest-path-first
-  match within a host. Wildcard hosts match in-router only — see entry above.
+  match within a host. Wildcard hosts (`*.example.com`) bind via Workers Routes
+  (`<host>/*`) to the same router.
 - ~~`LogpushJob` (CRD)~~ — shipped. Zone- or account-scoped log push to R2 / S3 /
   GCS / etc. Ownership marker via the `name` prefix `k1c-<ns>-<name>`.
 - ~~AI / Browser / VersionMetadata bindings via Pod annotation~~ — shipped.

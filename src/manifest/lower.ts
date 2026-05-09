@@ -37,6 +37,7 @@ import type { VectorizeProperties } from '../providers/vectorize.ts';
 import type { DNSRecordProperties } from '../providers/dns-record.ts';
 import type { WorkflowProperties } from '../providers/workflow.ts';
 import type { LogpushJobProperties } from '../providers/logpush-job.ts';
+import type { WorkerRouteProperties } from '../providers/worker-route.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 import { generateRouter, type RouterRoute } from '../ingress/router-template.ts';
 
@@ -488,25 +489,19 @@ async function lowerIngress(
   }
 
   const literalHosts = new Set<string>();
-  let hasWildcardHost = false;
+  const wildcardHosts = new Set<string>();
   for (const rule of ing.spec.rules) {
     if (rule.host === undefined) continue;
     if (rule.host.startsWith('*.')) {
-      hasWildcardHost = true;
+      wildcardHosts.add(rule.host);
     } else {
       literalHosts.add(rule.host);
     }
   }
-  if (literalHosts.size === 0) {
+  if (literalHosts.size === 0 && wildcardHosts.size === 0) {
     throw new LowerError(
-      `Ingress ${ns}/${name}: at least one rule must specify a literal (non-wildcard) host so a Custom Domain can be created`,
+      `Ingress ${ns}/${name}: at least one rule must specify a host (literal or wildcard) so traffic can be bound to the router`,
     );
-  }
-  if (hasWildcardHost) {
-    warnings.push({
-      ref,
-      message: `Ingress ${ns}/${name}: wildcard hosts are matched in-router only; create a Workers Route or extra Custom Domain manifest to actually receive traffic for the wildcard`,
-    });
   }
 
   // Assign one binding name per unique backend Service.
@@ -614,6 +609,27 @@ async function lowerIngress(
         zoneId,
         environment,
       },
+      dependsOn: [routerRef],
+    });
+  }
+
+  // Wildcard hosts cannot be bound via Custom Domain (which takes literal
+  // hostnames only); fall back to a zone-scoped Workers Route at `<host>/*`.
+  // The router Worker already matches the wildcard in-source, so this just
+  // delivers traffic to it.
+  for (const host of wildcardHosts) {
+    const pattern = `${host}/*`;
+    const routeRef: ResourceRef = { ...ref, name: `${name}--route--${host}` };
+    const routeProps: WorkerRouteProperties = {
+      zoneId,
+      pattern,
+      scriptName: routerScriptName,
+    };
+    results.push({
+      resourceType: 'WorkerRoute',
+      ref: routeRef,
+      label: pattern,
+      properties: routeProps,
       dependsOn: [routerRef],
     });
   }

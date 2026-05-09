@@ -143,6 +143,7 @@ function deletePriority(resourceType: string): number {
     // Top-level edges — nothing else points at these. Delete first so we do not
     // serve traffic to a Worker we are about to remove.
     case 'CustomDomain':
+    case 'WorkerRoute':
     case 'DNSRecord':
     case 'LogpushJob':
     case 'Workflow':
