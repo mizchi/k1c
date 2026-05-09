@@ -1762,6 +1762,74 @@ spec:
     ]);
   });
 
+  it('lowers AccessPolicy to a DesiredResource with prefixed policy name', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessPolicy
+metadata: { name: dev-allow, namespace: prod }
+spec:
+  decision: allow
+  include:
+    - { emailDomain: { domain: anthropic.com } }
+  sessionDuration: 8h
+`);
+    expect(result.desired).toHaveLength(1);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('AccessPolicy');
+    expect(d.label).toBe('prod/dev-allow');
+    expect(d.properties).toEqual({
+      policyName: 'k1c-prod-dev-allow',
+      decision: 'allow',
+      include: [{ email_domain: { domain: 'anthropic.com' } }],
+      sessionDuration: '8h',
+    });
+  });
+
+  it('lowers AccessApplication policy ref to a placeholder + dependsOn edge', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessPolicy
+metadata: { name: dev-allow }
+spec:
+  decision: allow
+  include:
+    - { emailDomain: { domain: anthropic.com } }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: internal }
+spec:
+  domain: internal.example.com
+  policies:
+    - { ref: dev-allow }
+    - name: emergency-bypass
+      decision: bypass
+      include:
+        - { everyone: {} }
+`);
+    const app = result.desired.find((d) => d.resourceType === 'AccessApplication')!;
+    const policies = (app.properties as { policies: ReadonlyArray<unknown> }).policies;
+    expect(policies[0]).toBe('<resolved-at-apply:AccessPolicy:default/dev-allow>');
+    expect(policies[1]).toMatchObject({ name: 'emergency-bypass', decision: 'bypass' });
+    expect(app.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'AccessPolicy', name: 'dev-allow' }),
+    );
+  });
+
+  it('rejects AccessApplication policy ref pointing at no AccessPolicy', async () => {
+    await expect(
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: internal }
+spec:
+  domain: internal.example.com
+  policies:
+    - { ref: ghost }
+`),
+    ).rejects.toThrow(/policy ref "ghost"/);
+  });
+
   it('lowers CacheRule to a DesiredResource with default enabled=true', async () => {
     const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1

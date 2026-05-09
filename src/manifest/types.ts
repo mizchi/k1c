@@ -322,13 +322,34 @@ export interface AccessAppPolicy {
   readonly sessionDuration?: string;
 }
 
+export interface AccessPolicyRef {
+  /** Name of an AccessPolicy resource in the same namespace. */
+  readonly ref: string;
+}
+
+export type AccessApplicationPolicyItem = AccessAppPolicy | AccessPolicyRef;
+
 export interface AccessApplicationSpec {
   readonly domain: string;
   readonly sessionDuration?: string;
   readonly autoRedirectToIdentity?: boolean;
   readonly allowedIdps?: ReadonlyArray<string>;
-  readonly policies: ReadonlyArray<AccessAppPolicy>;
+  readonly policies: ReadonlyArray<AccessApplicationPolicyItem>;
 }
+
+export interface AccessPolicySpec {
+  readonly decision: AccessDecision;
+  readonly include: ReadonlyArray<AccessRule>;
+  readonly exclude?: ReadonlyArray<AccessRule>;
+  readonly require?: ReadonlyArray<AccessRule>;
+  readonly sessionDuration?: string;
+}
+
+export type AccessPolicy = BaseResource<
+  'AccessPolicy',
+  'cloudflare.k1c.io/v1alpha1',
+  AccessPolicySpec
+>;
 
 export type AccessApplication = BaseResource<
   'AccessApplication',
@@ -377,6 +398,7 @@ export type K1cResource =
   | LogpushJob
   | Ingress
   | AccessApplication
+  | AccessPolicy
   | CacheRule;
 
 export type ResourceKind = K1cResource['kind'];

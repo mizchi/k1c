@@ -204,6 +204,7 @@ function deletePriority(resourceType: string): number {
     case 'Hyperdrive':
     case 'Vectorize':
     case 'Queue':
+    case 'AccessPolicy':
       return 2;
     case 'DispatchNamespace':
       return 3;

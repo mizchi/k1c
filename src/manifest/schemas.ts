@@ -368,6 +368,26 @@ const accessAppPolicySchema = z.object({
   sessionDuration: z.string().optional(),
 });
 
+const accessPolicyRefSchema = z.object({ ref: z.string().min(1) }).strict();
+
+const accessApplicationPolicyItemSchema = z.union([
+  accessPolicyRefSchema,
+  accessAppPolicySchema,
+]);
+
+export const accessPolicySchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('AccessPolicy'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    decision: z.enum(['allow', 'deny', 'bypass', 'non_identity']),
+    include: z.array(accessRuleSchema).min(1),
+    exclude: z.array(accessRuleSchema).optional(),
+    require: z.array(accessRuleSchema).optional(),
+    sessionDuration: z.string().optional(),
+  }),
+});
+
 const cacheRuleTtlSchema = z.object({
   mode: z.enum(['respect_origin', 'bypass_by_default', 'override_origin']),
   default: z.number().int().nonnegative().optional(),
@@ -397,7 +417,7 @@ export const accessApplicationSchema = z.object({
     sessionDuration: z.string().optional(),
     autoRedirectToIdentity: z.boolean().optional(),
     allowedIdps: z.array(z.string()).optional(),
-    policies: z.array(accessAppPolicySchema).min(1),
+    policies: z.array(accessApplicationPolicyItemSchema).min(1),
   }),
 });
 
@@ -432,5 +452,6 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   logpushJobSchema,
   ingressSchema,
   accessApplicationSchema,
+  accessPolicySchema,
   cacheRuleSchema,
 ]);

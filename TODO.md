@@ -33,11 +33,11 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
   policies: `decision: allow|deny|bypass|non_identity` + `include` / `exclude`
   / `require` rule groups. Supported rule shapes: `email`, `emailDomain`,
   `everyone`, `ip`, `country`, `serviceToken`, `anyValidServiceToken`.
-- **`AccessPolicy` (CRD)** — standalone, reusable account-level policy. Today
-  policies are inlined inside `AccessApplication`; pulling them out into a
-  separate CRD requires cross-resource ID resolution at apply time, which the
-  rest of the codebase does not yet do (see the placeholder pattern in
-  `lower.ts`). Deferred until that resolution layer lands.
+- ~~**`AccessPolicy` (CRD)**~~ — shipped. Reusable account-level policy keyed
+  on `k1c-<ns>-<name>`; AccessApplication's `policies[]` accepts either an
+  inline policy or `{ ref: <name> }` which lowers to a
+  `<resolved-at-apply:AccessPolicy:<label>>` placeholder substituted at apply
+  time.
 - **More AccessApplication types** — only `self_hosted` is wired today. SaaS,
   SSH, VNC, Browser Isolation, Bookmark, Infrastructure, etc. are all single-
   field-extension follow-ups.

@@ -16,6 +16,7 @@ import { logpushJobProvider } from './logpush-job.ts';
 import { workerRouteProvider } from './worker-route.ts';
 import { accessApplicationProvider } from './access-application.ts';
 import { cacheRuleProvider } from './cache-rule.ts';
+import { accessPolicyProvider } from './access-policy.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -36,6 +37,7 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(workerRouteProvider);
   r.register(accessApplicationProvider);
   r.register(cacheRuleProvider);
+  r.register(accessPolicyProvider);
   return r;
 }
 

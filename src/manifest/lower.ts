@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import type {
   AccessApplication,
   AccessAppPolicy,
+  AccessApplicationPolicyItem,
+  AccessPolicy,
   AccessRule,
   CacheRule,
   ConfigMapResource,
@@ -48,6 +50,8 @@ import type {
   AccessRuleWire,
 } from '../providers/access-application.ts';
 import type { CacheRuleProperties } from '../providers/cache-rule.ts';
+import type { AccessPolicyProperties } from '../providers/access-policy.ts';
+import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 import { generateRouter, type RouterRoute } from '../ingress/router-template.ts';
 import { placeholder } from '../reconciler/placeholders.ts';
@@ -118,6 +122,7 @@ export async function lower(
   const logpushJobs: LogpushJob[] = [];
   const ingresses: Ingress[] = [];
   const accessApplications: AccessApplication[] = [];
+  const accessPolicies: AccessPolicy[] = [];
   const cacheRules: CacheRule[] = [];
 
   for (const r of resources) {
@@ -181,6 +186,9 @@ export async function lower(
         break;
       case 'AccessApplication':
         accessApplications.push(r);
+        break;
+      case 'AccessPolicy':
+        accessPolicies.push(r);
         break;
       case 'CacheRule':
         cacheRules.push(r);
@@ -250,8 +258,12 @@ export async function lower(
     }
   }
 
+  for (const ap of accessPolicies) {
+    desired.push(lowerAccessPolicy(ap));
+  }
+
   for (const app of accessApplications) {
-    desired.push(lowerAccessApplication(app));
+    desired.push(lowerAccessApplication(app, accessPolicies));
   }
 
   for (const cr of cacheRules) {
@@ -259,6 +271,28 @@ export async function lower(
   }
 
   return { desired, warnings };
+}
+
+function lowerAccessPolicy(
+  ap: AccessPolicy,
+): DesiredResource<AccessPolicyProperties> {
+  const ns = ap.metadata.namespace ?? 'default';
+  const name = ap.metadata.name;
+  return {
+    resourceType: 'AccessPolicy',
+    ref: refOf(ap),
+    label: `${ns}/${name}`,
+    properties: {
+      policyName: `k1c-${ns}-${name}`,
+      decision: ap.spec.decision,
+      include: ap.spec.include.map(ruleToWire),
+      ...(ap.spec.exclude !== undefined ? { exclude: ap.spec.exclude.map(ruleToWire) } : {}),
+      ...(ap.spec.require !== undefined ? { require: ap.spec.require.map(ruleToWire) } : {}),
+      ...(ap.spec.sessionDuration !== undefined
+        ? { sessionDuration: ap.spec.sessionDuration }
+        : {}),
+    },
+  };
 }
 
 function lowerCacheRule(cr: CacheRule): DesiredResource<CacheRuleProperties> {
@@ -302,11 +336,35 @@ function policyToWire(p: AccessAppPolicy): AccessAppPolicyWire {
   };
 }
 
+function isPolicyRef(
+  p: AccessApplicationPolicyItem,
+): p is Extract<AccessApplicationPolicyItem, { ref: string }> {
+  return 'ref' in p && !('decision' in p);
+}
+
 function lowerAccessApplication(
   app: AccessApplication,
+  accessPolicies: ReadonlyArray<AccessPolicy>,
 ): DesiredResource<AccessApplicationProperties> {
   const ns = app.metadata.namespace ?? 'default';
   const name = app.metadata.name;
+  const dependsOn: ResourceRef[] = [];
+  const policies: AccessApplicationProperties['policies'] = app.spec.policies.map((item) => {
+    if (isPolicyRef(item)) {
+      const target = accessPolicies.find(
+        (ap) => (ap.metadata.namespace ?? 'default') === ns && ap.metadata.name === item.ref,
+      );
+      if (target === undefined) {
+        throw new LowerError(
+          `AccessApplication ${ns}/${name}: policy ref "${item.ref}" matches no AccessPolicy in namespace "${ns}"`,
+        );
+      }
+      pushUnique(dependsOn, refOf(target));
+      // The resolver replaces this placeholder with the policy's CF UUID at apply time.
+      return makePlaceholder('AccessPolicy', `${ns}/${item.ref}`);
+    }
+    return policyToWire(item);
+  });
   const properties: AccessApplicationProperties = {
     appName: `k1c-${ns}-${name}`,
     domain: app.spec.domain,
@@ -317,13 +375,14 @@ function lowerAccessApplication(
       ? { autoRedirectToIdentity: app.spec.autoRedirectToIdentity }
       : {}),
     ...(app.spec.allowedIdps !== undefined ? { allowedIdps: [...app.spec.allowedIdps] } : {}),
-    policies: app.spec.policies.map(policyToWire),
+    policies,
   };
   return {
     resourceType: 'AccessApplication',
     ref: refOf(app),
     label: `${ns}/${name}`,
     properties,
+    ...(dependsOn.length > 0 ? { dependsOn } : {}),
   };
 }
 

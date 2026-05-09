@@ -1,0 +1,33 @@
+# A reusable Access policy referenced by name from one or more AccessApplications.
+#
+# Apply with: K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f examples/access-policy.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessPolicy
+metadata:
+  name: company-allow
+spec:
+  decision: allow
+  include:
+    - emailDomain: { domain: anthropic.com }
+  sessionDuration: 24h
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessPolicy
+metadata:
+  name: emergency-bypass
+spec:
+  decision: bypass
+  include:
+    - serviceToken: { tokenId: REPLACE_WITH_SERVICE_TOKEN_UUID }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata:
+  name: internal
+spec:
+  domain: internal.example.com
+  sessionDuration: 24h
+  policies:
+    - ref: company-allow      # references the AccessPolicy above
+    - ref: emergency-bypass

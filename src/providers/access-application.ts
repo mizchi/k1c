@@ -42,7 +42,13 @@ export interface AccessApplicationProperties {
   readonly sessionDuration?: string;
   readonly autoRedirectToIdentity?: boolean;
   readonly allowedIdps?: ReadonlyArray<string>;
-  readonly policies: ReadonlyArray<AccessAppPolicyWire>;
+  /**
+   * Policy entries. Each item is either an inline policy (AccessAppPolicyWire)
+   * or a string holding the policy's Cloudflare UUID (typically materialized
+   * from a `<resolved-at-apply:AccessPolicy:<label>>` placeholder by the
+   * apply-time resolver).
+   */
+  readonly policies: ReadonlyArray<AccessAppPolicyWire | string>;
 }
 
 const accessRuleWireSchema: z.ZodType<AccessRuleWire> = z.union([
@@ -70,7 +76,7 @@ export const accessApplicationSchema: z.ZodType<AccessApplicationProperties> = z
   sessionDuration: z.string().optional(),
   autoRedirectToIdentity: z.boolean().optional(),
   allowedIdps: z.array(z.string()).optional(),
-  policies: z.array(accessAppPolicyWireSchema),
+  policies: z.array(z.union([accessAppPolicyWireSchema, z.string()])),
 });
 
 const NAME_PREFIX = 'k1c-';
@@ -109,14 +115,19 @@ function buildBody(props: AccessApplicationProperties) {
       ? { auto_redirect_to_identity: props.autoRedirectToIdentity }
       : {}),
     ...(props.allowedIdps !== undefined ? { allowed_idps: [...props.allowedIdps] } : {}),
-    policies: props.policies.map((p) => ({
-      name: p.name,
-      decision: p.decision,
-      include: [...p.include],
-      ...(p.exclude !== undefined ? { exclude: [...p.exclude] } : {}),
-      ...(p.require !== undefined ? { require: [...p.require] } : {}),
-      ...(p.session_duration !== undefined ? { session_duration: p.session_duration } : {}),
-    })),
+    policies: props.policies.map((p) => {
+      // Strings are policy UUIDs (e.g. resolved from <resolved-at-apply:AccessPolicy:...>);
+      // pass through as-is so the SDK references the existing reusable policy.
+      if (typeof p === 'string') return p;
+      return {
+        name: p.name,
+        decision: p.decision,
+        include: [...p.include],
+        ...(p.exclude !== undefined ? { exclude: [...p.exclude] } : {}),
+        ...(p.require !== undefined ? { require: [...p.require] } : {}),
+        ...(p.session_duration !== undefined ? { session_duration: p.session_duration } : {}),
+      };
+    }),
   };
 }
 
