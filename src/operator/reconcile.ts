@@ -8,6 +8,8 @@ import { apply } from '../reconciler/apply.ts';
 import { listManagedResources, MANAGED_LABEL } from './source.ts';
 import { writeStatus } from './status.ts';
 import { startWatches, type KindSpec } from './watch.ts';
+import { incCounter, observeSummary, setGauge } from './metrics.ts';
+import { startMetricsServer } from './server.ts';
 
 export interface OperatorOptions {
   readonly accountId: string;
@@ -28,6 +30,11 @@ export interface OperatorOptions {
   readonly watch?: boolean;
   /** Debounce events by this many ms before triggering reconcile. */
   readonly debounceMs?: number;
+  /**
+   * Bind address for the metrics + health HTTP server. Default
+   * `0.0.0.0:9090`. Pass empty string to disable.
+   */
+  readonly metricsAddr?: string;
   /** Hook for log lines (default: console.log). */
   readonly out?: (msg: string) => void;
   readonly err?: (msg: string) => void;
@@ -106,10 +113,24 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
 
   const useWatch = options.watch ?? true;
   const debounceMs = options.debounceMs ?? 500;
+  const metricsAddr = options.metricsAddr ?? '0.0.0.0:9090';
 
   out(
-    `(k1c operator starting; account=${options.accountId}${options.namespace ? ` ns=${options.namespace}` : ' cluster-wide'} ${useWatch ? `watch+resync=${options.intervalMs}ms` : `interval=${options.intervalMs}ms`})`,
+    `(k1c operator starting; account=${options.accountId}${options.namespace ? ` ns=${options.namespace}` : ' cluster-wide'} ${useWatch ? `watch+resync=${options.intervalMs}ms` : `interval=${options.intervalMs}ms`}${metricsAddr ? ` metrics=${metricsAddr}` : ''})`,
   );
+
+  // Mark the process up; the gauge flips to 0 only at clean shutdown.
+  setGauge('k1c_operator_up', '1 while the operator process is alive', 1);
+
+  let firstPassDone = false;
+  if (metricsAddr) {
+    startMetricsServer({
+      addr: metricsAddr,
+      isReady: () => firstPassDone,
+      signal,
+      onWarning: (m) => err(`warning: ${m}`),
+    });
+  }
 
   // Run a first pass immediately so the operator does useful work without
   // waiting an entire interval; subsequent passes fire on the timer.
@@ -117,25 +138,64 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
   const tick = async () => {
     if (pending) return;
     pending = (async () => {
+      const start = Date.now();
       try {
         const resources = await listManagedResources({
           kc,
           ...(options.namespace !== undefined ? { namespace: options.namespace } : {}),
           onWarning: (m) => err(`warning: ${m}`),
         });
+        setGauge(
+          'k1c_operator_managed_resources',
+          'count of managed resources observed in the last list pass',
+          resources.length,
+        );
         if (resources.length === 0) {
           out('reconcile: no managed resources found');
+          incCounter(
+            'k1c_operator_reconcile_passes_total',
+            'reconcile pass outcomes',
+            { outcome: 'noop' },
+          );
           return;
         }
         const lowered = await lower(resources);
         const planResult = await plan(lowered.desired, registry, ctx);
         if (planResult.operations.every((o) => o.kind === 'noop')) {
           out(`reconcile: ${planResult.operations.length} ops (all noop)`);
+          incCounter(
+            'k1c_operator_reconcile_passes_total',
+            'reconcile pass outcomes',
+            { outcome: 'noop' },
+          );
           return;
         }
         const report = await apply(planResult, registry, ctx);
         out(
           `reconcile: ${report.succeeded} ok / ${report.failed} failed / ${report.skipped} skipped`,
+        );
+        incCounter(
+          'k1c_operator_reconcile_total',
+          'per-op reconcile results',
+          { result: 'ok' },
+          report.succeeded,
+        );
+        incCounter(
+          'k1c_operator_reconcile_total',
+          'per-op reconcile results',
+          { result: 'failed' },
+          report.failed,
+        );
+        incCounter(
+          'k1c_operator_reconcile_total',
+          'per-op reconcile results',
+          { result: 'skipped' },
+          report.skipped,
+        );
+        incCounter(
+          'k1c_operator_reconcile_passes_total',
+          'reconcile pass outcomes',
+          { outcome: report.failed > 0 ? 'partial' : 'ok' },
         );
         if (report.failed > 0) {
           for (const r of report.results) {
@@ -155,7 +215,23 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
         });
       } catch (e) {
         err(`reconcile error: ${formatReconcileError(e)}`);
+        incCounter(
+          'k1c_operator_reconcile_passes_total',
+          'reconcile pass outcomes',
+          { outcome: 'error' },
+        );
+        incCounter(
+          'k1c_operator_reconcile_total',
+          'per-op reconcile results',
+          { result: 'error' },
+        );
       } finally {
+        observeSummary(
+          'k1c_operator_reconcile_duration_seconds',
+          'wall-clock duration of each reconcile pass',
+          (Date.now() - start) / 1000,
+        );
+        firstPassDone = true;
         pending = undefined;
       }
     })();
@@ -186,7 +262,14 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
     startWatches(kc, watchSpecs, {
       ...(options.namespace !== undefined ? { namespace: options.namespace } : {}),
       signal,
-      onEvent: (_kind, _phase) => triggerSoon(),
+      onEvent: (kind, phase) => {
+        incCounter(
+          'k1c_operator_watch_events_total',
+          'watch events delivered by the apiserver',
+          { kind: kind.plural, phase },
+        );
+        triggerSoon();
+      },
       onWarning: (m) => err(`warning: ${m}`),
     });
   }

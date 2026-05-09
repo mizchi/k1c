@@ -127,6 +127,7 @@ async function main(): Promise<number> {
         ...(parsed.namespace !== undefined ? { namespace: parsed.namespace } : {}),
         intervalMs: parsed.intervalSec * 1000,
         watch: parsed.watch,
+        metricsAddr: parsed.metricsAddr,
       },
       ac.signal,
     );

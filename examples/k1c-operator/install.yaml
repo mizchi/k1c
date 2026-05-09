@@ -96,6 +96,10 @@ spec:
           image: ghcr.io/mizchi/k1c-operator:latest
           imagePullPolicy: IfNotPresent
           args: [operator, run, --interval, "30"]
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
           env:
             - name: K1C_ACCOUNT_ID
               valueFrom:
@@ -107,6 +111,16 @@ spec:
                 secretKeyRef:
                   name: cloudflare-api-token
                   key: CLOUDFLARE_API_TOKEN
+          # /healthz and /readyz are served by the same metrics
+          # listener. /readyz only flips to 200 once the first
+          # reconcile pass completes, so a misconfigured kubeconfig
+          # surfaces as Unready instead of CrashLoopBackOff.
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /readyz, port: metrics }
+            periodSeconds: 5
           resources:
             requests:
               cpu: 50m
@@ -114,3 +128,23 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+---
+# Service for kubelet / Prometheus to scrape /metrics. Add a
+# ServiceMonitor (kube-prometheus) or a Pod-level
+# `prometheus.io/scrape: "true"` annotation if you're not on the
+# Prometheus operator.
+apiVersion: v1
+kind: Service
+metadata:
+  name: k1c-operator-metrics
+  namespace: k1c-system
+  labels:
+    app: k1c-operator
+spec:
+  selector:
+    app: k1c-operator
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP

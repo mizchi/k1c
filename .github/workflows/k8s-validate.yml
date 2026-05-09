@@ -210,3 +210,26 @@ jobs:
           phase=$(kubectl -n k1c-system get pod -l app=k1c-operator \
             -o jsonpath='{.items[0].status.phase}')
           test "$phase" = "Running"
+
+      - name: /metrics + /healthz exposed and populated
+        run: |
+          # Reach the metrics endpoint via `kubectl exec`-style
+          # port-forward in the background — works regardless of
+          # cluster network policy.
+          kubectl -n k1c-system port-forward svc/k1c-operator-metrics 9090:9090 \
+            >/tmp/pf.log 2>&1 &
+          PF_PID=$!
+          # Allow port-forward to establish.
+          for i in 1 2 3 4 5; do sleep 1; curl -fsS http://127.0.0.1:9090/healthz && break || true; done
+          curl -fsS http://127.0.0.1:9090/healthz | grep -q "ok"
+          curl -fsS http://127.0.0.1:9090/readyz  | grep -q -E "ready|not ready"
+          curl -fsS http://127.0.0.1:9090/metrics > /tmp/metrics.txt
+          echo "=== /metrics first 40 lines ==="
+          head -40 /tmp/metrics.txt
+          # Sanity-check on the metric set we expect.
+          grep -q "k1c_operator_up" /tmp/metrics.txt
+          grep -q "k1c_operator_reconcile_passes_total" /tmp/metrics.txt
+          grep -q "k1c_operator_reconcile_duration_seconds" /tmp/metrics.txt
+          # The R2Bucket apply earlier should have produced a watch event.
+          grep -q "k1c_operator_watch_events_total" /tmp/metrics.txt
+          kill "$PF_PID" || true
