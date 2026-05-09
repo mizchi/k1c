@@ -20,13 +20,19 @@ Most recent verification session (0.9.0):
   Cloudflare CRDs, every `examples/*.yaml` through `kubectl apply
   --dry-run=server`, `helm template … | kubectl apply --dry-run=server -f
   -`, and the kustomize base + prod overlay through the same pipe.
-- 5/12 operator rows ticked: pod boots inside kind, reconcile loop fires
+- 6/12 operator rows ticked: pod boots inside kind, reconcile loop fires
   on the configured interval, an `R2Bucket` instance added via `kubectl
   apply` is detected on the next pass, the resulting Cloudflare API call
   fails with a structured `[NotFound] 404 ...` line (against a dummy
-  account — the loop itself is healthy).
-- Distribution rows: `ghcr.io/mizchi/k1c-operator:0.9.0` `docker pull` +
-  `docker run version` confirmed on both `linux/amd64` and `linux/arm64`.
+  account — the loop itself is healthy). Label-gated standard kinds
+  (Deployment with `k1c.io/managed=true`) are also detected: the
+  reconcile-error path changes when the manifest's annotation-based
+  source is added, proving the operator reads everything end-to-end.
+- 5/5 distribution rows ticked: `ghcr.io/mizchi/k1c-operator:0.9.0`
+  pulls + runs on both `linux/amd64` and `linux/arm64`; SLSA provenance
+  + SBOM (SPDX 2.3, syft v1.42.3, 255 packages) attached as OCI 1.1
+  referrer manifests, retrievable via `docker buildx imagetools inspect
+  ... --format '{{json .Provenance|.SBOM}}'`.
 
 Side effect: 14 example manifests + the helm-chart and kustomize-base
 deployments needed `template.metadata.labels` (matching the selector),
@@ -85,7 +91,12 @@ manifest passes both. See commit "fix: every example passes kubectl apply
 - [x] Reconcile loop fires every interval; "no managed resources found" when etcd is empty
 - [x] `kubectl apply` of an `R2Bucket` CRD instance is picked up on the next reconcile pass
 - [x] Cloudflare API failure surfaces as a structured `[NotFound] 404 ...` log line (not `[object Object]`)
-- [ ] Operator picks up label-gated standard kinds (`k1c.io/managed=true` Deployment / etc.)
+- [x] Operator picks up label-gated standard kinds (`k1c.io/managed=true`
+      Deployment with CSI volumes mounting an R2Bucket + KVNamespace —
+      verified by error-path transitions: `kubectl annotate
+      cloudflare.com/source.api=...` flips the next reconcile's ENOENT
+      message from the original image to the annotation source path,
+      proving lower walked the new manifest)
 - [ ] Operator forwards changes to Cloudflare on a real account
 - [ ] Operator survives a kubectl-side delete and reverse-topo deletes the Cloudflare side
 - [x] OCI image (`ghcr.io/mizchi/k1c-operator:0.9.0`) pulls + runs on linux/amd64 (`docker run --platform linux/amd64 ... version` → `k1c 0.9.0`)
