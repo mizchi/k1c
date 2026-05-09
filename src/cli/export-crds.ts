@@ -67,6 +67,7 @@ function adaptToK8sStructural(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(adaptToK8sStructural);
   const out: Record<string, unknown> = {};
   const obj = node as Record<string, unknown>;
+  const hasProperties = 'properties' in obj;
   for (const [key, value] of Object.entries(obj)) {
     if (key === '$schema') continue;
     if (key === 'oneOf' || key === 'anyOf' || key === 'allOf') {
@@ -87,6 +88,14 @@ function adaptToK8sStructural(node: unknown): unknown {
       if (typeof value === 'string' && value !== 'uri' && value !== 'date-time') {
         continue;
       }
+    }
+    if (key === 'additionalProperties' && hasProperties) {
+      // Kubernetes structural schema forbids combining `properties`
+      // with `additionalProperties`. zod-to-json-schema emits
+      // `additionalProperties: false` for every closed object —
+      // drop it; declared `properties` already implies that nodes
+      // outside the list are unknown.
+      continue;
     }
     out[key] = adaptToK8sStructural(value);
   }
@@ -138,6 +147,10 @@ function buildCrd(kind: string): unknown {
   const specSchema = specSchemaFor(kind);
   // For standard kinds (or anything we couldn't derive), keep the
   // permissive escape hatch.
+  // Note: kubernetes forbids declaring `metadata` as a CRD property
+  // ("must not specify anything other than name and generateName"),
+  // so we leave it out — the apiserver applies the standard ObjectMeta
+  // schema to it automatically.
   const openAPIV3Schema =
     specSchema === null
       ? { type: 'object', 'x-kubernetes-preserve-unknown-fields': true }
@@ -146,7 +159,6 @@ function buildCrd(kind: string): unknown {
           properties: {
             apiVersion: { type: 'string' },
             kind: { type: 'string' },
-            metadata: { type: 'object', 'x-kubernetes-preserve-unknown-fields': true },
             spec: specSchema,
             status: { type: 'object', 'x-kubernetes-preserve-unknown-fields': true },
           },
