@@ -444,6 +444,60 @@ spec:
     expect(bindings).toContainEqual({ type: 'version_metadata', name: 'CF_VERSION' });
   });
 
+  it('emits mtls_certificate binding from volume.mtlsCertificateRef', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./api.js
+          volumeMounts:
+            - { name: cert, mountPath: MTLS }
+      volumes:
+        - name: cert
+          mtlsCertificateRef: { certificateId: cert-abc-123 }
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    const bindings = props.bindings as ReadonlyArray<Record<string, string>>;
+    expect(bindings).toContainEqual({
+      type: 'mtls_certificate',
+      name: 'MTLS',
+      certificateId: 'cert-abc-123',
+    });
+  });
+
+  it('emits pipelines binding from volume.pipelinesRef', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./api.js
+          volumeMounts:
+            - { name: pipe, mountPath: EVENTS }
+      volumes:
+        - name: pipe
+          pipelinesRef: { pipelineId: pipe-xyz }
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    const bindings = props.bindings as ReadonlyArray<Record<string, string>>;
+    expect(bindings).toContainEqual({
+      type: 'pipelines',
+      name: 'EVENTS',
+      pipeline: 'pipe-xyz',
+    });
+  });
+
   it('emits analytics_engine binding from volume.analyticsEngineRef', async () => {
     const result = await lowerYaml(`
 apiVersion: apps/v1

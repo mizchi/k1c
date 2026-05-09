@@ -37,6 +37,8 @@ const volumeSchema = z.object({
   queueRef: z.object({ name: z.string() }).optional(),
   vectorizeRef: z.object({ name: z.string() }).optional(),
   analyticsEngineRef: z.object({ dataset: z.string() }).optional(),
+  mtlsCertificateRef: z.object({ certificateId: z.string() }).optional(),
+  pipelinesRef: z.object({ pipelineId: z.string() }).optional(),
 });
 
 const containerSchema = z.object({

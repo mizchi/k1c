@@ -45,6 +45,8 @@ export interface Volume {
   readonly queueRef?: { readonly name: string };
   readonly vectorizeRef?: { readonly name: string };
   readonly analyticsEngineRef?: { readonly dataset: string };
+  readonly mtlsCertificateRef?: { readonly certificateId: string };
+  readonly pipelinesRef?: { readonly pipelineId: string };
 }
 
 export interface PodTemplateSpec {

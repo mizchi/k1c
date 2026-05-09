@@ -82,7 +82,9 @@ export type WorkerBinding =
   | { readonly type: 'ai'; readonly name: string }
   | { readonly type: 'browser'; readonly name: string }
   | { readonly type: 'version_metadata'; readonly name: string }
-  | { readonly type: 'analytics_engine'; readonly name: string; readonly dataset: string };
+  | { readonly type: 'analytics_engine'; readonly name: string; readonly dataset: string }
+  | { readonly type: 'mtls_certificate'; readonly name: string; readonly certificateId: string }
+  | { readonly type: 'pipelines'; readonly name: string; readonly pipeline: string };
 
 export const workerSchema: z.ZodType<WorkerProperties> = z.object({
   scriptName: z.string(),
@@ -148,6 +150,16 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
           name: z.string(),
           dataset: z.string(),
         }),
+        z.object({
+          type: z.literal('mtls_certificate'),
+          name: z.string(),
+          certificateId: z.string(),
+        }),
+        z.object({
+          type: z.literal('pipelines'),
+          name: z.string(),
+          pipeline: z.string(),
+        }),
       ]),
     )
     .optional(),
@@ -189,6 +201,8 @@ interface CFBinding {
   readonly script_name?: string; // for cross-script DO bindings
   readonly index_name?: string; // for vectorize bindings
   readonly dataset?: string; // for analytics_engine bindings
+  readonly certificate_id?: string; // for mtls_certificate bindings
+  readonly pipeline?: string; // for pipelines bindings
 }
 
 function buildBindings(props: WorkerProperties): CFBinding[] {
@@ -227,6 +241,10 @@ function buildBindings(props: WorkerProperties): CFBinding[] {
       out.push({ type: b.type, name: b.name });
     } else if (b.type === 'analytics_engine') {
       out.push({ type: 'analytics_engine', name: b.name, dataset: b.dataset });
+    } else if (b.type === 'mtls_certificate') {
+      out.push({ type: 'mtls_certificate', name: b.name, certificate_id: b.certificateId });
+    } else if (b.type === 'pipelines') {
+      out.push({ type: 'pipelines', name: b.name, pipeline: b.pipeline });
     }
   }
   return out;
@@ -432,6 +450,12 @@ function fromCFBinding(b: CFBinding): unknown {
   }
   if (b.type === 'analytics_engine' && b.dataset !== undefined) {
     return { type: 'analytics_engine', name: b.name, dataset: b.dataset };
+  }
+  if (b.type === 'mtls_certificate' && b.certificate_id !== undefined) {
+    return { type: 'mtls_certificate', name: b.name, certificateId: b.certificate_id };
+  }
+  if (b.type === 'pipelines' && b.pipeline !== undefined) {
+    return { type: 'pipelines', name: b.name, pipeline: b.pipeline };
   }
   return null;
 }

@@ -52,9 +52,11 @@ just annotation or `volumeMounts[].xxxRef` plumbing.
   `analytics_engine` binding via volumeMount.
 - ~~**Version Metadata**~~ — shipped. `cloudflare.com/version-metadata: <name>`
   (or `enabled` for default `CF_VERSION`).
-- **MTLS Certificate** — annotation or volume → `mtls_certificate` binding.
-  Not yet shipped; the `mTLSCertificates` SDK is there if needed.
-- **Pipelines** — `pipelines` binding. Cloudflare's event-ingestion pipeline product.
+- ~~**MTLS Certificate**~~ — shipped. `volumes[].mtlsCertificateRef.certificateId`
+  + `volumeMounts[].mountPath` → `mtls_certificate` Worker binding. The cert
+  must already be uploaded out-of-band (no MTLSCertificate CRD yet).
+- ~~**Pipelines**~~ — shipped. `volumes[].pipelinesRef.pipelineId` →
+  `pipelines` Worker binding. The pipeline must already exist (no Pipeline CRD).
 
 ## Recently shipped (was on this list, now done)
 

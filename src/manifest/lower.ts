@@ -1289,9 +1289,21 @@ async function buildContainerProperties(
         name: mount.mountPath,
         dataset: vol.analyticsEngineRef.dataset,
       });
+    } else if (vol.mtlsCertificateRef) {
+      bindings.push({
+        type: 'mtls_certificate',
+        name: mount.mountPath,
+        certificateId: vol.mtlsCertificateRef.certificateId,
+      });
+    } else if (vol.pipelinesRef) {
+      bindings.push({
+        type: 'pipelines',
+        name: mount.mountPath,
+        pipeline: vol.pipelinesRef.pipelineId,
+      });
     } else {
       throw new LowerError(
-        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, hyperdriveRef, d1DatabaseRef, queueRef, vectorizeRef, or analyticsEngineRef)`,
+        `${ctxLabel}: volume "${vol.name}" has no recognised reference (r2BucketRef, kvNamespaceRef, serviceRef, hyperdriveRef, d1DatabaseRef, queueRef, vectorizeRef, analyticsEngineRef, mtlsCertificateRef, or pipelinesRef)`,
       );
     }
   }
