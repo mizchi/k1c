@@ -130,6 +130,21 @@ This is experimental. In particular:
 - The reconciler model assumes a single Cloudflare account at a time.
 - No real end-to-end tests against Cloudflare yet — provider behavior is validated through SDK mocks only.
 
+## Releases
+
+Versioning is automated via [release-please](https://github.com/googleapis/release-please-action):
+
+- Conventional Commit messages on `main` (`feat:`, `fix:`, `chore:`, etc.) feed
+  into a release PR that bumps `package.json`, updates `CHANGELOG.md`, and
+  cuts a Git tag plus a GitHub Release.
+- Merging that release PR triggers `.github/workflows/publish.yml`, which
+  publishes `@mizchi/k1c` to npm via [OIDC trusted publishing](https://docs.npmjs.com/trusted-publishers)
+  (no `NPM_TOKEN` involved) with `--provenance` SLSA attestation.
+
+The npm package must be registered as a trusted publisher on `npmjs.com` once,
+pointing at `mizchi/k1c` + the `publish.yml` workflow. After that the entire
+flow (PR → merge → tag → npm) is hands-off.
+
 ## License
 
 MIT
