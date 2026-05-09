@@ -1,0 +1,66 @@
+# Argo CD Application installing the k1c-operator helm chart from
+# this repository. Drop into an Argo CD instance via:
+#
+#   kubectl apply -n argocd -f examples/argocd/k1c-operator-app.yaml
+#
+# Replace `repoURL` with your fork if you maintain custom values.
+#
+# The Cloudflare API Secret is NOT managed by Argo CD here — keep it
+# out of git. Create it once with kubectl before letting Argo CD
+# sync the Application:
+#
+#   kubectl create namespace k1c-system
+#   kubectl -n k1c-system create secret generic cloudflare-api-token \
+#     --from-literal=K1C_ACCOUNT_ID=<your-account-id> \
+#     --from-literal=CLOUDFLARE_API_TOKEN=<your-token>
+#
+# CRDs are NOT registered by this Application either (helm CRD
+# lifecycle would orphan CRs on uninstall). Run once, separately:
+#
+#   k1c export-crds | kubectl apply -f -
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k1c-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/mizchi/k1c.git
+    targetRevision: main
+    path: examples/k1c-operator/helm-chart
+    helm:
+      releaseName: k1c
+      values: |
+        replicaCount: 2
+        operator:
+          leaderElection: true
+          logFormat: json
+          intervalSec: 30
+        # Image tag pinning — bump on each k1c release.
+        image:
+          tag: "0.10.0"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: k1c-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      # The chart's RBAC + Lease objects sit at cluster scope;
+      # respect-ignore-differences keeps Argo CD from fighting the
+      # apiserver's mutating defaults.
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

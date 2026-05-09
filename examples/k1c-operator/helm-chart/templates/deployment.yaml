@@ -54,6 +54,10 @@ spec:
             - --namespace
             - {{ .Values.operator.restrictNamespace | quote }}
             {{- end }}
+            {{- if .Values.operator.logFormat }}
+            - --log-format
+            - {{ .Values.operator.logFormat | quote }}
+            {{- end }}
           ports:
             - name: metrics
               containerPort: {{ .Values.metricsPort }}

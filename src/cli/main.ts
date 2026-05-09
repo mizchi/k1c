@@ -131,6 +131,7 @@ async function main(): Promise<number> {
         leaderElection: parsed.leaderElection,
         ...(parsed.leaseName !== undefined ? { leaseName: parsed.leaseName } : {}),
         ...(parsed.leaseNamespace !== undefined ? { leaseNamespace: parsed.leaseNamespace } : {}),
+        logFormat: parsed.logFormat,
       },
       ac.signal,
     );
