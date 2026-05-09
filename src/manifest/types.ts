@@ -463,6 +463,21 @@ export type RateLimitRule = BaseResource<
   RateLimitRuleSpec
 >;
 
+export interface CustomHostnameSpec {
+  readonly zoneId: string;
+  readonly hostname: string;
+  readonly ssl?: {
+    readonly method?: 'http' | 'cname' | 'txt' | 'email';
+    readonly type?: 'dv';
+  };
+}
+
+export type CustomHostname = BaseResource<
+  'CustomHostname',
+  'cloudflare.k1c.io/v1alpha1',
+  CustomHostnameSpec
+>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -488,7 +503,8 @@ export type K1cResource =
   | CacheRule
   | TransformRule
   | WAFCustomRule
-  | RateLimitRule;
+  | RateLimitRule
+  | CustomHostname;
 
 export type ResourceKind = K1cResource['kind'];
 

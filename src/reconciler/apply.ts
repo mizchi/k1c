@@ -1,4 +1,8 @@
-import type { ProviderContext, ProviderError } from '../providers/types.ts';
+import type {
+  CloudflareResourceProvider,
+  ProviderContext,
+  ProviderError,
+} from '../providers/types.ts';
 import type { ProviderRegistry } from '../providers/registry.ts';
 import type {
   ApplyReport,
@@ -12,12 +16,18 @@ export interface ApplyOptions {
   readonly retries?: number;
   readonly backoffMs?: number;
   readonly dryRun?: boolean;
+  /** Interval between status() polls when a provider returns an async create / update result. */
+  readonly pollIntervalMs?: number;
+  /** Hard cap on poll attempts before the operation is failed with a `ServiceTimeout`. */
+  readonly pollMaxAttempts?: number;
 }
 
 const DEFAULT_OPTIONS: Required<ApplyOptions> = {
   retries: 3,
   backoffMs: 200,
   dryRun: false,
+  pollIntervalMs: 5000,
+  pollMaxAttempts: 60,
 };
 
 export async function apply(
@@ -98,7 +108,7 @@ async function runOperation(
 
   while (attempt <= opts.retries) {
     try {
-      const nativeId = await execute(op, registry, ctx);
+      const nativeId = await execute(op, registry, ctx, opts);
       return { op, status: 'succeeded', ...(nativeId ? { nativeId } : {}) };
     } catch (raw) {
       const err = toProviderError(raw);
@@ -118,27 +128,74 @@ async function execute(
   op: Operation,
   registry: ProviderRegistry,
   ctx: ProviderContext,
+  opts: Required<ApplyOptions>,
 ): Promise<string | undefined> {
   switch (op.kind) {
     case 'create': {
       const provider = registry.get(op.resourceType);
       const result = await provider.create(ctx, op.label, op.properties);
+      if (result.kind === 'async') {
+        return pollUntilDone(provider, ctx, result.nativeId, result.opId, opts);
+      }
       return result.nativeId;
     }
     case 'update': {
       const provider = registry.get(op.resourceType);
       const result = await provider.update(ctx, op.nativeId, op.prior, op.properties);
       if (result.kind === 'noop') return op.nativeId;
+      if (result.kind === 'async') {
+        return pollUntilDone(provider, ctx, result.nativeId, result.opId, opts);
+      }
       return result.nativeId;
     }
     case 'delete': {
       const provider = registry.get(op.resourceType);
-      await provider.delete(ctx, op.nativeId);
+      const result = await provider.delete(ctx, op.nativeId);
+      if (result.kind === 'async') {
+        // Polling on deletes mirrors creates: wait for the async lifecycle to
+        // settle before considering the resource removed. Successful resolution
+        // means the resource is gone; on timeout we fall through to a
+        // ServiceTimeout failure surfaced by pollUntilDone.
+        return pollUntilDone(provider, ctx, op.nativeId, result.opId, opts);
+      }
       return op.nativeId;
     }
     case 'noop':
       return undefined;
   }
+}
+
+/**
+ * Poll a provider's status() method until it returns success / failure or the
+ * configured attempt cap is reached. Used by Cloudflare resources whose
+ * provisioning lifecycle is asynchronous from the API's point of view —
+ * Custom Hostname SSL issuance is the canonical case.
+ */
+async function pollUntilDone(
+  provider: CloudflareResourceProvider<unknown>,
+  ctx: ProviderContext,
+  nativeId: string,
+  opId: string,
+  opts: Required<ApplyOptions>,
+): Promise<string> {
+  if (!provider.status) {
+    throw {
+      code: 'ServiceInternalError',
+      recoverable: false,
+      message: `provider for ${provider.resourceType} returned an async result but exposes no status() method`,
+    } satisfies ProviderError;
+  }
+  for (let attempt = 0; attempt < opts.pollMaxAttempts; attempt += 1) {
+    const s = await provider.status(ctx, nativeId, opId);
+    if (s.kind === 'success') return nativeId;
+    if (s.kind === 'failure') throw s.error;
+    if (opts.pollIntervalMs > 0) await sleep(opts.pollIntervalMs);
+  }
+  throw {
+    code: 'ServiceTimeout',
+    recoverable: false,
+    message: `polling for ${provider.resourceType} ${nativeId} timed out after ${opts.pollMaxAttempts} attempts at ${opts.pollIntervalMs}ms intervals`,
+  } satisfies ProviderError;
 }
 
 function toProviderError(raw: unknown): ProviderError {

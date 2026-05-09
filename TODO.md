@@ -16,9 +16,12 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 
 ## Networking & DNS
 
-- **`CustomHostname` (CRD)** — Cloudflare for SaaS routing. Async SSL provisioning
-  forces async polling on the provider, which is why this is gated on the polling
-  feature in `future-considerations.md`.
+- ~~**`CustomHostname` (CRD)**~~ — shipped. Returns `kind: 'async'` from create
+  and exposes a `status()` method the apply loop polls until the hostname's
+  status is `active` and the SSL cert is `active`. Ownership tracked via the
+  `custom_metadata['k1c.io/managed']` field on each hostname. In-place update
+  is not yet implemented; the provider returns `NotUpdatable` + `suggest=recreate`
+  for any spec change.
 - **DNSRecord auto-emission** — currently `DNSRecord` is its own resource. A
   `cloudflare.com/manage-dns: true` annotation on a `Service type=LoadBalancer`
   could auto-emit a CNAME pointing at the Custom Domain.

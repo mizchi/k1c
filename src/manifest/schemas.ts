@@ -448,6 +448,22 @@ const ratelimitConfigSpecSchema = z.object({
   requestsToOrigin: z.boolean().optional(),
 });
 
+export const customHostnameSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('CustomHostname'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    hostname: z.string().min(1),
+    ssl: z
+      .object({
+        method: z.enum(['http', 'cname', 'txt', 'email']).optional(),
+        type: z.literal('dv').optional(),
+      })
+      .optional(),
+  }),
+});
+
 export const rateLimitRuleSchema = z.object({
   apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
   kind: z.literal('RateLimitRule'),
@@ -543,4 +559,5 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   transformRuleSchema,
   wafCustomRuleSchema,
   rateLimitRuleSchema,
+  customHostnameSchema,
 ]);

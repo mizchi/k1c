@@ -1998,6 +1998,27 @@ spec:
     });
   });
 
+  it('lowers CustomHostname to a DesiredResource passing ssl options through', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: CustomHostname
+metadata: { name: app, namespace: prod }
+spec:
+  zoneId: zone-abc
+  hostname: app.example.com
+  ssl:
+    method: http
+    type: dv
+`);
+    expect(result.desired[0]!.resourceType).toBe('CustomHostname');
+    expect(result.desired[0]!.label).toBe('prod/app');
+    expect(result.desired[0]!.properties).toEqual({
+      zoneId: 'zone-abc',
+      hostname: 'app.example.com',
+      ssl: { method: 'http', type: 'dv' },
+    });
+  });
+
   it('hashes the entrypoint content into Worker.entrypointHash', async () => {
     const { resources } = parseManifest(`
 apiVersion: apps/v1

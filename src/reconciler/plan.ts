@@ -198,6 +198,7 @@ function deletePriority(resourceType: string): number {
     case 'TransformRule':
     case 'WAFCustomRule':
     case 'RateLimitRule':
+    case 'CustomHostname':
       return 0;
     case 'Worker':
       return 1;

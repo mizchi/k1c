@@ -56,6 +56,7 @@ $ K1C_ACCOUNT_ID=...  CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f manifest.yaml
 | `TransformRule` (CRD) | request header rewrite inside the late_transform phase ruleset | working |
 | `WAFCustomRule` (CRD) | block / challenge / log inside the firewall_custom phase ruleset | working |
 | `RateLimitRule` (CRD) | request-rate threshold inside the http_ratelimit phase ruleset | working |
+| `CustomHostname` (CRD) | Cloudflare for SaaS hostname with async SSL provisioning (polled) | working |
 | `CustomHostname` | — | not implemented (see [`TODO.md`](TODO.md)) |
 
 See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,
@@ -137,7 +138,8 @@ Providers live under `src/providers/` and are uniform across resource types. The
 This is experimental. In particular:
 
 - Worker entrypoint content is not yet hashed at lower time, so editing only the JS file (without changing the manifest) does not currently trigger an update outside the canary path. Deferred (`docs/future-considerations.md`).
-- Async polling for Custom Hostname SSL provisioning is not implemented.
+- Async polling: providers can return `kind: 'async'` from create / update; the
+  apply loop polls `status()` until success / failure (used by `CustomHostname`).
 - The reconciler model assumes a single Cloudflare account at a time.
 - End-to-end coverage is opt-in (`tests/e2e/**`, env-gated by `K1C_E2E=1`). The
   default `pnpm test` exercises providers against SDK mocks only; running the

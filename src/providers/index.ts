@@ -20,6 +20,7 @@ import { accessPolicyProvider } from './access-policy.ts';
 import { transformRuleProvider } from './transform-rule.ts';
 import { wafCustomRuleProvider } from './waf-custom-rule.ts';
 import { rateLimitRuleProvider } from './rate-limit-rule.ts';
+import { customHostnameProvider } from './custom-hostname.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -44,6 +45,7 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(transformRuleProvider);
   r.register(wafCustomRuleProvider);
   r.register(rateLimitRuleProvider);
+  r.register(customHostnameProvider);
   return r;
 }
 

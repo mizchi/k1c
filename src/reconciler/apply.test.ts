@@ -230,6 +230,105 @@ describe('apply', () => {
     expect(report.results[0]!.status).toBe('failed');
   });
 
+  it('polls provider.status() when create returns kind=async, succeeding when it transitions to success', async () => {
+    const provider = new FakeProvider('AsyncFoo', fooSchema);
+    let calls = 0;
+    // Override create to always return async; status returns pending twice then success.
+    provider.create = async (_ctx, label, props) => {
+      provider.state.set('async-1', { label, properties: props as FooProps });
+      return { kind: 'async', nativeId: 'async-1', opId: 'op-x' };
+    };
+    provider.status = async () => {
+      calls += 1;
+      if (calls < 3) return { kind: 'pending' };
+      return { kind: 'success', properties: provider.state.get('async-1')!.properties };
+    };
+    const registry = new ProviderRegistry();
+    registry.register(provider);
+    const ctx = makeFakeContext();
+
+    const customPlan: Plan = {
+      operations: [
+        {
+          kind: 'create',
+          resourceType: 'AsyncFoo',
+          ref: {
+            apiVersion: 'cloudflare.k1c.io/v1alpha1',
+            kind: 'R2Bucket',
+            namespace: 'default',
+            name: 'a',
+          },
+          label: 'default/a',
+          properties: { value: 'x' },
+        },
+      ],
+    };
+    // Use 0ms poll interval so the test runs instantly.
+    const report = await apply(customPlan, registry, ctx, { pollIntervalMs: 0 });
+    expect(report.succeeded).toBe(1);
+    expect(calls).toBe(3);
+  });
+
+  it('fails the operation when status() reports failure', async () => {
+    const provider = new FakeProvider('AsyncFoo', fooSchema);
+    provider.create = async () => ({ kind: 'async', nativeId: 'a-1', opId: 'op-x' });
+    provider.status = async () => ({
+      kind: 'failure',
+      error: { code: 'NotStabilized', recoverable: false, message: 'simulated failure' },
+    });
+    const registry = new ProviderRegistry();
+    registry.register(provider);
+    const customPlan: Plan = {
+      operations: [
+        {
+          kind: 'create',
+          resourceType: 'AsyncFoo',
+          ref: {
+            apiVersion: 'cloudflare.k1c.io/v1alpha1',
+            kind: 'R2Bucket',
+            namespace: 'default',
+            name: 'a',
+          },
+          label: 'default/a',
+          properties: { value: 'x' },
+        },
+      ],
+    };
+    const report = await apply(customPlan, registry, makeFakeContext(), { pollIntervalMs: 0 });
+    expect(report.failed).toBe(1);
+    expect(report.results[0]!.status).toBe('failed');
+  });
+
+  it('times out polling after the configured attempt cap', async () => {
+    const provider = new FakeProvider('AsyncFoo', fooSchema);
+    provider.create = async () => ({ kind: 'async', nativeId: 'a-1', opId: 'op-x' });
+    provider.status = async () => ({ kind: 'pending' });
+    const registry = new ProviderRegistry();
+    registry.register(provider);
+    const customPlan: Plan = {
+      operations: [
+        {
+          kind: 'create',
+          resourceType: 'AsyncFoo',
+          ref: {
+            apiVersion: 'cloudflare.k1c.io/v1alpha1',
+            kind: 'R2Bucket',
+            namespace: 'default',
+            name: 'a',
+          },
+          label: 'default/a',
+          properties: { value: 'x' },
+        },
+      ],
+    };
+    const report = await apply(customPlan, registry, makeFakeContext(), {
+      pollIntervalMs: 0,
+      pollMaxAttempts: 3,
+    });
+    expect(report.failed).toBe(1);
+    expect((report.results[0]! as { error?: ProviderError }).error?.code).toBe('ServiceTimeout');
+  });
+
   it('passes plan operations through unchanged when given directly', async () => {
     const { provider, registry, ctx } = setup();
     const op: Operation = {

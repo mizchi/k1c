@@ -10,6 +10,7 @@ import type {
   TransformRule,
   WAFCustomRule,
   RateLimitRule,
+  CustomHostname,
   ConfigMapResource,
   CronJob,
   D1Database,
@@ -56,6 +57,7 @@ import type { CacheRuleProperties } from '../providers/cache-rule.ts';
 import type { TransformRuleProperties } from '../providers/transform-rule.ts';
 import type { WAFCustomRuleProperties } from '../providers/waf-custom-rule.ts';
 import type { RateLimitRuleProperties } from '../providers/rate-limit-rule.ts';
+import type { CustomHostnameProperties } from '../providers/custom-hostname.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -133,6 +135,7 @@ export async function lower(
   const transformRules: TransformRule[] = [];
   const wafCustomRules: WAFCustomRule[] = [];
   const rateLimitRules: RateLimitRule[] = [];
+  const customHostnames: CustomHostname[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -210,6 +213,9 @@ export async function lower(
         break;
       case 'RateLimitRule':
         rateLimitRules.push(r);
+        break;
+      case 'CustomHostname':
+        customHostnames.push(r);
         break;
     }
   }
@@ -300,7 +306,26 @@ export async function lower(
     desired.push(lowerRateLimitRule(rr));
   }
 
+  for (const ch of customHostnames) {
+    desired.push(lowerCustomHostname(ch));
+  }
+
   return { desired, warnings };
+}
+
+function lowerCustomHostname(ch: CustomHostname): DesiredResource<CustomHostnameProperties> {
+  const ns = ch.metadata.namespace ?? 'default';
+  const name = ch.metadata.name;
+  return {
+    resourceType: 'CustomHostname',
+    ref: refOf(ch),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: ch.spec.zoneId,
+      hostname: ch.spec.hostname,
+      ...(ch.spec.ssl !== undefined ? { ssl: { ...ch.spec.ssl } } : {}),
+    },
+  };
 }
 
 function lowerTransformRule(tr: TransformRule): DesiredResource<TransformRuleProperties> {
