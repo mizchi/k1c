@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0](https://github.com/mizchi/k1c/compare/v0.4.0...v0.5.0) (2026-05-09)
+
+
+### Features
+
+* AccessApplication supports bookmark type ([c7fa100](https://github.com/mizchi/k1c/commit/c7fa100673b1c4e95f73c07434a5dbb1f257c659))
+* AccessApplication supports ssh / vnc types in addition to self_hosted ([da340af](https://github.com/mizchi/k1c/commit/da340af3a3e506046973eacf546f45789153d119))
+* add CacheRule CRD (zone-scoped cache_settings) ([1e2f6d0](https://github.com/mizchi/k1c/commit/1e2f6d0bc3bf1a5717df86330b3cbc367fc5ae9d))
+* add standalone AccessPolicy CRD with ref support ([2031ffc](https://github.com/mizchi/k1c/commit/2031ffccdad4efc19f6051985a6c5df5f772be65))
+* add TransformRule / WAFCustomRule / RateLimitRule CRDs ([805500f](https://github.com/mizchi/k1c/commit/805500fd39c7014c277355e97ed894ff2358108b))
+* async polling layer + CustomHostname CRD ([78539c0](https://github.com/mizchi/k1c/commit/78539c07a6f4659dce2e11f566ad854aa951bd57))
+* **cli:** add --quiet / -q to apply ([2bfc4b8](https://github.com/mizchi/k1c/commit/2bfc4b8614f67ba05b8c2c22e7b86b195e1cb4ee))
+
+
+### Bug Fixes
+
+* resolve cross-resource ID placeholders at plan + apply time ([ec1014b](https://github.com/mizchi/k1c/commit/ec1014b314e3e028a49bb62f2bae9528ef0f56bb))
+
 ## [0.4.0](https://github.com/mizchi/k1c/compare/v0.3.0...v0.4.0) (2026-05-09)
 
 
