@@ -1,0 +1,31 @@
+# Cloudflare Stream Live Input — long-lived RTMPS / SRT ingest endpoint.
+#
+# Live Inputs map cleanly to declarative IaC (vs uploaded videos,
+# which are one-shot binary blobs not appropriate for this tool). The
+# operator + CLI manage the recording policy and the access controls
+# on the live stream itself; the actual ingest credentials are
+# returned in the API response and shown via `k1c get`.
+#
+# Apply with: pnpm k1c apply -f examples/stream-live-input.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: StreamLiveInput
+metadata:
+  name: front-entrance
+spec:
+  defaultCreator: ops-team
+  # Keep recordings for 30 days, then auto-purge.
+  deleteRecordingAfterDays: 30
+  recording:
+    mode: automatic
+    requireSignedURLs: true
+    allowedOrigins:
+      - "*.example.com"
+      - "watch.example.com"
+    timeoutSeconds: 60
+    hideLiveViewerCount: false
+  # Free-form metadata. The k1c ownership marker is added on top —
+  # don't set `k1c.io/managed` yourself; it's overwritten by lower.
+  meta:
+    purpose: public-stream
+    location: HQ-front

@@ -476,6 +476,42 @@ export interface CacheRuleSpec {
 
 export type CacheRule = BaseResource<'CacheRule', 'cloudflare.k1c.io/v1alpha1', CacheRuleSpec>;
 
+export interface PageRuleAction {
+  readonly id: string;
+  readonly value?: unknown;
+}
+
+export interface PageRuleSpec {
+  readonly zoneId?: string;
+  readonly url: string;
+  readonly status?: 'active' | 'disabled';
+  readonly priority?: number;
+  readonly actions: ReadonlyArray<PageRuleAction>;
+}
+
+export type PageRule = BaseResource<'PageRule', 'cloudflare.k1c.io/v1alpha1', PageRuleSpec>;
+
+export interface LiveInputRecording {
+  readonly mode?: 'off' | 'automatic';
+  readonly requireSignedURLs?: boolean;
+  readonly allowedOrigins?: ReadonlyArray<string>;
+  readonly hideLiveViewerCount?: boolean;
+  readonly timeoutSeconds?: number;
+}
+
+export interface StreamLiveInputSpec {
+  readonly defaultCreator?: string;
+  readonly deleteRecordingAfterDays?: number;
+  readonly recording?: LiveInputRecording;
+  readonly meta?: Readonly<Record<string, string>>;
+}
+
+export type StreamLiveInput = BaseResource<
+  'StreamLiveInput',
+  'cloudflare.k1c.io/v1alpha1',
+  StreamLiveInputSpec
+>;
+
 export type TransformHeaderOperation = 'set' | 'add' | 'remove';
 
 export interface TransformHeaderAction {
@@ -671,7 +707,9 @@ export type K1cResource =
   | WAFManagedRuleset
   | EmailRoutingRule
   | URIRewriteRule
-  | ResponseHeaderRule;
+  | ResponseHeaderRule
+  | PageRule
+  | StreamLiveInput;
 
 export type ResourceKind = K1cResource['kind'];
 
