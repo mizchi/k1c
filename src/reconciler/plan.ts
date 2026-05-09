@@ -76,7 +76,10 @@ export async function plan(
         });
         continue;
       }
-      if (propertiesEqual(prior, resolvedProps)) {
+      const equal = provider.equals
+          ? provider.equals(prior, resolvedProps as never)
+          : propertiesEqual(prior, resolvedProps);
+      if (equal) {
         operations.push({
           kind: 'noop',
           resourceType,
@@ -199,6 +202,7 @@ function deletePriority(resourceType: string): number {
     case 'WAFCustomRule':
     case 'RateLimitRule':
     case 'CustomHostname':
+    case 'WAFManagedRuleset':
       return 0;
     case 'Worker':
       return 1;

@@ -91,4 +91,13 @@ export interface CloudflareResourceProvider<P> {
     nativeId: string,
     opId: string,
   ): Promise<StatusResult>;
+
+  /**
+   * Optional equality override. Plan compares prior (from `read`) and desired
+   * (from `lower`) via this when defined; otherwise it falls back to deep
+   * canonical-JSON equality. Workers use it to ignore `entrypoint` /
+   * `entrypointContent` (the local-file path is not authoritative — the
+   * `entrypointHash` tag carried on the script is).
+   */
+  equals?(prior: P, desired: P): boolean;
 }

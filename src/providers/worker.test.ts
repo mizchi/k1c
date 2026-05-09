@@ -509,4 +509,49 @@ describe('workerProvider', () => {
       });
     });
   });
+
+  describe('equals (content-only change detection)', () => {
+    const baseProps = {
+      scriptName: 'k1c--default--api',
+      entrypoint: '<read-from-cluster>',
+      compatibilityDate: '2025-01-01',
+      entrypointHash: 'abc123',
+    };
+
+    it('treats prior (read-from-cluster) and desired (file path) as equal when hash matches', () => {
+      expect(
+        workerProvider.equals!(
+          { ...baseProps, entrypoint: '<read-from-cluster>' },
+          { ...baseProps, entrypoint: './dist/worker.js' },
+        ),
+      ).toBe(true);
+    });
+
+    it('treats different entrypointHash as a real difference (content drift)', () => {
+      expect(
+        workerProvider.equals!(
+          { ...baseProps, entrypointHash: 'abc' },
+          { ...baseProps, entrypointHash: 'def' },
+        ),
+      ).toBe(false);
+    });
+
+    it('ignores `secrets` since the API never returns them', () => {
+      expect(
+        workerProvider.equals!(
+          { ...baseProps, secrets: {} },
+          { ...baseProps, secrets: { TOKEN: 's3cret' } },
+        ),
+      ).toBe(true);
+    });
+
+    it('still detects binding changes', () => {
+      expect(
+        workerProvider.equals!(
+          { ...baseProps, bindings: [{ type: 'kv_namespace', name: 'A', namespaceId: 'x' }] },
+          { ...baseProps, bindings: [{ type: 'kv_namespace', name: 'A', namespaceId: 'y' }] },
+        ),
+      ).toBe(false);
+    });
+  });
 });

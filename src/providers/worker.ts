@@ -460,9 +460,37 @@ function fromCFBinding(b: CFBinding): unknown {
   return null;
 }
 
+/**
+ * Strip fields that the Workers API cannot faithfully round-trip back to k1c.
+ * Used by `equals` so a Worker whose only "change" is an inferred `entrypoint`
+ * placeholder does not produce a spurious update on every apply.
+ *
+ * - `entrypoint` / `entrypointContent`: lower carries the local source path or
+ *   inline body, but Cloudflare returns neither — `read` substitutes
+ *   `<read-from-cluster>`. The semantic identity of the script is captured
+ *   in `entrypointHash` instead.
+ * - `secrets`: secret values are write-only at the API; `read` cannot return
+ *   them, so leaving them in the comparison would force every apply to
+ *   reissue the secret. The presence/names round-trip via bindings; the
+ *   user-visible drift signal lives elsewhere.
+ */
+function normalizeForEquality(props: WorkerProperties): unknown {
+  const {
+    entrypoint: _entrypoint,
+    entrypointContent: _entrypointContent,
+    secrets: _secrets,
+    ...rest
+  } = props;
+  return rest;
+}
+
 export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
   resourceType: 'Worker',
   schema: workerSchema,
+
+  equals(prior, desired) {
+    return JSON.stringify(normalizeForEquality(prior)) === JSON.stringify(normalizeForEquality(desired));
+  },
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     let iter;
