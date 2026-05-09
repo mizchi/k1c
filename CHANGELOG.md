@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.6.0](https://github.com/mizchi/k1c/compare/v0.5.0...v0.6.0) (2026-05-09)
+
+
+### Features
+
+* AccessApplication supports biso / saas / infrastructure types ([1f1ed16](https://github.com/mizchi/k1c/commit/1f1ed16124b357b5ec653acef5ca73a3a7614254))
+* add EmailRoutingRule CRD ([eda594c](https://github.com/mizchi/k1c/commit/eda594cb8ca1021d8bfd9172ee2f7419dbccdb3d))
+* add URIRewriteRule and ResponseHeaderRule CRDs ([f3f6220](https://github.com/mizchi/k1c/commit/f3f622010afd89e92643f2aee164bc0e409830da))
+* add WAFManagedRuleset CRD (Cloudflare-managed rule groups) ([e55d5ad](https://github.com/mizchi/k1c/commit/e55d5ad818f88383c89421d523ac7b9cc679cd5c))
+* **cli:** -f accepts stdin (-) and directories for helm/kustomize pipes ([b9b4c55](https://github.com/mizchi/k1c/commit/b9b4c550d4fab53522e0faf7806861917514a962))
+* **cli:** add k1c logs and k1c port-forward (wrangler wrappers) ([448a709](https://github.com/mizchi/k1c/commit/448a709d397433fb58fe7cbbbe4dd9e20dc98934))
+* detect Worker entrypoint content-only changes via equals override ([ba1f67a](https://github.com/mizchi/k1c/commit/ba1f67a9919fba25c96c28c47bc86731a0f7f22d))
+* in-place SSL update for CustomHostname via customHostnames.edit ([e5e429f](https://github.com/mizchi/k1c/commit/e5e429f411830491acbbe382a790f0c8de3c99da))
+* Service LoadBalancer can auto-emit a DNSRecord ([93e514d](https://github.com/mizchi/k1c/commit/93e514d1319bd206258a692905cfd89e9b5a8c58))
+
 ## [0.5.0](https://github.com/mizchi/k1c/compare/v0.4.0...v0.5.0) (2026-05-09)
 
 
