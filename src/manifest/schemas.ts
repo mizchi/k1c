@@ -414,6 +414,7 @@ export const accessApplicationSchema = z.object({
   metadata: objectMetaSchema,
   spec: z.object({
     domain: z.string().min(1),
+    type: z.enum(['self_hosted', 'ssh', 'vnc']).optional(),
     sessionDuration: z.string().optional(),
     autoRedirectToIdentity: z.boolean().optional(),
     allowedIdps: z.array(z.string()).optional(),

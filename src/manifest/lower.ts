@@ -368,6 +368,7 @@ function lowerAccessApplication(
   const properties: AccessApplicationProperties = {
     appName: `k1c-${ns}-${name}`,
     domain: app.spec.domain,
+    appType: app.spec.type ?? 'self_hosted',
     ...(app.spec.sessionDuration !== undefined
       ? { sessionDuration: app.spec.sessionDuration }
       : {}),

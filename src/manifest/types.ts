@@ -329,8 +329,16 @@ export interface AccessPolicyRef {
 
 export type AccessApplicationPolicyItem = AccessAppPolicy | AccessPolicyRef;
 
+export type AccessApplicationType = 'self_hosted' | 'ssh' | 'vnc';
+
 export interface AccessApplicationSpec {
   readonly domain: string;
+  /**
+   * Cloudflare Access application type. Defaults to `self_hosted`. `ssh` and
+   * `vnc` produce browser-rendered SSH / VNC sessions; their manifest shape is
+   * otherwise identical to `self_hosted`.
+   */
+  readonly type?: AccessApplicationType;
   readonly sessionDuration?: string;
   readonly autoRedirectToIdentity?: boolean;
   readonly allowedIdps?: ReadonlyArray<string>;

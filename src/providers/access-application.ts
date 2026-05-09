@@ -36,9 +36,12 @@ export interface AccessAppPolicyWire {
   readonly session_duration?: string;
 }
 
+export type AccessApplicationTypeWire = 'self_hosted' | 'ssh' | 'vnc';
+
 export interface AccessApplicationProperties {
   readonly appName: string;
   readonly domain: string;
+  readonly appType: AccessApplicationTypeWire;
   readonly sessionDuration?: string;
   readonly autoRedirectToIdentity?: boolean;
   readonly allowedIdps?: ReadonlyArray<string>;
@@ -73,6 +76,7 @@ const accessAppPolicyWireSchema: z.ZodType<AccessAppPolicyWire> = z.object({
 export const accessApplicationSchema: z.ZodType<AccessApplicationProperties> = z.object({
   appName: z.string(),
   domain: z.string(),
+  appType: z.enum(['self_hosted', 'ssh', 'vnc']),
   sessionDuration: z.string().optional(),
   autoRedirectToIdentity: z.boolean().optional(),
   allowedIdps: z.array(z.string()).optional(),
@@ -109,7 +113,7 @@ function buildBody(props: AccessApplicationProperties) {
   return {
     name: props.appName,
     domain: props.domain,
-    type: 'self_hosted',
+    type: props.appType,
     ...(props.sessionDuration !== undefined ? { session_duration: props.sessionDuration } : {}),
     ...(props.autoRedirectToIdentity !== undefined
       ? { auto_redirect_to_identity: props.autoRedirectToIdentity }
@@ -192,6 +196,7 @@ export const accessApplicationProvider: CloudflareResourceProvider<AccessApplica
       return {
         appName: app.name,
         domain: app.domain,
+        appType: (app.type as AccessApplicationTypeWire) ?? 'self_hosted',
         ...(app.session_duration !== undefined
           ? { sessionDuration: app.session_duration }
           : {}),

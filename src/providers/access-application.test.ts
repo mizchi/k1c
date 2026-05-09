@@ -76,6 +76,7 @@ describe('accessApplicationProvider', () => {
     await accessApplicationProvider.create(buildCtx(mock), 'prod/internal', {
       appName: 'k1c-prod-internal',
       domain: 'internal.example.com',
+      appType: 'self_hosted',
       sessionDuration: '24h',
       policies: [
         {
@@ -99,6 +100,24 @@ describe('accessApplicationProvider', () => {
         },
       ],
     });
+  });
+
+  it('forwards type=ssh through to the SDK request body', async () => {
+    const mock = buildMock();
+    mock.create.mockResolvedValueOnce({ id: 'app-ssh' });
+    await accessApplicationProvider.create(buildCtx(mock), 'prod/jumpbox', {
+      appName: 'k1c-prod-jumpbox',
+      domain: 'ssh.example.com',
+      appType: 'ssh',
+      policies: [
+        {
+          name: 'allow',
+          decision: 'allow',
+          include: [{ everyone: {} }],
+        },
+      ],
+    });
+    expect(mock.create.mock.calls[0]![0].type).toBe('ssh');
   });
 
   it('read returns NotFound when SDK throws a 404-shaped error', async () => {

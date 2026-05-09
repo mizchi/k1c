@@ -1715,6 +1715,7 @@ spec:
     expect(d.properties).toEqual({
       appName: 'k1c-prod-internal',
       domain: 'internal.example.com',
+      appType: 'self_hosted',
       sessionDuration: '24h',
       autoRedirectToIdentity: true,
       allowedIdps: ['idp-a'],
@@ -1814,6 +1815,23 @@ spec:
     expect(app.dependsOn).toContainEqual(
       expect.objectContaining({ kind: 'AccessPolicy', name: 'dev-allow' }),
     );
+  });
+
+  it('forwards spec.type to AccessApplication.appType', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: ssh-jump }
+spec:
+  domain: ssh.example.com
+  type: ssh
+  policies:
+    - name: allow
+      decision: allow
+      include:
+        - { everyone: {} }
+`);
+    expect((result.desired[0]!.properties as { appType: string }).appType).toBe('ssh');
   });
 
   it('rejects AccessApplication policy ref pointing at no AccessPolicy', async () => {
