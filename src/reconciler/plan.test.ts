@@ -167,6 +167,36 @@ describe('plan', () => {
     expect(kinds.indexOf('create')).toBeLessThan(kinds.indexOf('delete'));
   });
 
+  it('deletes higher-level resources before the things they depend on', async () => {
+    // CustomDomain depends on Worker, Worker depends on R2Bucket; on a teardown
+    // run we must delete in the reverse order: CustomDomain → Worker → R2Bucket.
+    const cdProvider = new FakeProvider('CustomDomain', fooSchema);
+    const workerProvider = new FakeProvider('Worker', fooSchema);
+    const r2Provider = new FakeProvider('R2Bucket', fooSchema);
+    const fooProvider = new FakeProvider('Foo', fooSchema);
+    const registry = new ProviderRegistry();
+    // Register out of any natural order to confirm output ordering does not
+    // accidentally match registration order.
+    registry.register(r2Provider);
+    registry.register(cdProvider);
+    registry.register(workerProvider);
+    registry.register(fooProvider);
+
+    cdProvider.seed('native-cd', 'default/api-domain', { value: 'cd' });
+    workerProvider.seed('native-w', 'default/api', { value: 'w' });
+    r2Provider.seed('native-r2', 'default/bucket', { value: 'r2' });
+
+    // The plan only emits deletes for namespaces that appear in `desired`, so
+    // anchor the run with a single desired Foo in the same namespace.
+    const desired = [fooDesired('keeper', { value: 'k' })];
+    const result = await plan(desired, registry, makeFakeContext());
+    const deletes = result.operations.filter((o) => o.kind === 'delete');
+    const order = deletes.map((o) => o.resourceType);
+    const idx = (t: string) => order.indexOf(t);
+    expect(idx('CustomDomain')).toBeLessThan(idx('Worker'));
+    expect(idx('Worker')).toBeLessThan(idx('R2Bucket'));
+  });
+
   it('treats listed-but-vanished as create (race safety)', async () => {
     const { fooProvider, registry, ctx } = setup();
     // simulate race: list returns it, read says NotFound

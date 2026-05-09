@@ -98,12 +98,15 @@ dragged into `Deployment`.
 
 - ~~**`k1c apply --watch`**~~ — shipped.
 - ~~**JSON output mode**~~ — shipped (`-o json` on `get` / `describe` / `diff`).
+- ~~**Reverse-topo on deletes**~~ — shipped. Deletes are now ordered by a
+  static type priority (CustomDomain / Workflow / DNSRecord / LogpushJob →
+  Worker → R2 / KV / D1 / Hyperdrive / Vectorize / Queue → DispatchNamespace),
+  mirroring the create direction in reverse.
 - **`k1c logs <kind> <name>`** — wrap `wrangler tail`.
 - **`k1c port-forward`** — only meaningful if running against `wrangler dev`.
 - **`--quiet` mode** — suppress non-error output for scripting.
 - **Real Cloudflare e2e tests** — env-gated, in `tests/e2e/`. Currently every
   provider is exercised through SDK mocks only.
-- **Reverse-topo on deletes** (see `future-considerations.md`).
 
 ## Nice-to-haves
 
