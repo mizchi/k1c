@@ -204,6 +204,8 @@ function deletePriority(resourceType: string): number {
     case 'CustomHostname':
     case 'WAFManagedRuleset':
     case 'EmailRoutingRule':
+    case 'URIRewriteRule':
+    case 'ResponseHeaderRule':
       return 0;
     case 'Worker':
       return 1;

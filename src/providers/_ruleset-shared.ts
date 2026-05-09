@@ -14,6 +14,7 @@ export const MARKER_PREFIX = 'k1c.io/managed=';
 export type RulesetPhase =
   | 'http_request_cache_settings'
   | 'http_request_late_transform'
+  | 'http_request_transform'
   | 'http_response_headers_transform'
   | 'http_request_firewall_custom'
   | 'http_request_firewall_managed'

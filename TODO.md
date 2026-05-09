@@ -95,10 +95,11 @@ manifests. Likely better as their own top-level k1c CRD group rather than
 dragged into `Deployment`.
 
 - ~~**Cache Rules**~~ — shipped as `CacheRule` CRD.
-- ~~**Transform Rules**~~ — shipped as `TransformRule` CRD (request header
-  rewrites in `http_request_late_transform`). URI rewrites and response header
-  rewrites are separate phases; adding them is an additional CRD per phase,
-  not an extension of this one.
+- ~~**Transform Rules**~~ — shipped as `TransformRule` (request headers,
+  `http_request_late_transform`), `URIRewriteRule` (URI path / query,
+  `http_request_transform`), and `ResponseHeaderRule` (response headers,
+  `http_response_headers_transform`). All three reuse `_ruleset-shared` for
+  RMW + ownership.
 - ~~**WAF Custom Rules**~~ — shipped as `WAFCustomRule` CRD (block / challenge /
   log in `http_request_firewall_custom`). Cloudflare-managed rule groups live
   in a different phase and are not in scope.

@@ -2089,6 +2089,58 @@ spec:
     });
   });
 
+  it('lowers URIRewriteRule with a static path replacement', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: URIRewriteRule
+metadata: { name: api-prefix }
+spec:
+  zoneId: zone-abc
+  expression: '(http.request.uri.path matches "^/v1/.*$")'
+  path:
+    expression: 'concat("/api", http.request.uri.path)'
+`);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('URIRewriteRule');
+    expect(d.properties).toMatchObject({
+      enabled: true,
+      path: { expression: 'concat("/api", http.request.uri.path)' },
+    });
+  });
+
+  it('rejects URIRewriteRule with neither path nor query set', () => {
+    expect(() =>
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: URIRewriteRule
+metadata: { name: bad }
+spec:
+  zoneId: zone-abc
+  expression: 'true'
+`),
+    ).toThrow(/at least one of spec.path or spec.query/);
+  });
+
+  it('lowers ResponseHeaderRule with set + remove operations', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: ResponseHeaderRule
+metadata: { name: csp }
+spec:
+  zoneId: zone-abc
+  expression: 'true'
+  headers:
+    Content-Security-Policy: { operation: set, value: "default-src 'self'" }
+    Server: { operation: remove }
+`);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('ResponseHeaderRule');
+    expect((d.properties as { headers: Record<string, unknown> }).headers).toEqual({
+      'Content-Security-Policy': { operation: 'set', value: "default-src 'self'" },
+      Server: { operation: 'remove' },
+    });
+  });
+
   it('lowers EmailRoutingRule to a DesiredResource with literal matcher + forward action', async () => {
     const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1

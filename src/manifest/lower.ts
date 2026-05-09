@@ -13,6 +13,8 @@ import type {
   CustomHostname,
   WAFManagedRuleset,
   EmailRoutingRule,
+  URIRewriteRule,
+  ResponseHeaderRule,
   ConfigMapResource,
   CronJob,
   D1Database,
@@ -62,6 +64,8 @@ import type { RateLimitRuleProperties } from '../providers/rate-limit-rule.ts';
 import type { CustomHostnameProperties } from '../providers/custom-hostname.ts';
 import type { WAFManagedRulesetProperties } from '../providers/waf-managed-ruleset.ts';
 import type { EmailRoutingRuleProperties } from '../providers/email-routing-rule.ts';
+import type { URIRewriteRuleProperties } from '../providers/uri-rewrite-rule.ts';
+import type { ResponseHeaderRuleProperties } from '../providers/response-header-rule.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -142,6 +146,8 @@ export async function lower(
   const customHostnames: CustomHostname[] = [];
   const wafManagedRulesets: WAFManagedRuleset[] = [];
   const emailRoutingRules: EmailRoutingRule[] = [];
+  const uriRewriteRules: URIRewriteRule[] = [];
+  const responseHeaderRules: ResponseHeaderRule[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -228,6 +234,12 @@ export async function lower(
         break;
       case 'EmailRoutingRule':
         emailRoutingRules.push(r);
+        break;
+      case 'URIRewriteRule':
+        uriRewriteRules.push(r);
+        break;
+      case 'ResponseHeaderRule':
+        responseHeaderRules.push(r);
         break;
     }
   }
@@ -331,7 +343,52 @@ export async function lower(
     desired.push(lowerEmailRoutingRule(er));
   }
 
+  for (const ur of uriRewriteRules) {
+    desired.push(lowerURIRewriteRule(ur));
+  }
+
+  for (const rh of responseHeaderRules) {
+    desired.push(lowerResponseHeaderRule(rh));
+  }
+
   return { desired, warnings };
+}
+
+function lowerURIRewriteRule(ur: URIRewriteRule): DesiredResource<URIRewriteRuleProperties> {
+  const ns = ur.metadata.namespace ?? 'default';
+  const name = ur.metadata.name;
+  return {
+    resourceType: 'URIRewriteRule',
+    ref: refOf(ur),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: ur.spec.zoneId,
+      expression: ur.spec.expression,
+      enabled: ur.spec.enabled ?? true,
+      ...(ur.spec.path !== undefined ? { path: { ...ur.spec.path } } : {}),
+      ...(ur.spec.query !== undefined ? { query: { ...ur.spec.query } } : {}),
+      ...(ur.spec.description !== undefined ? { description: ur.spec.description } : {}),
+    },
+  };
+}
+
+function lowerResponseHeaderRule(
+  rh: ResponseHeaderRule,
+): DesiredResource<ResponseHeaderRuleProperties> {
+  const ns = rh.metadata.namespace ?? 'default';
+  const name = rh.metadata.name;
+  return {
+    resourceType: 'ResponseHeaderRule',
+    ref: refOf(rh),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: rh.spec.zoneId,
+      expression: rh.spec.expression,
+      enabled: rh.spec.enabled ?? true,
+      headers: { ...rh.spec.headers },
+      ...(rh.spec.description !== undefined ? { description: rh.spec.description } : {}),
+    },
+  };
 }
 
 function lowerEmailRoutingRule(

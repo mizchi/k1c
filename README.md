@@ -63,6 +63,8 @@ kustomize build ./examples/kustomize/overlays/prod | k1c apply -f -
 | `AccessPolicy` (CRD) | reusable account-level Access policy (referenced by `policies[].ref`) | working |
 | `CacheRule` (CRD) | Cache Rule inside the zone's cache_settings phase ruleset | working |
 | `TransformRule` (CRD) | request header rewrite inside the late_transform phase ruleset | working |
+| `URIRewriteRule` (CRD) | URI path / query rewrite inside the http_request_transform phase | working |
+| `ResponseHeaderRule` (CRD) | response header rewrite inside the http_response_headers_transform phase | working |
 | `WAFCustomRule` (CRD) | block / challenge / log inside the firewall_custom phase ruleset | working |
 | `WAFManagedRuleset` (CRD) | opt-in to a Cloudflare-managed WAF rule group (OWASP Core / Managed / etc.) | working |
 | `RateLimitRule` (CRD) | request-rate threshold inside the http_ratelimit phase ruleset | working |

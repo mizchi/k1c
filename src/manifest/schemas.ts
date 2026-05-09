@@ -463,6 +463,48 @@ const emailRoutingActionSchema = z.union([
   z.object({ type: z.literal('worker'), worker: z.string().min(1) }).strict(),
 ]);
 
+const uriPartSchema = z.union([
+  z.object({ value: z.string() }).strict(),
+  z.object({ expression: z.string() }).strict(),
+]);
+
+export const uriRewriteRuleSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('URIRewriteRule'),
+  metadata: objectMetaSchema,
+  spec: z
+    .object({
+      zoneId: z.string().min(1),
+      expression: z.string().min(1),
+      enabled: z.boolean().optional(),
+      path: uriPartSchema.optional(),
+      query: uriPartSchema.optional(),
+      description: z.string().optional(),
+    })
+    .superRefine((data, ctx) => {
+      if (data.path === undefined && data.query === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['path'],
+          message: 'URIRewriteRule must specify at least one of spec.path or spec.query',
+        });
+      }
+    }),
+});
+
+export const responseHeaderRuleSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('ResponseHeaderRule'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    expression: z.string().min(1),
+    enabled: z.boolean().optional(),
+    headers: z.record(transformHeaderActionSchema),
+    description: z.string().optional(),
+  }),
+});
+
 export const emailRoutingRuleSchema = z.object({
   apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
   kind: z.literal('EmailRoutingRule'),
@@ -637,4 +679,6 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   customHostnameSchema,
   wafManagedRulesetSchema,
   emailRoutingRuleSchema,
+  uriRewriteRuleSchema,
+  responseHeaderRuleSchema,
 ]);

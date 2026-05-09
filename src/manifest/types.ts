@@ -548,6 +548,39 @@ export type EmailRoutingRule = BaseResource<
   EmailRoutingRuleSpec
 >;
 
+export type URIPart =
+  | { readonly value: string }
+  | { readonly expression: string };
+
+export interface URIRewriteRuleSpec {
+  readonly zoneId: string;
+  readonly expression: string;
+  readonly enabled?: boolean;
+  readonly path?: URIPart;
+  readonly query?: URIPart;
+  readonly description?: string;
+}
+
+export type URIRewriteRule = BaseResource<
+  'URIRewriteRule',
+  'cloudflare.k1c.io/v1alpha1',
+  URIRewriteRuleSpec
+>;
+
+export interface ResponseHeaderRuleSpec {
+  readonly zoneId: string;
+  readonly expression: string;
+  readonly enabled?: boolean;
+  readonly headers: Readonly<Record<string, TransformHeaderAction>>;
+  readonly description?: string;
+}
+
+export type ResponseHeaderRule = BaseResource<
+  'ResponseHeaderRule',
+  'cloudflare.k1c.io/v1alpha1',
+  ResponseHeaderRuleSpec
+>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -576,7 +609,9 @@ export type K1cResource =
   | RateLimitRule
   | CustomHostname
   | WAFManagedRuleset
-  | EmailRoutingRule;
+  | EmailRoutingRule
+  | URIRewriteRule
+  | ResponseHeaderRule;
 
 export type ResourceKind = K1cResource['kind'];
 
