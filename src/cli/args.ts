@@ -114,6 +114,11 @@ export interface OperatorRunArgs {
    * don't permit long-lived watch connections.
    */
   readonly watch: boolean;
+  /**
+   * Bind address for the metrics + health HTTP server. Default
+   * `0.0.0.0:9090`. Empty string disables.
+   */
+  readonly metricsAddr: string;
 }
 
 export interface ConfigArgs {
@@ -188,6 +193,7 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
   let namespace: string | undefined;
   let intervalSec = 30;
   let watch = true;
+  let metricsAddr = '0.0.0.0:9090';
   for (let i = 1; i < rest.length; i += 1) {
     const arg = rest[i]!;
     if (arg === '-n' || arg === '--namespace') {
@@ -215,6 +221,19 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
       watch = true;
       continue;
     }
+    if (arg === '--metrics-addr') {
+      const value = rest[i + 1];
+      if (value === undefined) {
+        return { kind: 'error', message: `${arg} requires a value (e.g. 0.0.0.0:9090, or "" to disable)` };
+      }
+      metricsAddr = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '--no-metrics') {
+      metricsAddr = '';
+      continue;
+    }
     return { kind: 'error', message: `unknown flag for operator run: ${arg}` };
   }
   return {
@@ -222,6 +241,7 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
     subCommand: 'run',
     intervalSec,
     watch,
+    metricsAddr,
     ...(namespace !== undefined ? { namespace } : {}),
   };
 }
