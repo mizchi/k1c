@@ -1,0 +1,46 @@
+# Companion Argo CD Application — manages a directory of k1c
+# manifests as ordinary Cloudflare-targeting CRs. Once the operator
+# (separate Application) is running, every change merged here flows
+# through GitOps → kubectl apply → operator reconcile → Cloudflare.
+#
+# Layout assumed:
+#
+#   <repo>/clusters/<cluster>/k1c/
+#     r2-buckets.yaml
+#     workers.yaml
+#     ...
+#
+# Replace `repoURL` and `path` with your own infra repo.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: k1c-resources
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/example-org/infra.git
+    targetRevision: main
+    # Plain `kubectl apply -f`-style directory; no helm / kustomize
+    # required (k1c manifests are valid k8s YAML).
+    path: clusters/prod/k1c
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m

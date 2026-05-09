@@ -34,6 +34,7 @@ helm install k1c examples/k1c-operator/helm-chart \
 | `operator.leaderElection`        | `true`                             | required for `replicaCount > 1` |
 | `operator.metricsAddr`           | `0.0.0.0:9090`                     | empty disables /metrics, /healthz, /readyz |
 | `operator.restrictNamespace`     | `""`                               | restrict reconciliation to a single namespace |
+| `operator.logFormat`             | `text`                             | `text` for human consumption, `json` for log aggregators |
 | `metricsService.enabled`         | `true`                             | emit a Service for Prometheus scrape |
 
 ## Why the chart doesn't ship CRDs

@@ -34,6 +34,9 @@ operator:
   # If set, restrict the operator to this single namespace. Empty
   # means cluster-wide (default).
   restrictNamespace: ""
+  # Log format: `text` (default, human-readable) or `json` (structured
+  # one-object-per-line for log aggregators).
+  logFormat: text
 
 # Probe + listener port for /metrics, /healthz, /readyz.
 metricsPort: 9090

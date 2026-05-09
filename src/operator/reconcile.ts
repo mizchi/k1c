@@ -11,6 +11,7 @@ import { startWatches, type KindSpec } from './watch.ts';
 import { incCounter, observeSummary, setGauge } from './metrics.ts';
 import { startMetricsServer } from './server.ts';
 import { runLeaderElection } from './leader.ts';
+import { createLogger, type LogFormat } from './log.ts';
 
 export interface OperatorOptions {
   readonly accountId: string;
@@ -47,7 +48,9 @@ export interface OperatorOptions {
   readonly leaseName?: string;
   /** Lease namespace (default: `k1c-system`). */
   readonly leaseNamespace?: string;
-  /** Hook for log lines (default: console.log). */
+  /** `text` (default) or `json` for structured log aggregators. */
+  readonly logFormat?: LogFormat;
+  /** Hook for log lines (default: console.log). Only used by tests. */
   readonly out?: (msg: string) => void;
   readonly err?: (msg: string) => void;
 }
@@ -106,8 +109,20 @@ const STANDARD_KINDS: ReadonlyArray<KindSpec> = [
  * output sinks. Returns when the AbortSignal aborts.
  */
 export async function runOperator(options: OperatorOptions, signal: AbortSignal): Promise<void> {
-  const out = options.out ?? ((m) => console.log(m));
-  const err = options.err ?? ((m) => console.error(m));
+  // The `out` / `err` callbacks remain available for tests that want
+  // to capture every line regardless of format. In production both
+  // are unset and the logger writes to stdout / stderr directly.
+  const logger = createLogger({
+    format: options.logFormat ?? 'text',
+    ...(options.out ? { stdout: options.out } : {}),
+    ...(options.err ? { stderr: options.err } : {}),
+    defaults: {
+      component: 'k1c-operator',
+      ...(process.env['POD_NAME'] ? { pod: process.env['POD_NAME'] } : {}),
+    },
+  });
+  const out = (m: string) => logger.info(m);
+  const err = (m: string) => logger.error(m);
 
   const kc = new k8s.KubeConfig();
   kc.loadFromDefault();

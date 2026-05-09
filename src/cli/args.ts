@@ -126,6 +126,8 @@ export interface OperatorRunArgs {
   readonly leaderElection: boolean;
   readonly leaseName?: string;
   readonly leaseNamespace?: string;
+  /** `text` (default) or `json` for structured log aggregators. */
+  readonly logFormat: 'text' | 'json';
 }
 
 export interface ConfigArgs {
@@ -204,6 +206,7 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
   let leaderElection = false;
   let leaseName: string | undefined;
   let leaseNamespace: string | undefined;
+  let logFormat: 'text' | 'json' = 'text';
   for (let i = 1; i < rest.length; i += 1) {
     const arg = rest[i]!;
     if (arg === '-n' || arg === '--namespace') {
@@ -262,6 +265,18 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
       i += 1;
       continue;
     }
+    if (arg === '--log-format') {
+      const value = rest[i + 1];
+      if (value !== 'text' && value !== 'json') {
+        return {
+          kind: 'error',
+          message: '--log-format requires either "text" or "json"',
+        };
+      }
+      logFormat = value;
+      i += 1;
+      continue;
+    }
     return { kind: 'error', message: `unknown flag for operator run: ${arg}` };
   }
   return {
@@ -271,6 +286,7 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
     watch,
     metricsAddr,
     leaderElection,
+    logFormat,
     ...(namespace !== undefined ? { namespace } : {}),
     ...(leaseName !== undefined ? { leaseName } : {}),
     ...(leaseNamespace !== undefined ? { leaseNamespace } : {}),
