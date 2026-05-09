@@ -115,8 +115,10 @@ dragged into `Deployment`.
 - **`k1c port-forward`** — only meaningful if running against `wrangler dev`.
 - ~~**`--quiet` mode**~~ — shipped (`-q` / `--quiet` on `apply`). Errors still
   flow to stderr; only the per-op progress on stdout is suppressed.
-- **Real Cloudflare e2e tests** — env-gated, in `tests/e2e/`. Currently every
-  provider is exercised through SDK mocks only.
+- ~~**Real Cloudflare e2e tests**~~ — harness shipped in `tests/e2e/` with
+  `K1C_E2E=1` opt-in (auto-skips otherwise). Initial coverage: R2Bucket and
+  KVNamespace full CRUD. Worker / Hyperdrive / D1 / Access / Cache Rule e2e
+  follow-ups are easy to add against the same harness.
 
 ## Nice-to-haves
 

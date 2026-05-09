@@ -78,12 +78,16 @@ From source (this repo):
 
 ```sh
 pnpm install
-pnpm test          # 297 tests
+pnpm test          # offline unit + integration tests (uses SDK mocks)
 pnpm typecheck
 pnpm build         # emits dist/
 
 # Run the CLI in-repo (TypeScript via Node strip-types):
 pnpm k1c apply   -f examples/hello-worker.yaml [--dry-run]
+
+# Optional: end-to-end tests against a real Cloudflare account (creates and
+# deletes resources). Requires K1C_E2E=1 plus the same env vars used by the CLI.
+K1C_E2E=1 K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm test:e2e
 ```
 
 ## CLI
@@ -132,7 +136,10 @@ This is experimental. In particular:
 - Worker entrypoint content is not yet hashed at lower time, so editing only the JS file (without changing the manifest) does not currently trigger an update outside the canary path. Deferred (`docs/future-considerations.md`).
 - Async polling for Custom Hostname SSL provisioning is not implemented.
 - The reconciler model assumes a single Cloudflare account at a time.
-- No real end-to-end tests against Cloudflare yet — provider behavior is validated through SDK mocks only.
+- End-to-end coverage is opt-in (`tests/e2e/**`, env-gated by `K1C_E2E=1`). The
+  default `pnpm test` exercises providers against SDK mocks only; running the
+  e2e suite requires a real Cloudflare account and creates / deletes resources
+  there. See `Releases` and `Limitations` below for what is and is not covered.
 
 ## Releases
 
