@@ -6,6 +6,71 @@ not yet implemented. Roughly grouped by theme; not strictly ordered.
 See also `docs/future-considerations.md` for items that are explicitly waiting on
 upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 
+## End-to-end verification checklist
+
+Code is exercised by 464 mock-based tests today, but real-world round-trips
+against actual Cloudflare and actual k8s have not happened. Each box below
+is "tried it, it worked" vs "no one has run it yet". Use the `nix develop`
+shell (kind + kubectl + helm + kustomize preinstalled) for k8s-side checks.
+
+### Cloudflare API round-trips (env-gated, K1C_E2E=1 + real token)
+
+- [ ] R2Bucket — full CRUD via `tests/e2e/r2-bucket.e2e.test.ts`
+- [ ] KVNamespace — full CRUD via `tests/e2e/kv-namespace.e2e.test.ts`
+- [ ] D1Database — full CRUD via `tests/e2e/d1-database.e2e.test.ts`
+- [ ] AccessPolicy — full CRUD via `tests/e2e/access-policy.e2e.test.ts`
+- [ ] CacheRule — full CRUD via `tests/e2e/cache-rule.e2e.test.ts` (also needs K1C_ZONE_ID)
+- [ ] Worker + KV binding (placeholder resolution end-to-end) — `tests/e2e/worker-with-bindings.e2e.test.ts`
+- [ ] Hyperdrive — needs a reachable Postgres origin; e2e harness pending
+- [ ] Vectorize / Queue / Workflow / DispatchNamespace — e2e harness pending
+- [ ] LogpushJob / TelemetryStack / TelemetryAggregator — needs an R2 destination + zone
+- [ ] CustomDomain / CustomHostname — needs a real zone + DCV; one-shot test acceptable
+- [ ] WAF{Custom,Managed}Rule / RateLimitRule / TransformRule / URIRewriteRule / ResponseHeaderRule — single-zone, low-risk e2e
+- [ ] EmailRoutingRule — needs zone with Email Routing enabled
+- [ ] AccessApplication (self_hosted / ssh / vnc / biso / saas / infrastructure / bookmark) — at least one type per branch
+- [ ] WorkerRoute (Ingress wildcard host) — needs zone
+- [ ] DNSRecord auto-emission via Service `cloudflare.com/manage-dns` annotation
+- [ ] Canary Rollout state machine on a real DispatchNamespace (5% → 25% → 100%)
+
+### k1c CLI smoke (offline)
+
+- [x] `k1c version` (npm install path)
+- [x] `k1c version` (docker pull path, image entry point)
+- [x] `k1c apply --validate-only` on a sample manifest
+- [x] `k1c explain R2Bucket` schema dump
+- [ ] `k1c diff -v` against a real Cloudflare account (color + per-field diff visible)
+- [ ] `k1c rollout status / promote / abort` against a real DispatchNamespace
+- [ ] `k1c logs <kind> <name>` shells out to a real `wrangler tail`
+- [ ] `k1c port-forward` shells out to a real `wrangler dev --remote`
+- [ ] `k1c telemetry workers <kind> <name>` against the Analytics GraphQL API
+
+### k8s side (use `nix develop` to get kind/kubectl/helm/kustomize)
+
+- [ ] `kind create cluster --name k1c-test` succeeds
+- [ ] `k1c export-crds | kubectl apply -f -` registers all 24 CRDs
+- [ ] `kubectl explain r2bucket.cloudflare.k1c.io` returns the kind metadata
+- [ ] `kubectl apply --dry-run=server -f examples/hello-worker.yaml` passes schema validation
+- [ ] `kubectl apply -f examples/hello-worker.yaml` accepts the manifest into etcd
+- [ ] `helm template ./examples/helm-chart | kubectl apply --dry-run=server -f -` passes
+- [ ] `kustomize build ./examples/kustomize/overlays/prod | kubectl apply --dry-run=server -f -` passes
+
+### Operator (Phase 1: polling)
+
+- [ ] `docker run k1c-operator:dev operator run` starts up against a kind cluster (kubeconfig mounted)
+- [ ] Operator picks up CRDs added via `kubectl apply` and shows them in the reconcile log
+- [ ] Operator picks up label-gated standard kinds (`k1c.io/managed=true`)
+- [ ] Operator forwards changes to Cloudflare on a real account
+- [ ] Operator survives a kubectl-side delete and reverse-topo deletes the Cloudflare side
+- [ ] OCI image (`ghcr.io/mizchi/k1c-operator:latest`) pulls + runs on linux/amd64
+- [ ] OCI image pulls + runs on linux/arm64
+
+### Distribution
+
+- [x] npm provenance attestation present on `@mizchi/k1c@0.9.0`
+- [x] OCI image index multi-arch (amd64 + arm64) at ghcr.io/mizchi/k1c-operator:0.9.0
+- [ ] OCI image SBOM attestation surfaces in `cosign download attestation`
+- [ ] OCI image SLSA provenance attestation surfaces in `cosign verify-attestation`
+
 ## Workload primitives still missing
 
 - *(none — `Ingress` shipped via generated router Worker + per-host Custom Domain)*
