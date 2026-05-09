@@ -267,3 +267,110 @@ jobs:
           # Leader election surfaces as a 1 gauge on the holder.
           grep -q "k1c_operator_is_leader 1" /tmp/metrics.txt
           kill "$PF_PID" || true
+
+  # HA verification: scale the operator to 2 replicas and confirm only
+  # one of them holds the lease at any time. Then kill the leader and
+  # verify the standby takes over within ~30s. Reuses the same image
+  # build as operator-e2e by depending on it.
+  operator-ha-e2e:
+    runs-on: ubuntu-latest
+    needs: k8s-validate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: docker/setup-buildx-action@v3
+      - name: Build operator image (shared cache)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: true
+          tags: k1c-operator:ha
+          platforms: linux/amd64
+          cache-from: type=gha
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: k1c-ha
+          wait: 60s
+      - name: Load operator image
+        run: kind load docker-image k1c-operator:ha --name k1c-ha
+      - name: Register CRDs + token + bundle (replicas=2)
+        run: |
+          pnpm --silent k1c export-crds | kubectl apply -f -
+          kubectl create namespace k1c-system
+          kubectl -n k1c-system create secret generic cloudflare-api-token \
+            --from-literal=K1C_ACCOUNT_ID=test --from-literal=CLOUDFLARE_API_TOKEN=test
+          # Use the operator chart so the leader-election args + RBAC
+          # are wired in. helm/kind-action ships kubectl but not helm,
+          # so install helm first.
+          curl -fsSL https://get.helm.sh/helm-v3.16.4-linux-amd64.tar.gz \
+            | tar -xz -C /tmp linux-amd64/helm
+          sudo mv /tmp/linux-amd64/helm /usr/local/bin/
+          helm template k1c examples/k1c-operator/helm-chart \
+            --namespace k1c-system \
+            --set createNamespace=false \
+            --set image.repository=k1c-operator --set image.tag=ha \
+            --set image.pullPolicy=Never \
+            --set replicaCount=2 \
+            --set operator.intervalSec=5 \
+            | kubectl apply -f -
+      - name: Wait for both pods Ready
+        run: |
+          kubectl -n k1c-system rollout status deploy/k1c-operator --timeout=120s
+          kubectl -n k1c-system get pods -l app=k1c-operator
+      - name: Exactly one leader
+        run: |
+          # Wait for the lease and then verify only one pod's metric
+          # endpoint reports k1c_operator_is_leader 1.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            holder=$(kubectl -n k1c-system get lease k1c-operator \
+              -o jsonpath='{.spec.holderIdentity}' 2>/dev/null || true)
+            if [ -n "$holder" ]; then break; fi
+            sleep 2
+          done
+          test -n "$holder" || { echo "::error::no leader after 20s"; kubectl -n k1c-system get lease 2>&1; exit 1; }
+          echo "lease holder: $holder"
+          # Sum the is_leader gauge across all pods. The Service load
+          # balances, so query each pod individually instead.
+          pods=$(kubectl -n k1c-system get pods -l app=k1c-operator -o name)
+          leader_count=0
+          for p in $pods; do
+            kubectl -n k1c-system port-forward "$p" 9091:9090 >/tmp/pf.log 2>&1 &
+            PF=$!
+            for j in 1 2 3 4 5; do sleep 1; curl -fsS http://127.0.0.1:9091/healthz >/dev/null && break; done
+            value=$(curl -fsS http://127.0.0.1:9091/metrics | awk '/^k1c_operator_is_leader /{print $2}')
+            kill "$PF" 2>/dev/null || true
+            wait "$PF" 2>/dev/null || true
+            echo "$p: is_leader=$value"
+            if [ "$value" = "1" ]; then
+              leader_count=$((leader_count + 1))
+            fi
+          done
+          test "$leader_count" -eq 1 || { echo "::error::expected exactly one leader, found $leader_count"; exit 1; }
+      - name: Lease handover after killing the leader
+        run: |
+          holder=$(kubectl -n k1c-system get lease k1c-operator \
+            -o jsonpath='{.spec.holderIdentity}')
+          echo "killing $holder"
+          kubectl -n k1c-system delete pod "$holder" --grace-period=0 --force
+          # Wait for the lease holder to change. leaseDurationSec is
+          # 15; we give it 60s to allow for pod recreation + rescheduling.
+          for i in $(seq 1 30); do
+            new=$(kubectl -n k1c-system get lease k1c-operator \
+              -o jsonpath='{.spec.holderIdentity}' 2>/dev/null || true)
+            if [ -n "$new" ] && [ "$new" != "$holder" ]; then
+              echo "handover ok: $holder → $new (after ${i}*2s)"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::lease did not hand over within 60s"
+          kubectl -n k1c-system get lease k1c-operator -o yaml
+          kubectl -n k1c-system get pods -l app=k1c-operator
+          exit 1
