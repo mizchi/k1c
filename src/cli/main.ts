@@ -128,6 +128,9 @@ async function main(): Promise<number> {
         intervalMs: parsed.intervalSec * 1000,
         watch: parsed.watch,
         metricsAddr: parsed.metricsAddr,
+        leaderElection: parsed.leaderElection,
+        ...(parsed.leaseName !== undefined ? { leaseName: parsed.leaseName } : {}),
+        ...(parsed.leaseNamespace !== undefined ? { leaseNamespace: parsed.leaseNamespace } : {}),
       },
       ac.signal,
     );

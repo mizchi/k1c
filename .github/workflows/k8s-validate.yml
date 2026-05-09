@@ -211,6 +211,26 @@ jobs:
             -o jsonpath='{.items[0].status.phase}')
           test "$phase" = "Running"
 
+      - name: Leader election lease acquired
+        run: |
+          # With --leader-election enabled (the install bundle's
+          # default), a single replica should claim the lease
+          # immediately. The Lease object is created on first acquire.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            holder=$(kubectl -n k1c-system get lease k1c-operator \
+              -o jsonpath='{.spec.holderIdentity}' 2>/dev/null || true)
+            if [ -n "$holder" ]; then
+              echo "lease acquired by: $holder"
+              kubectl -n k1c-system get lease k1c-operator -o yaml | head -25
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::operator did not acquire the leader-election lease within 20s"
+          kubectl -n k1c-system get lease 2>&1 || true
+          kubectl -n k1c-system logs deploy/k1c-operator
+          exit 1
+
       - name: /metrics + /healthz exposed and populated
         run: |
           # Reach the metrics endpoint via `kubectl exec`-style
@@ -232,4 +252,6 @@ jobs:
           grep -q "k1c_operator_reconcile_duration_seconds" /tmp/metrics.txt
           # The R2Bucket apply earlier should have produced a watch event.
           grep -q "k1c_operator_watch_events_total" /tmp/metrics.txt
+          # Leader election surfaces as a 1 gauge on the holder.
+          grep -q "k1c_operator_is_leader 1" /tmp/metrics.txt
           kill "$PF_PID" || true

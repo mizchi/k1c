@@ -119,6 +119,13 @@ export interface OperatorRunArgs {
    * `0.0.0.0:9090`. Empty string disables.
    */
   readonly metricsAddr: string;
+  /**
+   * Enable leader election via a `coordination.k8s.io/v1` Lease.
+   * Default false. Required when running multiple operator replicas.
+   */
+  readonly leaderElection: boolean;
+  readonly leaseName?: string;
+  readonly leaseNamespace?: string;
 }
 
 export interface ConfigArgs {
@@ -194,6 +201,9 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
   let intervalSec = 30;
   let watch = true;
   let metricsAddr = '0.0.0.0:9090';
+  let leaderElection = false;
+  let leaseName: string | undefined;
+  let leaseNamespace: string | undefined;
   for (let i = 1; i < rest.length; i += 1) {
     const arg = rest[i]!;
     if (arg === '-n' || arg === '--namespace') {
@@ -234,6 +244,24 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
       metricsAddr = '';
       continue;
     }
+    if (arg === '--leader-election') {
+      leaderElection = true;
+      continue;
+    }
+    if (arg === '--lease-name') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      leaseName = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '--lease-namespace') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      leaseNamespace = value;
+      i += 1;
+      continue;
+    }
     return { kind: 'error', message: `unknown flag for operator run: ${arg}` };
   }
   return {
@@ -242,7 +270,10 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
     intervalSec,
     watch,
     metricsAddr,
+    leaderElection,
     ...(namespace !== undefined ? { namespace } : {}),
+    ...(leaseName !== undefined ? { leaseName } : {}),
+    ...(leaseNamespace !== undefined ? { leaseNamespace } : {}),
   };
 }
 
