@@ -19,9 +19,9 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 - ~~**`CustomHostname` (CRD)**~~ — shipped. Returns `kind: 'async'` from create
   and exposes a `status()` method the apply loop polls until the hostname's
   status is `active` and the SSL cert is `active`. Ownership tracked via the
-  `custom_metadata['k1c.io/managed']` field on each hostname. In-place update
-  is not yet implemented; the provider returns `NotUpdatable` + `suggest=recreate`
-  for any spec change.
+  `custom_metadata['k1c.io/managed']` field on each hostname. In-place SSL
+  config update is supported via `customHostnames.edit`; hostname rename
+  still surfaces as `NotUpdatable` + `suggest=recreate`.
 - **DNSRecord auto-emission** — currently `DNSRecord` is its own resource. A
   `cloudflare.com/manage-dns: true` annotation on a `Service type=LoadBalancer`
   could auto-emit a CNAME pointing at the Custom Domain.
@@ -41,10 +41,12 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
   inline policy or `{ ref: <name> }` which lowers to a
   `<resolved-at-apply:AccessPolicy:<label>>` placeholder substituted at apply
   time.
-- **More AccessApplication types** — `self_hosted`, `ssh`, `vnc`, `bookmark`
-  shipped. SaaS / Infrastructure / Browser Isolation each have their own
-  dedicated fields (SAML/OIDC config for SaaS, target connectors for
-  Infrastructure) and warrant separate follow-ups.
+- ~~**More AccessApplication types**~~ — `self_hosted` / `ssh` / `vnc` /
+  `biso` / `saas` / `infrastructure` / `bookmark` all shipped. SaaS uses
+  a raw passthrough `saasApp` field for the SAML/OIDC config (k1c does not
+  model the protocol-specific shape); Infrastructure uses a similar raw
+  `targetCriteria` array. dash_sso / app_launcher / warp / rdp are not yet
+  exposed but are single-enum follow-ups if needed.
 
 ## Bindings only (no manifest of their own)
 
@@ -119,8 +121,11 @@ dragged into `Deployment`.
   static type priority (CustomDomain / Workflow / DNSRecord / LogpushJob →
   Worker → R2 / KV / D1 / Hyperdrive / Vectorize / Queue → DispatchNamespace),
   mirroring the create direction in reverse.
-- **`k1c logs <kind> <name>`** — wrap `wrangler tail`.
-- **`k1c port-forward`** — only meaningful if running against `wrangler dev`.
+- ~~**`k1c logs <kind> <name>`**~~ — shipped. Shells out to `wrangler tail`,
+  translating Deployment/Rollout/CronJob/Job/StatefulSet to the underlying
+  `k1c--<ns>--<name>` Worker script name.
+- ~~**`k1c port-forward`**~~ — shipped. Shells out to `wrangler dev --remote`
+  on the resolved script, binding to the requested local port.
 - ~~**`--quiet` mode**~~ — shipped (`-q` / `--quiet` on `apply`). Errors still
   flow to stderr; only the per-op progress on stdout is suppressed.
 - ~~**Real Cloudflare e2e tests**~~ — harness shipped in `tests/e2e/` with

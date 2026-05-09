@@ -50,11 +50,12 @@ $ K1C_ACCOUNT_ID=...  CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f manifest.yaml
 | `LogpushJob` (CRD) | Logpush (zone- or account-scoped) | working |
 | `ai` / `browser` / `version_metadata` / `analytics_engine` Worker bindings | annotation- / volume-driven | working |
 | `Ingress` (`networking.k8s.io/v1`) | generated router Worker + Custom Domain per literal host (Workers Route per wildcard host) | working |
-| `AccessApplication` (CRD, `self_hosted` / `ssh` / `vnc` / `bookmark`) | Cloudflare Access app with inline or referenced policies (bookmark = App Launcher tile) | working |
+| `AccessApplication` (CRD; `self_hosted` / `ssh` / `vnc` / `biso` / `saas` / `infrastructure` / `bookmark`) | Cloudflare Access app with inline or referenced policies | working |
 | `AccessPolicy` (CRD) | reusable account-level Access policy (referenced by `policies[].ref`) | working |
 | `CacheRule` (CRD) | Cache Rule inside the zone's cache_settings phase ruleset | working |
 | `TransformRule` (CRD) | request header rewrite inside the late_transform phase ruleset | working |
 | `WAFCustomRule` (CRD) | block / challenge / log inside the firewall_custom phase ruleset | working |
+| `WAFManagedRuleset` (CRD) | opt-in to a Cloudflare-managed WAF rule group (OWASP Core / Managed / etc.) | working |
 | `RateLimitRule` (CRD) | request-rate threshold inside the http_ratelimit phase ruleset | working |
 | `CustomHostname` (CRD) | Cloudflare for SaaS hostname with async SSL provisioning (polled) | working |
 | `CustomHostname` | — | not implemented (see [`TODO.md`](TODO.md)) |
@@ -103,8 +104,15 @@ k1c delete   -f <manifest.yaml> [--cascade]
 k1c get      <kind> [name] [-n <namespace>] [-o text|json]
 k1c describe <kind> <name> [-n <namespace>] [-o text|json]
 k1c rollout  {status|promote|abort} <ns>/<name> --dispatch <name>
+k1c logs     <kind> <name> [-n <namespace>] [--format pretty|json] [--status <s>] [--limit N]
+k1c port-forward <kind> <name> [-n <namespace>] [--port 8787]
 k1c version
 ```
+
+`logs` and `port-forward` shell out to a locally-installed `wrangler`
+(`wrangler tail` and `wrangler dev --remote`, respectively). Resource kind
+must lower to a Worker (`Deployment`, `Rollout`, `CronJob`, `Job`,
+`StatefulSet`, or `Worker` itself).
 
 Authentication is via two environment variables:
 
@@ -137,7 +145,9 @@ Providers live under `src/providers/` and are uniform across resource types. The
 
 This is experimental. In particular:
 
-- Worker entrypoint content is not yet hashed at lower time, so editing only the JS file (without changing the manifest) does not currently trigger an update outside the canary path. Deferred (`docs/future-considerations.md`).
+- Worker entrypoint content is hashed at lower time and round-tripped via the
+  `k1c.io/content-hash=` script tag, so editing only the JS file (without
+  changing the manifest) now triggers a Worker update on apply.
 - Async polling: providers can return `kind: 'async'` from create / update; the
   apply loop polls `status()` until success / failure (used by `CustomHostname`).
 - The reconciler model assumes a single Cloudflare account at a time.
