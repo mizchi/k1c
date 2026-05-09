@@ -124,9 +124,11 @@ dragged into `Deployment`.
 - ~~**`--quiet` mode**~~ — shipped (`-q` / `--quiet` on `apply`). Errors still
   flow to stderr; only the per-op progress on stdout is suppressed.
 - ~~**Real Cloudflare e2e tests**~~ — harness shipped in `tests/e2e/` with
-  `K1C_E2E=1` opt-in (auto-skips otherwise). Initial coverage: R2Bucket and
-  KVNamespace full CRUD. Worker / Hyperdrive / D1 / Access / Cache Rule e2e
-  follow-ups are easy to add against the same harness.
+  `K1C_E2E=1` opt-in (auto-skips otherwise). Coverage: R2Bucket, KVNamespace,
+  D1Database full CRUD, plus a Worker-with-KV-binding integration test that
+  validates the placeholder resolution layer end-to-end against real
+  Cloudflare. Hyperdrive (needs a real DB origin) / Access / CacheRule /
+  CustomHostname e2e are easy follow-ups.
 
 ## Nice-to-haves
 
