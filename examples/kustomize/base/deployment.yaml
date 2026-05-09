@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello
+  annotations:
+    cloudflare.com/compatibility-date: "2025-09-01"
+spec:
+  selector:
+    matchLabels:
+      app: hello
+  template:
+    spec:
+      containers:
+        - name: hello
+          image: ./examples/hello-worker.mjs
+          env:
+            - name: REGION
+              value: weur
+          volumeMounts:
+            - name: bucket
+              mountPath: R2_MEDIA
+            - name: kv
+              mountPath: KV_CACHE
+      volumes:
+        - name: bucket
+          r2BucketRef:
+            name: media
+        - name: kv
+          kvNamespaceRef:
+            name: cache

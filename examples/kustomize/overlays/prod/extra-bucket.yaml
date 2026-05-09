@@ -1,0 +1,6 @@
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2Bucket
+metadata:
+  name: archive
+spec:
+  location: weur

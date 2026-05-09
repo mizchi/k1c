@@ -1,0 +1,5 @@
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: KVNamespace
+metadata:
+  name: cache
+spec: {}

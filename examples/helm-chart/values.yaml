@@ -1,0 +1,20 @@
+# Chart values. Override with `--set key=value` or `-f my-values.yaml`.
+
+worker:
+  name: hello
+  image: ./examples/hello-worker.mjs
+  compatibilityDate: "2025-09-01"
+  replicas: 1
+
+config:
+  greeting: "hello, k1c-via-helm"
+  region: weur
+
+bucket:
+  enabled: true
+  name: media
+  location: weur
+
+kv:
+  enabled: true
+  name: cache

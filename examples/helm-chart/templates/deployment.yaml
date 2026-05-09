@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "k1c-hello.workerRefName" . }}
+  annotations:
+    cloudflare.com/compatibility-date: {{ .Values.worker.compatibilityDate | quote }}
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      app: {{ include "k1c-hello.workerRefName" . }}
+  template:
+    spec:
+      containers:
+        - name: {{ include "k1c-hello.workerRefName" . }}
+          image: {{ .Values.worker.image }}
+          env:
+            - name: GREETING
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "k1c-hello.workerRefName" . }}-config
+                  key: GREETING
+            - name: REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "k1c-hello.workerRefName" . }}-config
+                  key: REGION
+          volumeMounts:
+{{- if .Values.bucket.enabled }}
+            - name: bucket
+              mountPath: R2_MEDIA
+{{- end }}
+{{- if .Values.kv.enabled }}
+            - name: kv
+              mountPath: KV_CACHE
+{{- end }}
+      volumes:
+{{- if .Values.bucket.enabled }}
+        - name: bucket
+          r2BucketRef:
+            name: {{ .Values.bucket.name }}
+{{- end }}
+{{- if .Values.kv.enabled }}
+        - name: kv
+          kvNamespaceRef:
+            name: {{ .Values.kv.name }}
+{{- end }}

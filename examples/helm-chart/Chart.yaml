@@ -1,0 +1,12 @@
+apiVersion: v2
+name: k1c-hello
+description: |
+  Minimal Helm chart that renders to manifests k1c understands.
+
+  This is intentionally small — its purpose is to demonstrate that the
+  Helm → k1c pipeline works end-to-end (`helm template` produces standard
+  k8s YAML, `k1c apply -f -` lowers it to Cloudflare resources). It is not
+  a chart you would publish.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

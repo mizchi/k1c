@@ -1,0 +1,7 @@
+{{- if .Values.kv.enabled }}
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: KVNamespace
+metadata:
+  name: {{ .Values.kv.name }}
+spec: {}
+{{- end }}

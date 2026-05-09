@@ -137,10 +137,14 @@ dragged into `Deployment`.
 
 ## Nice-to-haves
 
-- **Helm chart compatibility** (selective). Most charts won't translate, but a
-  passing test for "trivial NGINX-on-k1c chart" would prove the boundary.
-- **`kustomize` overlays** as a first-class concept (today they Just Work because
-  we accept whatever YAML the parser sees, but a doc page on the supported subset
-  would help).
+- ~~**Helm chart compatibility**~~ — shipped. `-f` accepts stdin (`-`) so
+  `helm template <chart> | k1c apply -f -` is the canonical pattern. A
+  minimal example chart lives in `examples/helm-chart/` and the integration
+  test parses the output `helm template` would emit.
+- ~~**`kustomize` overlays**~~ — shipped. Same stdin pipe pattern, plus
+  `-f <directory>` for direct multi-file apply. `examples/kustomize/`
+  has a base + prod overlay demonstrating namespace propagation, multi-file
+  resources, and JSON-Patch transforms; the rendered output is exercised
+  in the integration test.
 - **Renovate / dependabot config** for the repo itself.
 - ~~**npm package** distribution~~ — shipped (`@mizchi/k1c` on npm via release-please + OIDC).

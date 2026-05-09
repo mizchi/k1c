@@ -33,6 +33,15 @@ spec:
 $ K1C_ACCOUNT_ID=...  CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f manifest.yaml
 ```
 
+`-f` accepts a path, a directory (every `.yaml` / `.yml` recursively;
+files named `_*` and `.*` are skipped), or `-` for stdin — so the rest of
+the k8s ecosystem composes naturally:
+
+```sh
+helm template ./examples/helm-chart | k1c apply -f -
+kustomize build ./examples/kustomize/overlays/prod | k1c apply -f -
+```
+
 ## Status
 
 | Manifest kind | Backed by | State |
@@ -98,7 +107,7 @@ K1C_E2E=1 K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm test:e2e
 ## CLI
 
 ```sh
-k1c apply    -f <manifest.yaml> [--dry-run | --watch] [--quiet | -q]
+k1c apply    -f <file|dir|-> [--dry-run | --watch] [--quiet | -q]
 k1c diff     -f <manifest.yaml> [-o text|json]
 k1c delete   -f <manifest.yaml> [--cascade]
 k1c get      <kind> [name] [-n <namespace>] [-o text|json]
