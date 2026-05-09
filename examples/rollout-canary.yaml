@@ -1,0 +1,50 @@
+# Argo Rollouts–style canary deployment running on Workers for Platforms
+# Dynamic Dispatch.
+#
+# What k1c emits:
+#   - DispatchNamespace `prod`              (Cloudflare WfP namespace)
+#   - KVNamespace      `rollout-state-prod` (canary state, auto-emitted)
+#   - Worker           `k1c--default--api--stable`
+#                       (the user's code, deployed inside the WfP namespace)
+#   - Worker           `k1c--default--api`
+#                       (a generated dispatcher Worker that reads the
+#                        weight from KV and routes between stable / canary)
+#
+# Driving the rollout:
+#   k1c rollout status   default/api --dispatch prod
+#   k1c rollout promote  default/api --dispatch prod
+#   k1c rollout abort    default/api --dispatch prod
+#
+# Apply with: pnpm k1c apply -f examples/rollout-canary.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: DispatchNamespace
+metadata:
+  name: prod
+spec: {}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: api
+  annotations:
+    cloudflare.com/dispatch-namespace: prod
+spec:
+  selector:
+    matchLabels:
+      app: api
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./examples/hello-worker.mjs
+  strategy:
+    canary:
+      steps:
+        - setWeight: 5
+        - pause: { duration: 1m }
+        - setWeight: 25
+        - pause: { duration: 5m }
+        - setWeight: 50
+        - pause: { duration: 5m }
+        - setWeight: 100

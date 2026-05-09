@@ -1,0 +1,53 @@
+# Hyperdrive — pooled Postgres connections cached at the edge. The
+# password lives in a Secret; lower folds it into the Hyperdrive config
+# at apply time so the secret never reaches the Cloudflare API in plain
+# form on disk.
+#
+# Apply with: pnpm k1c apply -f examples/hyperdrive.yaml --dry-run
+
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pg-creds
+type: Opaque
+stringData:
+  password: REPLACE_WITH_DB_PASSWORD
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Hyperdrive
+metadata:
+  name: main
+spec:
+  origin:
+    scheme: postgres
+    host: db.example.com
+    port: 5432
+    database: app
+    user: appuser
+    passwordSecretRef:
+      name: pg-creds
+      key: password
+  caching:
+    maxAge: 60
+    staleWhileRevalidate: 30
+  originConnectionLimit: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  selector:
+    matchLabels:
+      app: api
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./examples/hello-worker.mjs
+          # Inside the Worker, env.PG is the Hyperdrive client.
+          volumeMounts:
+            - { name: hd, mountPath: PG }
+      volumes:
+        - name: hd
+          hyperdriveRef: { name: main }

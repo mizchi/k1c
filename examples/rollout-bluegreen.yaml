@@ -1,0 +1,24 @@
+# Blue/green Rollout (without dispatch namespace): the new version replaces
+# the old one in a single cutover via Worker Versions + Deployments.
+#
+# This is the simpler model — no canary state, no dispatcher Worker. Use
+# it when you don't need progressive delivery.
+#
+# Apply with: pnpm k1c apply -f examples/rollout-bluegreen.yaml --dry-run
+
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: api
+spec:
+  selector:
+    matchLabels:
+      app: api
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./examples/hello-worker.mjs
+  strategy:
+    blueGreen:
+      autoPromotionEnabled: true

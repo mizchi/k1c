@@ -1,0 +1,23 @@
+# CronJob — schedule a Worker via Cloudflare Cron Triggers. The schedule
+# follows standard cron syntax (UTC). Set `suspend: true` to clear the
+# triggers without deleting the script.
+#
+# Apply with: pnpm k1c apply -f examples/cronjob.yaml --dry-run
+
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: nightly-cleanup
+  annotations:
+    cloudflare.com/compatibility-date: "2025-09-01"
+spec:
+  schedule: "0 3 * * *"   # every day at 03:00 UTC
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: cleanup
+              image: ./examples/hello-worker.mjs
+              env:
+                - { name: TASK, value: cleanup }

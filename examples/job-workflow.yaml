@@ -1,0 +1,22 @@
+# Job → Cloudflare Workflow. A Job manifest emits both a Worker (the
+# class containing your `WorkflowEntrypoint`) and a Workflow registration
+# pointed at that class. Trigger an instance via the Workflows API or
+# from another Worker that has a `workflow` binding.
+#
+# k1c derives the Workflow class name from the manifest name (titled,
+# hyphens stripped). Override with `cloudflare.com/workflow-class`.
+#
+# Apply with: pnpm k1c apply -f examples/job-workflow.yaml --dry-run
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: backfill
+  annotations:
+    cloudflare.com/workflow-class: BackfillWorkflow
+spec:
+  template:
+    spec:
+      containers:
+        - name: backfill
+          image: ./examples/hello-worker.mjs

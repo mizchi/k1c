@@ -1,0 +1,51 @@
+# Queue with producer and consumer Workers. The Queue CRD's
+# `spec.consumer.workerName` wires the consumer side; the producer is just
+# any Worker that mounts the queue via `volumes[].queueRef`.
+#
+# Apply with: pnpm k1c apply -f examples/queue-producer-consumer.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Queue
+metadata:
+  name: events
+spec:
+  consumer:
+    workerName: events-consumer
+---
+# Producer: any Worker that holds the queue as a binding can publish.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  selector:
+    matchLabels:
+      app: api
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./examples/hello-worker.mjs
+          # Inside the Worker, env.QUEUE.send({ ... }) publishes to the queue.
+          volumeMounts:
+            - { name: q, mountPath: QUEUE }
+      volumes:
+        - name: q
+          queueRef: { name: events }
+---
+# Consumer: receives batches via the `queue()` handler. Cloudflare wires
+# this script as the queue's consumer because Queue.spec.consumer points
+# at it (the consumer Deployment must exist in the same namespace).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: events-consumer
+spec:
+  selector:
+    matchLabels:
+      app: events-consumer
+  template:
+    spec:
+      containers:
+        - name: events-consumer
+          image: ./examples/hello-worker.mjs

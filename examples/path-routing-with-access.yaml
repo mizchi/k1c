@@ -1,0 +1,75 @@
+# Internal site with path-based fan-out behind Cloudflare Access.
+#
+#   /admin/*  → admin Worker (gated by AccessApplication on the same host)
+#   /        → public Worker
+#
+# The Ingress generates a router Worker; the AccessApplication protects
+# the same hostname (Access runs *before* the Worker, so Access denies
+# the request before the router sees it).
+#
+# Apply with: pnpm k1c apply -f examples/path-routing-with-access.yaml --dry-run
+
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: public }
+spec:
+  selector: { matchLabels: { app: public } }
+  template:
+    spec:
+      containers: [{ name: public, image: ./examples/hello-worker.mjs }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: admin }
+spec:
+  selector: { matchLabels: { app: admin } }
+  template:
+    spec:
+      containers: [{ name: admin, image: ./examples/hello-worker.mjs }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: public-svc }
+spec:
+  selector: { app: public }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: admin-svc }
+spec:
+  selector: { app: admin }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: site
+  annotations:
+    cloudflare.com/zone-id: REPLACE_WITH_YOUR_ZONE_ID
+spec:
+  rules:
+    - host: internal.example.com
+      http:
+        paths:
+          - path: /admin
+            pathType: Prefix
+            backend: { service: { name: admin-svc } }
+          - path: /
+            pathType: Prefix
+            backend: { service: { name: public-svc } }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessPolicy
+metadata: { name: company }
+spec:
+  decision: allow
+  include:
+    - emailDomain: { domain: anthropic.com }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: internal }
+spec:
+  domain: internal.example.com
+  sessionDuration: 24h
+  policies:
+    - ref: company

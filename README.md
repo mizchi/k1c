@@ -75,6 +75,17 @@ kustomize build ./examples/kustomize/overlays/prod | k1c apply -f -
 See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,
 and [`TODO.md`](TODO.md) for what's queued.
 
+## Examples
+
+[`examples/`](examples/) carries one self-contained manifest per supported
+pattern (multi-container Pod, blueGreen / canary Rollout, CronJob,
+StatefulSet / Durable Object, Hyperdrive, Queue producer + consumer,
+AI + Vectorize RAG stack, multi-tenant SaaS, zone hardening combo,
+full-stack web app, etc.). Browse [`examples/README.md`](examples/README.md)
+for the full index. Each file is exercised by
+[`src/examples-smoke.test.ts`](src/examples-smoke.test.ts) so the library
+stays in sync with the schemas.
+
 ## Why this exists
 
 I wanted a `kubectl apply` UX for personal Cloudflare projects but did not want to pay for a managed Kubernetes control plane (GKE minimum is roughly JPY 8,000 / month). `k1c` is the smallest tool that lets a Kubernetes-shaped manifest drive Cloudflare resources directly. See [ADR-0001](docs/adr/0001-project-goal.md) for the full reasoning.

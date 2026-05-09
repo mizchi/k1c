@@ -1,0 +1,24 @@
+# StatefulSet → Durable Object class. Each instance is addressable inside
+# the Worker as `env.Counter.idFromName("some-key").get()`.
+#
+# k1c derives the DO class name from the manifest `metadata.name` (titled
+# and de-hyphenated). Override with the `cloudflare.com/durable-object-class`
+# annotation if your code uses a different class identifier.
+#
+# Apply with: pnpm k1c apply -f examples/statefulset-durable-object.yaml --dry-run
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: counter
+  annotations:
+    cloudflare.com/durable-object-class: Counter
+spec:
+  selector:
+    matchLabels:
+      app: counter
+  template:
+    spec:
+      containers:
+        - name: counter
+          image: ./examples/counter-do.mjs

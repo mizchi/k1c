@@ -1,0 +1,47 @@
+# AI + Vectorize + R2: a small RAG-style stack. The Worker ingests
+# documents into R2, embeds them with Workers AI, indexes the embeddings
+# in Vectorize, and answers queries by retrieving + re-prompting.
+#
+#   env.AI         workers AI binding
+#   env.VECTOR     Vectorize index for retrieval
+#   env.DOCS       R2 bucket for the original documents
+#
+# Apply with: pnpm k1c apply -f examples/ai-rag.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2Bucket
+metadata: { name: docs }
+spec: { location: weur }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Vectorize
+metadata: { name: docs }
+spec:
+  dimensions: 768
+  metric: cosine
+  description: "RAG document embeddings"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag
+  annotations:
+    cloudflare.com/ai: AI                     # binds Workers AI as env.AI
+    cloudflare.com/observability: enabled
+spec:
+  selector:
+    matchLabels:
+      app: rag
+  template:
+    spec:
+      containers:
+        - name: rag
+          image: ./examples/hello-worker.mjs
+          volumeMounts:
+            - { name: bucket, mountPath: DOCS }
+            - { name: vec, mountPath: VECTOR }
+      volumes:
+        - name: bucket
+          r2BucketRef: { name: docs }
+        - name: vec
+          vectorizeRef: { name: docs }

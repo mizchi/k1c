@@ -1,0 +1,34 @@
+# Multi-tenant SaaS using Cloudflare for SaaS (CustomHostname per tenant)
+# plus Workers for Platforms (DispatchNamespace) for tenant isolation.
+#
+# Each tenant brings their own hostname; Cloudflare provisions an SSL
+# cert via DCV asynchronously (k1c polls until active). Requests routed
+# to the dispatcher Worker fan out to per-tenant scripts inside the WfP
+# namespace by hostname.
+#
+# Apply with: pnpm k1c apply -f examples/saas-multi-tenant.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: DispatchNamespace
+metadata: { name: tenants }
+spec: {}
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: CustomHostname
+metadata: { name: acme }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  hostname: app.acme.example
+  ssl:
+    method: http
+    type: dv
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: CustomHostname
+metadata: { name: globex }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  hostname: app.globex.example
+  ssl:
+    method: http
+    type: dv

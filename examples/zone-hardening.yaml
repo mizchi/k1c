@@ -1,0 +1,74 @@
+# Production zone hardening: managed WAF + custom WAF rules + rate limit
+# + cache settings + security response headers, all in one manifest.
+#
+# Apply with: pnpm k1c apply -f examples/zone-hardening.yaml --dry-run
+#
+# Replace REPLACE_WITH_YOUR_ZONE_ID throughout before applying for real.
+
+# Cloudflare-managed OWASP Core Ruleset, in log mode while you tune.
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WAFManagedRuleset
+metadata: { name: owasp-core }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  rulesetId: 4814384a9e5d4991b9815dcfc25d2f1f
+  overrideAction: log
+  description: "OWASP Core Rules — start in log, promote to block once tuned"
+---
+# Block obvious bots outright.
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WAFCustomRule
+metadata: { name: block-bots }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  expression: '(cf.client.bot)'
+  action: block
+---
+# 100 req/min per IP+colo on /api.
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: RateLimitRule
+metadata: { name: api-throttle }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  expression: '(http.request.uri.path matches "^/api/.*$")'
+  action: block
+  ratelimit:
+    characteristics: [ip.src, cf.colo.id]
+    period: 60
+    requestsPerPeriod: 100
+    mitigationTimeout: 600
+---
+# Cache static assets aggressively.
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: CacheRule
+metadata: { name: static-assets }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  expression: '(http.request.uri.path matches "^/static/.*$")'
+  cache: true
+  edgeTtl:
+    mode: override_origin
+    default: 86400
+  browserTtl:
+    mode: override_origin
+    default: 3600
+---
+# Security headers on every response.
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: ResponseHeaderRule
+metadata: { name: security-headers }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  expression: 'true'
+  headers:
+    Strict-Transport-Security:
+      operation: set
+      value: "max-age=31536000; includeSubDomains; preload"
+    X-Content-Type-Options:
+      operation: set
+      value: nosniff
+    Referrer-Policy:
+      operation: set
+      value: strict-origin-when-cross-origin
+    Server:
+      operation: remove

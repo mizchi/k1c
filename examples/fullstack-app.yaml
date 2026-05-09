@@ -1,0 +1,82 @@
+# Full-stack example: a single web Worker backed by R2 (assets), KV
+# (sessions), D1 (relational data) and exposed at https://app.example.com
+# with a managed CNAME and a Custom Domain.
+#
+# Apply with: pnpm k1c apply -f examples/fullstack-app.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2Bucket
+metadata: { name: assets }
+spec: { location: weur }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: KVNamespace
+metadata: { name: sessions }
+spec: {}
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: D1Database
+metadata: { name: app }
+spec:
+  primaryLocationHint: weur
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: { name: app-config }
+data:
+  REGION: weur
+  FEATURE_BETA: "true"
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: app-secrets }
+stringData:
+  STRIPE_KEY: REPLACE_WITH_STRIPE_KEY
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  annotations:
+    cloudflare.com/compatibility-date: "2025-09-01"
+    cloudflare.com/observability: enabled
+    cloudflare.com/smart-placement: smart
+spec:
+  selector:
+    matchLabels:
+      app: web
+  template:
+    spec:
+      containers:
+        - name: web
+          image: ./examples/hello-worker.mjs
+          env:
+            - name: REGION
+              valueFrom: { configMapKeyRef: { name: app-config, key: REGION } }
+            - name: FEATURE_BETA
+              valueFrom: { configMapKeyRef: { name: app-config, key: FEATURE_BETA } }
+            - name: STRIPE_KEY
+              valueFrom: { secretKeyRef: { name: app-secrets, key: STRIPE_KEY } }
+          volumeMounts:
+            - { name: assets, mountPath: ASSETS }
+            - { name: sess, mountPath: SESSIONS }
+            - { name: db, mountPath: DB }
+      volumes:
+        - { name: assets, r2BucketRef: { name: assets } }
+        - { name: sess, kvNamespaceRef: { name: sessions } }
+        - { name: db, d1DatabaseRef: { name: app } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  annotations:
+    cloudflare.com/zone-id: REPLACE_WITH_YOUR_ZONE_ID
+    cloudflare.com/hostname: app.example.com
+    cloudflare.com/manage-dns: "true"
+spec:
+  type: LoadBalancer
+  selector:
+    app: web
+  ports:
+    - { port: 443 }

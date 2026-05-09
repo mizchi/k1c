@@ -1,0 +1,26 @@
+# Multi-container Pod: a frontend Worker that talks to an auth sidecar via
+# a service binding. k1c lowers each container to its own Worker and wires
+# every container to its siblings as service bindings keyed on the
+# container name. Inside `app`, the auth Worker is reachable as `env.auth`.
+#
+# Apply with: K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... \
+#             pnpm k1c apply -f examples/multi-container.yaml --dry-run
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  selector:
+    matchLabels:
+      app: web
+  template:
+    spec:
+      containers:
+        - name: app
+          image: ./examples/hello-worker.mjs
+          # Inside `app`: env.auth.fetch(req) reaches the auth sibling.
+        - name: auth
+          image: ./examples/hello-worker.mjs
+          env:
+            - { name: ROLE, value: auth }
