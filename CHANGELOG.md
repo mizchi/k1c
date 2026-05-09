@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.7.0](https://github.com/mizchi/k1c/compare/v0.6.0...v0.7.0) (2026-05-09)
+
+
+### Features
+
+* add TelemetryStack CRD ([bd73e7b](https://github.com/mizchi/k1c/commit/bd73e7bb740d1f1b99d59f270cb0589731ce83b2))
+* telemetry — annotation-driven Logpush + k1c telemetry command ([99d5bbe](https://github.com/mizchi/k1c/commit/99d5bbe1dac1bb26ba0defa5d95a447590ebfe90))
+* TelemetryStack aggregator — generated Worker that fans out Logpush ([5046dee](https://github.com/mizchi/k1c/commit/5046dee825077351a9b4930cad5f36d650939b1c))
+
 ## [0.6.0](https://github.com/mizchi/k1c/compare/v0.5.0...v0.6.0) (2026-05-09)
 
 
