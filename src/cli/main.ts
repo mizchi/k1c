@@ -171,7 +171,26 @@ function isApi404(err: unknown): boolean {
 main().then(
   (code) => process.exit(code),
   (err) => {
-    process.stderr.write(`fatal: ${err instanceof Error ? err.stack ?? err.message : String(err)}\n`);
+    process.stderr.write(`fatal: ${formatError(err)}\n`);
     process.exit(1);
   },
 );
+
+function formatError(err: unknown): string {
+  if (err instanceof Error) return err.stack ?? err.message;
+  // Provider errors are plain objects shaped as { code, recoverable, message, ... };
+  // formatting them through `String(err)` yields "[object Object]" and loses the
+  // useful fields. Render the structured form instead.
+  if (err !== null && typeof err === 'object') {
+    const e = err as { code?: unknown; message?: unknown };
+    if (typeof e.message === 'string') {
+      return typeof e.code === 'string' ? `[${e.code}] ${e.message}` : e.message;
+    }
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return Object.prototype.toString.call(err);
+    }
+  }
+  return String(err);
+}
