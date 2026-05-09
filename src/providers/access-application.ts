@@ -36,7 +36,14 @@ export interface AccessAppPolicyWire {
   readonly session_duration?: string;
 }
 
-export type AccessApplicationTypeWire = 'self_hosted' | 'ssh' | 'vnc' | 'bookmark';
+export type AccessApplicationTypeWire =
+  | 'self_hosted'
+  | 'ssh'
+  | 'vnc'
+  | 'biso'
+  | 'saas'
+  | 'infrastructure'
+  | 'bookmark';
 
 export interface AccessApplicationProperties {
   readonly appName: string;
@@ -54,6 +61,10 @@ export interface AccessApplicationProperties {
   readonly policies: ReadonlyArray<AccessAppPolicyWire | string>;
   readonly logoUrl?: string;
   readonly appLauncherVisible?: boolean;
+  /** Raw `saas_app` payload passed through verbatim for type=saas. */
+  readonly saasApp?: Readonly<Record<string, unknown>>;
+  /** Raw `target_criteria` payload passed through verbatim for type=infrastructure. */
+  readonly targetCriteria?: ReadonlyArray<Readonly<Record<string, unknown>>>;
 }
 
 const accessRuleWireSchema: z.ZodType<AccessRuleWire> = z.union([
@@ -78,13 +89,23 @@ const accessAppPolicyWireSchema: z.ZodType<AccessAppPolicyWire> = z.object({
 export const accessApplicationSchema: z.ZodType<AccessApplicationProperties> = z.object({
   appName: z.string(),
   domain: z.string(),
-  appType: z.enum(['self_hosted', 'ssh', 'vnc', 'bookmark']),
+  appType: z.enum([
+    'self_hosted',
+    'ssh',
+    'vnc',
+    'biso',
+    'saas',
+    'infrastructure',
+    'bookmark',
+  ]),
   sessionDuration: z.string().optional(),
   autoRedirectToIdentity: z.boolean().optional(),
   allowedIdps: z.array(z.string()).optional(),
   policies: z.array(z.union([accessAppPolicyWireSchema, z.string()])),
   logoUrl: z.string().optional(),
   appLauncherVisible: z.boolean().optional(),
+  saasApp: z.record(z.unknown()).optional(),
+  targetCriteria: z.array(z.record(z.unknown())).optional(),
 });
 
 const NAME_PREFIX = 'k1c-';
@@ -140,6 +161,8 @@ function buildBody(props: AccessApplicationProperties) {
     ...(props.appLauncherVisible !== undefined
       ? { app_launcher_visible: props.appLauncherVisible }
       : {}),
+    ...(props.saasApp !== undefined ? { saas_app: props.saasApp } : {}),
+    ...(props.targetCriteria !== undefined ? { target_criteria: [...props.targetCriteria] } : {}),
     policies: props.policies.map((p) => {
       // Strings are policy UUIDs (e.g. resolved from <resolved-at-apply:AccessPolicy:...>);
       // pass through as-is so the SDK references the existing reusable policy.
