@@ -38,10 +38,14 @@ spec:
         - name: rag
           image: ./examples/hello-worker.mjs
           volumeMounts:
-            - { name: bucket, mountPath: DOCS }
-            - { name: vec, mountPath: VECTOR }
+            - { name: docs, mountPath: /mnt/docs }
+            - { name: vector, mountPath: /mnt/vector }
       volumes:
-        - name: bucket
-          r2BucketRef: { name: docs }
-        - name: vec
-          vectorizeRef: { name: docs }
+        - name: docs
+          csi:
+            driver: r2.k1c.io
+            volumeAttributes: { bucketRef: docs }
+        - name: vector
+          csi:
+            driver: vectorize.k1c.io
+            volumeAttributes: { ref: docs }

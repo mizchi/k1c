@@ -58,13 +58,22 @@ spec:
             - name: STRIPE_KEY
               valueFrom: { secretKeyRef: { name: app-secrets, key: STRIPE_KEY } }
           volumeMounts:
-            - { name: assets, mountPath: ASSETS }
-            - { name: sess, mountPath: SESSIONS }
-            - { name: db, mountPath: DB }
+            - { name: assets, mountPath: /mnt/assets }
+            - { name: sessions, mountPath: /mnt/sessions }
+            - { name: db, mountPath: /mnt/db }
       volumes:
-        - { name: assets, r2BucketRef: { name: assets } }
-        - { name: sess, kvNamespaceRef: { name: sessions } }
-        - { name: db, d1DatabaseRef: { name: app } }
+        - name: assets
+          csi:
+            driver: r2.k1c.io
+            volumeAttributes: { bucketRef: assets }
+        - name: sessions
+          csi:
+            driver: kv.k1c.io
+            volumeAttributes: { namespaceRef: sessions }
+        - name: db
+          csi:
+            driver: d1.k1c.io
+            volumeAttributes: { ref: app }
 ---
 apiVersion: v1
 kind: Service

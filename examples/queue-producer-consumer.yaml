@@ -1,6 +1,6 @@
 # Queue with producer and consumer Workers. The Queue CRD's
 # `spec.consumer.workerName` wires the consumer side; the producer is just
-# any Worker that mounts the queue via `volumes[].queueRef`.
+# any Worker that mounts the queue via `volumes[].csi.driver: queue.k1c.io`.
 #
 # Apply with: pnpm k1c apply -f examples/queue-producer-consumer.yaml --dry-run
 
@@ -28,10 +28,12 @@ spec:
           image: ./examples/hello-worker.mjs
           # Inside the Worker, env.QUEUE.send({ ... }) publishes to the queue.
           volumeMounts:
-            - { name: q, mountPath: QUEUE }
+            - { name: queue, mountPath: /mnt/queue }
       volumes:
-        - name: q
-          queueRef: { name: events }
+        - name: queue
+          csi:
+            driver: queue.k1c.io
+            volumeAttributes: { ref: events }
 ---
 # Consumer: receives batches via the `queue()` handler. Cloudflare wires
 # this script as the queue's consumer because Queue.spec.consumer points

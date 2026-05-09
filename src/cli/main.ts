@@ -15,6 +15,7 @@ import { runApply, runDelete, runDescribe, runDiff, runGet, type RunDeps } from 
 import { runLogs, runPortForward } from './wrangler.ts';
 import { runTelemetry } from './telemetry.ts';
 import { runExplain } from './explain.ts';
+import { runExportCrds } from './export-crds.ts';
 import { readManifestSource } from './manifest-source.ts';
 import { resolveContext, loadContexts, saveContexts, configPath, type K1cContext } from './contexts.ts';
 import { createDefaultRegistry } from '../providers/index.ts';
@@ -44,6 +45,10 @@ async function main(): Promise<number> {
   // `explain` works without API credentials — it only inspects local schemas.
   if (parsed.kind === 'explain') {
     return runExplain({ kind: parsed.resourceKind, recursive: parsed.recursive });
+  }
+  // `export-crds` is also offline.
+  if (parsed.kind === 'export-crds') {
+    return runExportCrds(parsed);
   }
   // `apply --validate-only` is also offline (parse + lower only).
   const validateOnly = parsed.kind === 'apply' && parsed.validateOnly;

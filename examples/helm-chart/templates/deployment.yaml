@@ -27,21 +27,25 @@ spec:
                   key: REGION
           volumeMounts:
 {{- if .Values.bucket.enabled }}
-            - name: bucket
-              mountPath: R2_MEDIA
+            - name: r2-media
+              mountPath: /mnt/r2-media
 {{- end }}
 {{- if .Values.kv.enabled }}
-            - name: kv
-              mountPath: KV_CACHE
+            - name: kv-cache
+              mountPath: /mnt/kv-cache
 {{- end }}
       volumes:
 {{- if .Values.bucket.enabled }}
-        - name: bucket
-          r2BucketRef:
-            name: {{ .Values.bucket.name }}
+        - name: r2-media
+          csi:
+            driver: r2.k1c.io
+            volumeAttributes:
+              bucketRef: {{ .Values.bucket.name }}
 {{- end }}
 {{- if .Values.kv.enabled }}
-        - name: kv
-          kvNamespaceRef:
-            name: {{ .Values.kv.name }}
+        - name: kv-cache
+          csi:
+            driver: kv.k1c.io
+            volumeAttributes:
+              namespaceRef: {{ .Values.kv.name }}
 {{- end }}

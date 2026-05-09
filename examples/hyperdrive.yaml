@@ -47,7 +47,10 @@ spec:
           image: ./examples/hello-worker.mjs
           # Inside the Worker, env.PG is the Hyperdrive client.
           volumeMounts:
-            - { name: hd, mountPath: PG }
+            - { name: pg, mountPath: /mnt/pg }
       volumes:
-        - name: hd
-          hyperdriveRef: { name: main }
+        - name: pg
+          csi:
+            driver: hyperdrive.k1c.io
+            volumeAttributes:
+              ref: main

@@ -76,6 +76,27 @@ kustomize build ./examples/kustomize/overlays/prod | k1c apply -f -
 See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,
 and [`TODO.md`](TODO.md) for what's queued.
 
+## Compatibility with real Kubernetes
+
+A k1c manifest is a *subset* of valid k8s YAML — the same file can be
+applied to either k1c or to a real `kubectl` cluster. Cloudflare-specific
+data sources ride on the standard k8s `volumes[].csi` shape with k1c
+driver names (`r2.k1c.io`, `kv.k1c.io`, `d1.k1c.io`, ...) and Cloudflare
+CRDs live under `cloudflare.k1c.io/v1alpha1`.
+
+To make `kubectl apply --dry-run=server` accept the Cloudflare CRDs,
+register them once on the target cluster:
+
+```sh
+k1c export-crds | kubectl apply -f -
+kubectl apply -f my-manifest.yaml --dry-run=server   # validates schema
+```
+
+The CSI drivers are not actually registered on the cluster, so a real
+Pod will stay pending — but the manifest is schema-valid and admission
+controllers accept it. k1c reads the same manifest and translates the
+CSI driver / volumeAttributes into Worker bindings on the Cloudflare side.
+
 ## Examples
 
 [`examples/`](examples/) carries one self-contained manifest per supported

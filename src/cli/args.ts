@@ -98,6 +98,11 @@ export interface ExplainArgs {
   readonly recursive: boolean;
 }
 
+export interface ExportCrdsArgs {
+  readonly kind: 'export-crds';
+  readonly includeStandard: boolean;
+}
+
 export interface ConfigArgs {
   readonly kind: 'config';
   readonly subCommand:
@@ -133,6 +138,7 @@ export type ParsedArgs =
   | TelemetryArgs
   | ExplainArgs
   | ConfigArgs
+  | ExportCrdsArgs
   | VersionArgs
   | HelpArgs
   | ErrorArgs;
@@ -155,7 +161,20 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   if (first === 'telemetry') return parseTelemetry(argv.slice(1));
   if (first === 'explain') return parseExplain(argv.slice(1));
   if (first === 'config') return parseConfig(argv.slice(1));
+  if (first === 'export-crds') return parseExportCrds(argv.slice(1));
   return { kind: 'error', message: `unknown command: ${first}` };
+}
+
+function parseExportCrds(rest: ReadonlyArray<string>): ParsedArgs {
+  let includeStandard = false;
+  for (const arg of rest) {
+    if (arg === '--include-standard') {
+      includeStandard = true;
+      continue;
+    }
+    return { kind: 'error', message: `unknown flag for export-crds: ${arg}` };
+  }
+  return { kind: 'export-crds', includeStandard };
 }
 
 function parseConfig(rest: ReadonlyArray<string>): ParsedArgs {
