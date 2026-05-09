@@ -1817,6 +1817,53 @@ spec:
     );
   });
 
+  it('lowers a bookmark AccessApplication without policies and with logoUrl', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: notion }
+spec:
+  type: bookmark
+  domain: https://www.notion.so/anthropic
+  logoUrl: https://www.notion.so/favicon.ico
+  appLauncherVisible: true
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    expect(props.appType).toBe('bookmark');
+    expect(props.policies).toEqual([]);
+    expect(props.logoUrl).toBe('https://www.notion.so/favicon.ico');
+    expect(props.appLauncherVisible).toBe(true);
+  });
+
+  it('rejects a bookmark AccessApplication that carries policies', () => {
+    expect(() =>
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: bad }
+spec:
+  type: bookmark
+  domain: https://example.com
+  policies:
+    - name: x
+      decision: allow
+      include: [{ everyone: {} }]
+`),
+    ).toThrow(/bookmark.*cannot carry policies/);
+  });
+
+  it('rejects a self_hosted AccessApplication with no policies', () => {
+    expect(() =>
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: bad }
+spec:
+  domain: internal.example.com
+`),
+    ).toThrow(/at least one entry in spec.policies/);
+  });
+
   it('forwards spec.type to AccessApplication.appType', async () => {
     const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1

@@ -38,11 +38,10 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
   inline policy or `{ ref: <name> }` which lowers to a
   `<resolved-at-apply:AccessPolicy:<label>>` placeholder substituted at apply
   time.
-- **More AccessApplication types** — `self_hosted`, `ssh`, `vnc` shipped (they
-  share the same manifest shape). Bookmark needs a different schema (no
-  policies, plus `logoUrl` / `appLauncherVisible`); SaaS / Infrastructure /
-  Browser Isolation each have their own dedicated fields. Each is a separate
-  follow-up because the manifest shapes diverge.
+- **More AccessApplication types** — `self_hosted`, `ssh`, `vnc`, `bookmark`
+  shipped. SaaS / Infrastructure / Browser Isolation each have their own
+  dedicated fields (SAML/OIDC config for SaaS, target connectors for
+  Infrastructure) and warrant separate follow-ups.
 
 ## Bindings only (no manifest of their own)
 

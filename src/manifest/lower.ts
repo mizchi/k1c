@@ -349,7 +349,8 @@ function lowerAccessApplication(
   const ns = app.metadata.namespace ?? 'default';
   const name = app.metadata.name;
   const dependsOn: ResourceRef[] = [];
-  const policies: AccessApplicationProperties['policies'] = app.spec.policies.map((item) => {
+  const policiesIn = app.spec.policies ?? [];
+  const policies: AccessApplicationProperties['policies'] = policiesIn.map((item) => {
     if (isPolicyRef(item)) {
       const target = accessPolicies.find(
         (ap) => (ap.metadata.namespace ?? 'default') === ns && ap.metadata.name === item.ref,
@@ -376,6 +377,10 @@ function lowerAccessApplication(
       ? { autoRedirectToIdentity: app.spec.autoRedirectToIdentity }
       : {}),
     ...(app.spec.allowedIdps !== undefined ? { allowedIdps: [...app.spec.allowedIdps] } : {}),
+    ...(app.spec.logoUrl !== undefined ? { logoUrl: app.spec.logoUrl } : {}),
+    ...(app.spec.appLauncherVisible !== undefined
+      ? { appLauncherVisible: app.spec.appLauncherVisible }
+      : {}),
     policies,
   };
   return {

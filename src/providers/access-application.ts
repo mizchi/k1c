@@ -36,7 +36,7 @@ export interface AccessAppPolicyWire {
   readonly session_duration?: string;
 }
 
-export type AccessApplicationTypeWire = 'self_hosted' | 'ssh' | 'vnc';
+export type AccessApplicationTypeWire = 'self_hosted' | 'ssh' | 'vnc' | 'bookmark';
 
 export interface AccessApplicationProperties {
   readonly appName: string;
@@ -49,9 +49,11 @@ export interface AccessApplicationProperties {
    * Policy entries. Each item is either an inline policy (AccessAppPolicyWire)
    * or a string holding the policy's Cloudflare UUID (typically materialized
    * from a `<resolved-at-apply:AccessPolicy:<label>>` placeholder by the
-   * apply-time resolver).
+   * apply-time resolver). Empty for `bookmark` applications.
    */
   readonly policies: ReadonlyArray<AccessAppPolicyWire | string>;
+  readonly logoUrl?: string;
+  readonly appLauncherVisible?: boolean;
 }
 
 const accessRuleWireSchema: z.ZodType<AccessRuleWire> = z.union([
@@ -76,11 +78,13 @@ const accessAppPolicyWireSchema: z.ZodType<AccessAppPolicyWire> = z.object({
 export const accessApplicationSchema: z.ZodType<AccessApplicationProperties> = z.object({
   appName: z.string(),
   domain: z.string(),
-  appType: z.enum(['self_hosted', 'ssh', 'vnc']),
+  appType: z.enum(['self_hosted', 'ssh', 'vnc', 'bookmark']),
   sessionDuration: z.string().optional(),
   autoRedirectToIdentity: z.boolean().optional(),
   allowedIdps: z.array(z.string()).optional(),
   policies: z.array(z.union([accessAppPolicyWireSchema, z.string()])),
+  logoUrl: z.string().optional(),
+  appLauncherVisible: z.boolean().optional(),
 });
 
 const NAME_PREFIX = 'k1c-';
@@ -110,6 +114,20 @@ interface CFApp {
 }
 
 function buildBody(props: AccessApplicationProperties) {
+  // Bookmark applications carry no policies / session_duration / IdP config —
+  // they are App Launcher tiles, not gated apps. Sending policies through to
+  // a bookmark create would have Cloudflare reject the request.
+  if (props.appType === 'bookmark') {
+    return {
+      name: props.appName,
+      domain: props.domain,
+      type: 'bookmark' as const,
+      ...(props.logoUrl !== undefined ? { logo_url: props.logoUrl } : {}),
+      ...(props.appLauncherVisible !== undefined
+        ? { app_launcher_visible: props.appLauncherVisible }
+        : {}),
+    };
+  }
   return {
     name: props.appName,
     domain: props.domain,
@@ -119,6 +137,9 @@ function buildBody(props: AccessApplicationProperties) {
       ? { auto_redirect_to_identity: props.autoRedirectToIdentity }
       : {}),
     ...(props.allowedIdps !== undefined ? { allowed_idps: [...props.allowedIdps] } : {}),
+    ...(props.appLauncherVisible !== undefined
+      ? { app_launcher_visible: props.appLauncherVisible }
+      : {}),
     policies: props.policies.map((p) => {
       // Strings are policy UUIDs (e.g. resolved from <resolved-at-apply:AccessPolicy:...>);
       // pass through as-is so the SDK references the existing reusable policy.

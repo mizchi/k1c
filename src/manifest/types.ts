@@ -329,20 +329,29 @@ export interface AccessPolicyRef {
 
 export type AccessApplicationPolicyItem = AccessAppPolicy | AccessPolicyRef;
 
-export type AccessApplicationType = 'self_hosted' | 'ssh' | 'vnc';
+export type AccessApplicationType = 'self_hosted' | 'ssh' | 'vnc' | 'bookmark';
 
 export interface AccessApplicationSpec {
   readonly domain: string;
   /**
    * Cloudflare Access application type. Defaults to `self_hosted`. `ssh` and
-   * `vnc` produce browser-rendered SSH / VNC sessions; their manifest shape is
-   * otherwise identical to `self_hosted`.
+   * `vnc` produce browser-rendered SSH / VNC sessions and share the
+   * `self_hosted` manifest shape. `bookmark` is an App Launcher tile only —
+   * it has no policies and instead carries `logoUrl` / `appLauncherVisible`.
    */
   readonly type?: AccessApplicationType;
   readonly sessionDuration?: string;
   readonly autoRedirectToIdentity?: boolean;
   readonly allowedIdps?: ReadonlyArray<string>;
-  readonly policies: ReadonlyArray<AccessApplicationPolicyItem>;
+  /**
+   * Required (>=1) for `self_hosted` / `ssh` / `vnc`. Must be empty for
+   * `bookmark`. The schema enforces both rules.
+   */
+  readonly policies?: ReadonlyArray<AccessApplicationPolicyItem>;
+  /** Bookmark only: image URL shown on the App Launcher tile. */
+  readonly logoUrl?: string;
+  /** Bookmark only (also applies to other types): show in the App Launcher. */
+  readonly appLauncherVisible?: boolean;
 }
 
 export interface AccessPolicySpec {

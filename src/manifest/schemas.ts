@@ -408,18 +408,49 @@ export const cacheRuleSchema = z.object({
   }),
 });
 
+const accessApplicationSpecSchema = z
+  .object({
+    domain: z.string().min(1),
+    type: z.enum(['self_hosted', 'ssh', 'vnc', 'bookmark']).optional(),
+    sessionDuration: z.string().optional(),
+    autoRedirectToIdentity: z.boolean().optional(),
+    allowedIdps: z.array(z.string()).optional(),
+    policies: z.array(accessApplicationPolicyItemSchema).optional(),
+    logoUrl: z.string().url().optional(),
+    appLauncherVisible: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const t = data.type ?? 'self_hosted';
+    const policyCount = data.policies?.length ?? 0;
+    if (t === 'bookmark') {
+      if (policyCount > 0) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['policies'],
+          message: 'bookmark AccessApplications cannot carry policies',
+        });
+      }
+    } else if (policyCount < 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['policies'],
+        message: `${t} AccessApplication requires at least one entry in spec.policies`,
+      });
+    }
+    if (t !== 'bookmark' && data.logoUrl !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['logoUrl'],
+        message: 'logoUrl only applies to bookmark AccessApplications',
+      });
+    }
+  });
+
 export const accessApplicationSchema = z.object({
   apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
   kind: z.literal('AccessApplication'),
   metadata: objectMetaSchema,
-  spec: z.object({
-    domain: z.string().min(1),
-    type: z.enum(['self_hosted', 'ssh', 'vnc']).optional(),
-    sessionDuration: z.string().optional(),
-    autoRedirectToIdentity: z.boolean().optional(),
-    allowedIdps: z.array(z.string()).optional(),
-    policies: z.array(accessApplicationPolicyItemSchema).min(1),
-  }),
+  spec: accessApplicationSpecSchema,
 });
 
 export const ingressSchema = z.object({
