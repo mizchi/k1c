@@ -14,6 +14,7 @@ import { dnsRecordProvider } from './dns-record.ts';
 import { workflowProvider } from './workflow.ts';
 import { logpushJobProvider } from './logpush-job.ts';
 import { workerRouteProvider } from './worker-route.ts';
+import { accessApplicationProvider } from './access-application.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -32,6 +33,7 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(workflowProvider);
   r.register(logpushJobProvider);
   r.register(workerRouteProvider);
+  r.register(accessApplicationProvider);
   return r;
 }
 

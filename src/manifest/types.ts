@@ -302,6 +302,40 @@ export interface IngressSpec {
 
 export type Ingress = BaseResource<'Ingress', 'networking.k8s.io/v1', IngressSpec>;
 
+export type AccessDecision = 'allow' | 'deny' | 'bypass' | 'non_identity';
+
+export type AccessRule =
+  | { readonly email: { readonly email: string } }
+  | { readonly emailDomain: { readonly domain: string } }
+  | { readonly everyone: Readonly<Record<string, never>> }
+  | { readonly ip: { readonly ip: string } }
+  | { readonly country: { readonly code: string } }
+  | { readonly serviceToken: { readonly tokenId: string } }
+  | { readonly anyValidServiceToken: Readonly<Record<string, never>> };
+
+export interface AccessAppPolicy {
+  readonly name: string;
+  readonly decision: AccessDecision;
+  readonly include: ReadonlyArray<AccessRule>;
+  readonly exclude?: ReadonlyArray<AccessRule>;
+  readonly require?: ReadonlyArray<AccessRule>;
+  readonly sessionDuration?: string;
+}
+
+export interface AccessApplicationSpec {
+  readonly domain: string;
+  readonly sessionDuration?: string;
+  readonly autoRedirectToIdentity?: boolean;
+  readonly allowedIdps?: ReadonlyArray<string>;
+  readonly policies: ReadonlyArray<AccessAppPolicy>;
+}
+
+export type AccessApplication = BaseResource<
+  'AccessApplication',
+  'cloudflare.k1c.io/v1alpha1',
+  AccessApplicationSpec
+>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -321,7 +355,8 @@ export type K1cResource =
   | Vectorize
   | DNSRecord
   | LogpushJob
-  | Ingress;
+  | Ingress
+  | AccessApplication;
 
 export type ResourceKind = K1cResource['kind'];
 

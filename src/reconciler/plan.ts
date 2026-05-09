@@ -147,6 +147,7 @@ function deletePriority(resourceType: string): number {
     case 'DNSRecord':
     case 'LogpushJob':
     case 'Workflow':
+    case 'AccessApplication':
       return 0;
     case 'Worker':
       return 1;

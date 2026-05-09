@@ -1685,6 +1685,83 @@ spec:
     ).rejects.toThrow(/cloudflare.com\/zone-id/);
   });
 
+  it('lowers AccessApplication translating camelCase rules to snake_case wire shape', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata:
+  name: internal
+  namespace: prod
+spec:
+  domain: internal.example.com
+  sessionDuration: 24h
+  autoRedirectToIdentity: true
+  allowedIdps: [idp-a]
+  policies:
+    - name: dev-allow
+      decision: allow
+      include:
+        - { emailDomain: { domain: anthropic.com } }
+        - { email: { email: alice@example.com } }
+      exclude:
+        - { ip: { ip: 1.2.3.4 } }
+      require:
+        - { country: { code: US } }
+`);
+    expect(result.desired).toHaveLength(1);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('AccessApplication');
+    expect(d.label).toBe('prod/internal');
+    expect(d.properties).toEqual({
+      appName: 'k1c-prod-internal',
+      domain: 'internal.example.com',
+      sessionDuration: '24h',
+      autoRedirectToIdentity: true,
+      allowedIdps: ['idp-a'],
+      policies: [
+        {
+          name: 'dev-allow',
+          decision: 'allow',
+          include: [
+            { email_domain: { domain: 'anthropic.com' } },
+            { email: { email: 'alice@example.com' } },
+          ],
+          exclude: [{ ip: { ip: '1.2.3.4' } }],
+          require: [{ country: { country_code: 'US' } }],
+        },
+      ],
+    });
+  });
+
+  it('lowers AccessApplication with everyone / serviceToken / anyValidServiceToken rules', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: open }
+spec:
+  domain: open.example.com
+  policies:
+    - name: open
+      decision: allow
+      include:
+        - { everyone: {} }
+        - { serviceToken: { tokenId: tok-123 } }
+        - { anyValidServiceToken: {} }
+`);
+    const policies = (result.desired[0]!.properties as { policies: unknown[] }).policies;
+    expect(policies).toEqual([
+      {
+        name: 'open',
+        decision: 'allow',
+        include: [
+          { everyone: {} },
+          { service_token: { token_id: 'tok-123' } },
+          { any_valid_service_token: {} },
+        ],
+      },
+    ]);
+  });
+
   it('hashes the entrypoint content into Worker.entrypointHash', async () => {
     const { resources } = parseManifest(`
 apiVersion: apps/v1

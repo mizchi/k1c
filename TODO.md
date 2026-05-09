@@ -29,11 +29,18 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 
 ## Identity / authorization (Zero Trust)
 
-- **`AccessApplication` (CRD)** — Cloudflare Access application protecting a
-  hostname. `spec.policies[]` references `AccessPolicy` resources.
-- **`AccessPolicy` (CRD)** — `decision: allow|deny|bypass|non_identity` plus
-  `include` / `exclude` / `require` rule groups. Closest k8s analog is Istio
-  `AuthorizationPolicy`; the schema is non-trivial.
+- ~~**`AccessApplication` (CRD)**~~ — shipped (self_hosted type only). Inline
+  policies: `decision: allow|deny|bypass|non_identity` + `include` / `exclude`
+  / `require` rule groups. Supported rule shapes: `email`, `emailDomain`,
+  `everyone`, `ip`, `country`, `serviceToken`, `anyValidServiceToken`.
+- **`AccessPolicy` (CRD)** — standalone, reusable account-level policy. Today
+  policies are inlined inside `AccessApplication`; pulling them out into a
+  separate CRD requires cross-resource ID resolution at apply time, which the
+  rest of the codebase does not yet do (see the placeholder pattern in
+  `lower.ts`). Deferred until that resolution layer lands.
+- **More AccessApplication types** — only `self_hosted` is wired today. SaaS,
+  SSH, VNC, Browser Isolation, Bookmark, Infrastructure, etc. are all single-
+  field-extension follow-ups.
 
 ## Bindings only (no manifest of their own)
 

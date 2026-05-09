@@ -349,6 +349,38 @@ const ingressRuleSchema = z.object({
   http: z.object({ paths: z.array(ingressPathSchema).min(1) }),
 });
 
+const accessRuleSchema = z.union([
+  z.object({ email: z.object({ email: z.string().min(1) }) }),
+  z.object({ emailDomain: z.object({ domain: z.string().min(1) }) }),
+  z.object({ everyone: z.object({}).strict() }),
+  z.object({ ip: z.object({ ip: z.string().min(1) }) }),
+  z.object({ country: z.object({ code: z.string().min(2) }) }),
+  z.object({ serviceToken: z.object({ tokenId: z.string().min(1) }) }),
+  z.object({ anyValidServiceToken: z.object({}).strict() }),
+]);
+
+const accessAppPolicySchema = z.object({
+  name: z.string().min(1),
+  decision: z.enum(['allow', 'deny', 'bypass', 'non_identity']),
+  include: z.array(accessRuleSchema).min(1),
+  exclude: z.array(accessRuleSchema).optional(),
+  require: z.array(accessRuleSchema).optional(),
+  sessionDuration: z.string().optional(),
+});
+
+export const accessApplicationSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('AccessApplication'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    domain: z.string().min(1),
+    sessionDuration: z.string().optional(),
+    autoRedirectToIdentity: z.boolean().optional(),
+    allowedIdps: z.array(z.string()).optional(),
+    policies: z.array(accessAppPolicySchema).min(1),
+  }),
+});
+
 export const ingressSchema = z.object({
   apiVersion: z.literal('networking.k8s.io/v1'),
   kind: z.literal('Ingress'),
@@ -379,4 +411,5 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   dnsRecordSchema,
   logpushJobSchema,
   ingressSchema,
+  accessApplicationSchema,
 ]);

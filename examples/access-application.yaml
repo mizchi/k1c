@@ -1,0 +1,26 @@
+# Cloudflare Access (Zero Trust) sitting in front of an internal hostname.
+# The Access app + its policies are managed by k1c; the hostname itself is
+# whatever you point at this Custom Domain (Worker, tunnel, origin, etc.).
+#
+# Apply with: K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f examples/access-application.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata:
+  name: internal
+spec:
+  domain: internal.example.com
+  sessionDuration: 24h
+  autoRedirectToIdentity: false
+  policies:
+    - name: company-allow
+      decision: allow
+      include:
+        - emailDomain: { domain: anthropic.com }
+        - email: { email: alice@example.com }
+      exclude:
+        - ip: { ip: 198.51.100.50 }
+    - name: emergency-bypass
+      decision: bypass
+      include:
+        - serviceToken: { tokenId: REPLACE_WITH_SERVICE_TOKEN_UUID }

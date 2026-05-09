@@ -1,6 +1,9 @@
 import { Buffer } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import type {
+  AccessApplication,
+  AccessAppPolicy,
+  AccessRule,
   ConfigMapResource,
   CronJob,
   D1Database,
@@ -38,6 +41,11 @@ import type { DNSRecordProperties } from '../providers/dns-record.ts';
 import type { WorkflowProperties } from '../providers/workflow.ts';
 import type { LogpushJobProperties } from '../providers/logpush-job.ts';
 import type { WorkerRouteProperties } from '../providers/worker-route.ts';
+import type {
+  AccessAppPolicyWire,
+  AccessApplicationProperties,
+  AccessRuleWire,
+} from '../providers/access-application.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 import { generateRouter, type RouterRoute } from '../ingress/router-template.ts';
 
@@ -106,6 +114,7 @@ export async function lower(
   const dnsRecords: DNSRecord[] = [];
   const logpushJobs: LogpushJob[] = [];
   const ingresses: Ingress[] = [];
+  const accessApplications: AccessApplication[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -165,6 +174,9 @@ export async function lower(
         break;
       case 'Ingress':
         ingresses.push(r);
+        break;
+      case 'AccessApplication':
+        accessApplications.push(r);
         break;
     }
   }
@@ -231,7 +243,58 @@ export async function lower(
     }
   }
 
+  for (const app of accessApplications) {
+    desired.push(lowerAccessApplication(app));
+  }
+
   return { desired, warnings };
+}
+
+function ruleToWire(rule: AccessRule): AccessRuleWire {
+  if ('email' in rule) return { email: { email: rule.email.email } };
+  if ('emailDomain' in rule) return { email_domain: { domain: rule.emailDomain.domain } };
+  if ('everyone' in rule) return { everyone: {} };
+  if ('ip' in rule) return { ip: { ip: rule.ip.ip } };
+  if ('country' in rule) return { country: { country_code: rule.country.code } };
+  if ('serviceToken' in rule)
+    return { service_token: { token_id: rule.serviceToken.tokenId } };
+  return { any_valid_service_token: {} };
+}
+
+function policyToWire(p: AccessAppPolicy): AccessAppPolicyWire {
+  return {
+    name: p.name,
+    decision: p.decision,
+    include: p.include.map(ruleToWire),
+    ...(p.exclude !== undefined ? { exclude: p.exclude.map(ruleToWire) } : {}),
+    ...(p.require !== undefined ? { require: p.require.map(ruleToWire) } : {}),
+    ...(p.sessionDuration !== undefined ? { session_duration: p.sessionDuration } : {}),
+  };
+}
+
+function lowerAccessApplication(
+  app: AccessApplication,
+): DesiredResource<AccessApplicationProperties> {
+  const ns = app.metadata.namespace ?? 'default';
+  const name = app.metadata.name;
+  const properties: AccessApplicationProperties = {
+    appName: `k1c-${ns}-${name}`,
+    domain: app.spec.domain,
+    ...(app.spec.sessionDuration !== undefined
+      ? { sessionDuration: app.spec.sessionDuration }
+      : {}),
+    ...(app.spec.autoRedirectToIdentity !== undefined
+      ? { autoRedirectToIdentity: app.spec.autoRedirectToIdentity }
+      : {}),
+    ...(app.spec.allowedIdps !== undefined ? { allowedIdps: [...app.spec.allowedIdps] } : {}),
+    policies: app.spec.policies.map(policyToWire),
+  };
+  return {
+    resourceType: 'AccessApplication',
+    ref: refOf(app),
+    label: `${ns}/${name}`,
+    properties,
+  };
 }
 
 function lowerVectorize(v: Vectorize): DesiredResource<VectorizeProperties> {
