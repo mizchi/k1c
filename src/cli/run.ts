@@ -1,3 +1,4 @@
+import process from 'node:process';
 import { parseManifest } from '../manifest/parse.ts';
 import { lower } from '../manifest/lower.ts';
 import { plan } from '../reconciler/plan.ts';
@@ -22,6 +23,11 @@ export async function runApply(args: ApplyArgs, deps: RunDeps): Promise<number> 
   const loaded = await loadParsedAndDesired(args.file, deps);
   if (loaded === null) return 3;
   const { parsed, desired } = loaded;
+
+  if (args.validateOnly) {
+    deps.out(`(validate-only: ${desired.length} resources lowered cleanly)`);
+    return 0;
+  }
 
   const planResult = await plan(desired, deps.registry, deps.providerCtx);
   deps.out('[plan]');
@@ -67,7 +73,9 @@ export async function runDiff(args: DiffArgs, deps: RunDeps): Promise<number> {
     deps.out(JSON.stringify({ operations: planResult.operations }, null, 2));
   } else {
     deps.out('[plan]');
-    deps.out(formatPlan(planResult));
+    const color =
+      args.color !== undefined ? args.color === 'always' : Boolean(process.stdout.isTTY);
+    deps.out(formatPlan(planResult, { verbose: args.verbose, color }));
   }
   return 0;
 }

@@ -18,6 +18,7 @@ describe('parseArgs', () => {
       dryRun: false,
       watch: false,
       quiet: false,
+      validateOnly: false,
     });
   });
 
@@ -28,6 +29,7 @@ describe('parseArgs', () => {
       dryRun: false,
       watch: false,
       quiet: false,
+      validateOnly: false,
     });
   });
 
@@ -38,6 +40,7 @@ describe('parseArgs', () => {
       dryRun: true,
       watch: false,
       quiet: false,
+      validateOnly: false,
     });
   });
 
@@ -48,6 +51,7 @@ describe('parseArgs', () => {
       dryRun: false,
       watch: true,
       quiet: false,
+      validateOnly: false,
     });
   });
 
@@ -55,6 +59,7 @@ describe('parseArgs', () => {
     expect(parseArgs(['apply', '-f', 'm.yaml', '--quiet'])).toMatchObject({
       kind: 'apply',
       quiet: true,
+      validateOnly: false,
     });
     expect(parseArgs(['apply', '-f', 'm.yaml', '-q'])).toMatchObject({ quiet: true });
   });
@@ -77,6 +82,15 @@ describe('parseArgs', () => {
       kind: 'diff',
       file: 'manifest.yaml',
       output: 'text',
+      verbose: false,
+    });
+  });
+
+  it('parses --verbose / --color on diff', () => {
+    expect(parseArgs(['diff', '-f', 'm.yaml', '-v', '--color', 'always'])).toMatchObject({
+      kind: 'diff',
+      verbose: true,
+      color: 'always',
     });
   });
 
