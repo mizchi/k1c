@@ -738,6 +738,55 @@ export const telemetryStackSchema = z.object({
     }),
 });
 
+/**
+ * Index of every k1c manifest kind → its zod schema. `k1c explain` and the
+ * discriminated union below both consume this; keeping it in one place
+ * means a new CRD only needs to be appended here once.
+ */
+export const SCHEMAS_BY_KIND = {
+  Deployment: deploymentSchema,
+  Rollout: rolloutSchema,
+  StatefulSet: statefulSetSchema,
+  CronJob: cronJobSchema,
+  Job: jobSchema,
+  ConfigMap: configMapSchema,
+  Secret: secretSchema,
+  Namespace: namespaceSchema,
+  Service: serviceSchema,
+  R2Bucket: r2BucketSchema,
+  KVNamespace: kvNamespaceSchema,
+  DispatchNamespace: dispatchNamespaceSchema,
+  Hyperdrive: hyperdriveSchema,
+  D1Database: d1DatabaseSchema,
+  Queue: queueSchema,
+  Vectorize: vectorizeSchema,
+  DNSRecord: dnsRecordSchema,
+  LogpushJob: logpushJobSchema,
+  TelemetryStack: telemetryStackSchema,
+  Ingress: ingressSchema,
+  AccessApplication: accessApplicationSchema,
+  AccessPolicy: accessPolicySchema,
+  CacheRule: cacheRuleSchema,
+  TransformRule: transformRuleSchema,
+  WAFCustomRule: wafCustomRuleSchema,
+  RateLimitRule: rateLimitRuleSchema,
+  CustomHostname: customHostnameSchema,
+  WAFManagedRuleset: wafManagedRulesetSchema,
+  EmailRoutingRule: emailRoutingRuleSchema,
+  URIRewriteRule: uriRewriteRuleSchema,
+  ResponseHeaderRule: responseHeaderRuleSchema,
+} as const;
+
+export type K1cKind = keyof typeof SCHEMAS_BY_KIND;
+
+export function listKinds(): ReadonlyArray<K1cKind> {
+  return Object.keys(SCHEMAS_BY_KIND) as ReadonlyArray<K1cKind>;
+}
+
+export function schemaFor(kind: string): z.ZodType<unknown> | undefined {
+  return (SCHEMAS_BY_KIND as Record<string, z.ZodType<unknown>>)[kind];
+}
+
 export const k1cResourceSchema = z.discriminatedUnion('kind', [
   deploymentSchema,
   rolloutSchema,

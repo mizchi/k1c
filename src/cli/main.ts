@@ -3,11 +3,20 @@ import { readFile, watch } from 'node:fs/promises';
 import process from 'node:process';
 import { resolve as resolvePath } from 'node:path';
 import Cloudflare from 'cloudflare';
-import { parseArgs, USAGE, type ApplyArgs, type RolloutArgs } from './args.ts';
+import {
+  parseArgs,
+  USAGE,
+  extractContext,
+  type ApplyArgs,
+  type ConfigArgs,
+  type RolloutArgs,
+} from './args.ts';
 import { runApply, runDelete, runDescribe, runDiff, runGet, type RunDeps } from './run.ts';
 import { runLogs, runPortForward } from './wrangler.ts';
 import { runTelemetry } from './telemetry.ts';
+import { runExplain } from './explain.ts';
 import { readManifestSource } from './manifest-source.ts';
+import { resolveContext, loadContexts, saveContexts, configPath, type K1cContext } from './contexts.ts';
 import { createDefaultRegistry } from '../providers/index.ts';
 import type { ProviderContext } from '../providers/types.ts';
 import { runRolloutCommand } from '../canary/rollout-command.ts';
@@ -17,7 +26,8 @@ import pkg from '../../package.json' with { type: 'json' };
 const VERSION = pkg.version;
 
 async function main(): Promise<number> {
-  const parsed = parseArgs(process.argv.slice(2));
+  const { rest, context: contextFlag } = extractContext(process.argv.slice(2));
+  const parsed = parseArgs(rest);
 
   if (parsed.kind === 'help') {
     process.stdout.write(USAGE);
@@ -31,23 +41,43 @@ async function main(): Promise<number> {
     process.stderr.write(`k1c: ${parsed.message}\n\n${USAGE}`);
     return 2;
   }
-
-  const accountId = process.env['K1C_ACCOUNT_ID'];
-  const apiToken = process.env['CLOUDFLARE_API_TOKEN'];
-  if (!accountId) {
-    process.stderr.write('K1C_ACCOUNT_ID is not set\n');
-    return 2;
+  // `explain` works without API credentials — it only inspects local schemas.
+  if (parsed.kind === 'explain') {
+    return runExplain({ kind: parsed.resourceKind, recursive: parsed.recursive });
   }
-  if (!apiToken) {
-    process.stderr.write('CLOUDFLARE_API_TOKEN is not set\n');
-    return 2;
+  // `apply --validate-only` is also offline (parse + lower only).
+  const validateOnly = parsed.kind === 'apply' && parsed.validateOnly;
+
+  // `config` reads / writes ~/.k1c/config.yaml directly; no API call.
+  if (parsed.kind === 'config') return runConfig(parsed);
+
+  let accountId: string | undefined;
+  let apiToken: string | undefined;
+  let zoneIdFromCtx: string | undefined;
+  if (!validateOnly) {
+    const resolved = await resolveContext({
+      ...(contextFlag !== undefined ? { cliName: contextFlag } : {}),
+    });
+    if ('error' in resolved) {
+      process.stderr.write(`${resolved.error}\n`);
+      return 2;
+    }
+    accountId = resolved.accountId;
+    apiToken = resolved.apiToken;
+    zoneIdFromCtx = resolved.zoneId;
+    if (resolved.source !== 'legacy' && resolved.name !== undefined) {
+      process.stderr.write(`(using context "${resolved.name}" from ${resolved.source})\n`);
+    }
   }
 
-  const cloudflare = new Cloudflare({ apiToken });
-  const zoneId = process.env['K1C_ZONE_ID'];
+  // The Cloudflare client is only used by paths that talk to the API; under
+  // --validate-only we still construct it (with a dummy token if needed) so
+  // `RunDeps.providerCtx` stays valid, but no provider methods will be called.
+  const cloudflare = new Cloudflare({ apiToken: apiToken ?? 'placeholder-validate-only' });
+  const zoneId = zoneIdFromCtx ?? process.env['K1C_ZONE_ID'];
   const ctx: ProviderContext = {
     cloudflare,
-    accountId,
+    accountId: accountId ?? 'placeholder-validate-only',
     ...(zoneId !== undefined && zoneId.length > 0 ? { zoneId } : {}),
     namespace: 'default',
     managedByLabel: 'k1c.io/managed-by=k1c',
@@ -74,10 +104,11 @@ async function main(): Promise<number> {
   if (parsed.kind === 'get') return runGet(parsed, deps);
   if (parsed.kind === 'describe') return runDescribe(parsed, deps);
   if (parsed.kind === 'delete') return runDelete(parsed, deps);
-  if (parsed.kind === 'rollout') return runRollout(parsed, cloudflare, accountId);
+  if (parsed.kind === 'rollout') return runRollout(parsed, cloudflare, accountId!);
   if (parsed.kind === 'logs') return runLogs(parsed);
   if (parsed.kind === 'port-forward') return runPortForward(parsed);
-  if (parsed.kind === 'telemetry') return runTelemetry(parsed, { accountId, apiToken });
+  if (parsed.kind === 'telemetry')
+    return runTelemetry(parsed, { accountId: accountId!, apiToken: apiToken! });
   return 2;
 }
 
@@ -179,6 +210,65 @@ async function findStateKvId(
 function isApi404(err: unknown): boolean {
   if (err === null || typeof err !== 'object') return false;
   return (err as { status?: number }).status === 404;
+}
+
+async function runConfig(args: ConfigArgs): Promise<number> {
+  const file = await loadContexts();
+  if (args.subCommand === 'list') {
+    const entries = Object.entries(file.contexts);
+    if (entries.length === 0) {
+      process.stdout.write(`(no contexts in ${configPath()})\n`);
+      return 0;
+    }
+    for (const [name, ctx] of entries) {
+      const star = file.currentContext === name ? '* ' : '  ';
+      process.stdout.write(
+        `${star}${name}  account=${ctx.accountId}${ctx.zoneId ? ` zone=${ctx.zoneId}` : ''}${ctx.apiTokenEnv ? ` token-env=${ctx.apiTokenEnv}` : ''}\n`,
+      );
+    }
+    return 0;
+  }
+  if (args.subCommand === 'current-context') {
+    process.stdout.write(`${file.currentContext ?? '(none)'}\n`);
+    return 0;
+  }
+  if (args.subCommand === 'use-context') {
+    if (!file.contexts[args.contextName!]) {
+      process.stderr.write(`context "${args.contextName}" is not defined\n`);
+      return 2;
+    }
+    await saveContexts({ ...file, currentContext: args.contextName });
+    process.stdout.write(`switched to context "${args.contextName}"\n`);
+    return 0;
+  }
+  if (args.subCommand === 'set-context') {
+    const next: K1cContext = {
+      accountId: args.accountId!,
+      ...(args.zoneId !== undefined ? { zoneId: args.zoneId } : {}),
+      ...(args.apiTokenEnv !== undefined ? { apiTokenEnv: args.apiTokenEnv } : {}),
+    };
+    const contexts = { ...file.contexts, [args.contextName!]: next };
+    await saveContexts({ ...file, contexts });
+    process.stdout.write(`set context "${args.contextName}"\n`);
+    return 0;
+  }
+  if (args.subCommand === 'delete-context') {
+    if (!file.contexts[args.contextName!]) {
+      process.stderr.write(`context "${args.contextName}" is not defined\n`);
+      return 2;
+    }
+    const contexts = { ...file.contexts };
+    delete (contexts as Record<string, unknown>)[args.contextName!];
+    const nextCurrent =
+      file.currentContext === args.contextName ? undefined : file.currentContext;
+    await saveContexts({
+      contexts,
+      ...(nextCurrent !== undefined ? { currentContext: nextCurrent } : {}),
+    });
+    process.stdout.write(`deleted context "${args.contextName}"\n`);
+    return 0;
+  }
+  return 2;
 }
 
 main().then(

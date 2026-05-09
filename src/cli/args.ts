@@ -6,12 +6,22 @@ export interface ApplyArgs {
   readonly dryRun: boolean;
   readonly watch: boolean;
   readonly quiet: boolean;
+  /**
+   * Schema-level validation only — parse + lower the manifest, report any
+   * errors, then exit. No Cloudflare round-trip, so the command runs offline
+   * (CI hooks, pre-commit). Mutually exclusive with --watch / --dry-run.
+   */
+  readonly validateOnly: boolean;
 }
 
 export interface DiffArgs {
   readonly kind: 'diff';
   readonly file: string;
   readonly output: OutputFormat;
+  /** Include per-field +/- diffs under each `update` op. */
+  readonly verbose: boolean;
+  /** Force color on/off; auto-detect when undefined. */
+  readonly color?: 'always' | 'never';
 }
 
 export interface RolloutArgs {
@@ -82,6 +92,26 @@ export interface TelemetryArgs {
   readonly output: OutputFormat;
 }
 
+export interface ExplainArgs {
+  readonly kind: 'explain';
+  readonly resourceKind: string;
+  readonly recursive: boolean;
+}
+
+export interface ConfigArgs {
+  readonly kind: 'config';
+  readonly subCommand:
+    | 'list'
+    | 'use-context'
+    | 'set-context'
+    | 'current-context'
+    | 'delete-context';
+  readonly contextName?: string;
+  readonly accountId?: string;
+  readonly zoneId?: string;
+  readonly apiTokenEnv?: string;
+}
+
 export interface HelpArgs {
   readonly kind: 'help';
 }
@@ -101,6 +131,8 @@ export type ParsedArgs =
   | LogsArgs
   | PortForwardArgs
   | TelemetryArgs
+  | ExplainArgs
+  | ConfigArgs
   | VersionArgs
   | HelpArgs
   | ErrorArgs;
@@ -121,7 +153,109 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   if (first === 'logs') return parseLogs(argv.slice(1));
   if (first === 'port-forward') return parsePortForward(argv.slice(1));
   if (first === 'telemetry') return parseTelemetry(argv.slice(1));
+  if (first === 'explain') return parseExplain(argv.slice(1));
+  if (first === 'config') return parseConfig(argv.slice(1));
   return { kind: 'error', message: `unknown command: ${first}` };
+}
+
+function parseConfig(rest: ReadonlyArray<string>): ParsedArgs {
+  const sub = rest[0];
+  if (
+    sub !== 'list' &&
+    sub !== 'use-context' &&
+    sub !== 'set-context' &&
+    sub !== 'current-context' &&
+    sub !== 'delete-context'
+  ) {
+    return {
+      kind: 'error',
+      message:
+        'config requires a subcommand: list | use-context | set-context | current-context | delete-context',
+    };
+  }
+  let contextName: string | undefined;
+  let accountId: string | undefined;
+  let zoneId: string | undefined;
+  let apiTokenEnv: string | undefined;
+  for (let i = 1; i < rest.length; i += 1) {
+    const arg = rest[i]!;
+    if (arg === '--account' || arg === '--account-id') {
+      accountId = rest[i + 1];
+      if (accountId === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      i += 1;
+      continue;
+    }
+    if (arg === '--zone' || arg === '--zone-id') {
+      zoneId = rest[i + 1];
+      if (zoneId === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      i += 1;
+      continue;
+    }
+    if (arg === '--token-env') {
+      apiTokenEnv = rest[i + 1];
+      if (apiTokenEnv === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      i += 1;
+      continue;
+    }
+    if (!arg.startsWith('-') && contextName === undefined) {
+      contextName = arg;
+      continue;
+    }
+    return { kind: 'error', message: `unknown flag for config: ${arg}` };
+  }
+  if (
+    (sub === 'use-context' || sub === 'set-context' || sub === 'delete-context') &&
+    contextName === undefined
+  ) {
+    return { kind: 'error', message: `config ${sub} requires a context name` };
+  }
+  if (sub === 'set-context' && accountId === undefined) {
+    return { kind: 'error', message: 'config set-context requires --account <id>' };
+  }
+  return {
+    kind: 'config',
+    subCommand: sub,
+    ...(contextName !== undefined ? { contextName } : {}),
+    ...(accountId !== undefined ? { accountId } : {}),
+    ...(zoneId !== undefined ? { zoneId } : {}),
+    ...(apiTokenEnv !== undefined ? { apiTokenEnv } : {}),
+  };
+}
+
+/**
+ * Pre-extract the `--context <name>` flag from argv so subcommand parsers
+ * do not all need to learn about it. Returns the rest of argv minus the
+ * flag, plus the context name when present.
+ */
+export function extractContext(
+  argv: ReadonlyArray<string>,
+): { rest: string[]; context: string | undefined } {
+  const rest: string[] = [];
+  let context: string | undefined;
+  for (let i = 0; i < argv.length; i += 1) {
+    const a = argv[i]!;
+    if (a === '--context') {
+      context = argv[i + 1];
+      i += 1;
+      continue;
+    }
+    rest.push(a);
+  }
+  return { rest, context };
+}
+
+function parseExplain(rest: ReadonlyArray<string>): ParsedArgs {
+  const resourceKind = rest[0] ?? 'list';
+  let recursive = false;
+  for (let i = 1; i < rest.length; i += 1) {
+    const arg = rest[i]!;
+    if (arg === '--recursive' || arg === '-r') {
+      recursive = true;
+      continue;
+    }
+    return { kind: 'error', message: `unknown flag for explain: ${arg}` };
+  }
+  return { kind: 'explain', resourceKind, recursive };
 }
 
 function parseTelemetry(rest: ReadonlyArray<string>): ParsedArgs {
@@ -428,6 +562,7 @@ function parseApply(rest: ReadonlyArray<string>): ParsedArgs {
   let dryRun = false;
   let watch = false;
   let quiet = false;
+  let validateOnly = false;
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i]!;
     if (arg === '-f' || arg === '--file') {
@@ -449,6 +584,10 @@ function parseApply(rest: ReadonlyArray<string>): ParsedArgs {
       quiet = true;
       continue;
     }
+    if (arg === '--validate-only') {
+      validateOnly = true;
+      continue;
+    }
     return { kind: 'error', message: `unknown flag for apply: ${arg}` };
   }
   if (file === undefined) {
@@ -457,12 +596,20 @@ function parseApply(rest: ReadonlyArray<string>): ParsedArgs {
   if (dryRun && watch) {
     return { kind: 'error', message: '--dry-run and --watch are mutually exclusive' };
   }
-  return { kind: 'apply', file, dryRun, watch, quiet };
+  if (validateOnly && (watch || dryRun)) {
+    return {
+      kind: 'error',
+      message: '--validate-only is mutually exclusive with --watch / --dry-run',
+    };
+  }
+  return { kind: 'apply', file, dryRun, watch, quiet, validateOnly };
 }
 
 function parseDiff(rest: ReadonlyArray<string>): ParsedArgs {
   let file: string | undefined;
   let output: OutputFormat = 'text';
+  let verbose = false;
+  let color: 'always' | 'never' | undefined;
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i]!;
     if (arg === '-f' || arg === '--file') {
@@ -479,19 +626,38 @@ function parseDiff(rest: ReadonlyArray<string>): ParsedArgs {
       i += 1;
       continue;
     }
+    if (arg === '-v' || arg === '--verbose') {
+      verbose = true;
+      continue;
+    }
+    if (arg === '--color') {
+      const value = rest[i + 1];
+      if (value !== 'always' && value !== 'never') {
+        return { kind: 'error', message: '--color must be "always" or "never"' };
+      }
+      color = value;
+      i += 1;
+      continue;
+    }
     return { kind: 'error', message: `unknown flag for diff: ${arg}` };
   }
   if (file === undefined) {
     return { kind: 'error', message: 'diff requires -f / --file' };
   }
-  return { kind: 'diff', file, output };
+  return {
+    kind: 'diff',
+    file,
+    output,
+    verbose,
+    ...(color !== undefined ? { color } : {}),
+  };
 }
 
 export const USAGE = `k1c — apply a subset of Kubernetes manifests to Cloudflare
 
 usage:
-  k1c apply    -f <file|dir|-> [--dry-run | --watch] [--quiet | -q]
-  k1c diff     -f <file|dir|-> [-o text|json]
+  k1c apply    -f <file|dir|-> [--dry-run | --watch | --validate-only] [--quiet | -q]
+  k1c diff     -f <file|dir|-> [-o text|json] [-v|--verbose] [--color always|never]
   k1c delete   -f <file|dir|-> [--cascade]
   k1c get      <kind> [name] [-n <namespace>] [-o text|json]
   k1c describe <kind> <name> [-n <namespace>] [-o text|json]
@@ -499,7 +665,16 @@ usage:
   k1c logs     <kind> <name> [-n <namespace>] [--format pretty|json] [--status <s>] [--limit N]
   k1c port-forward <kind> <name> [-n <namespace>] [--port 8787]
   k1c telemetry workers <kind> <name> [-n <ns>] [--since 1h] [-o text|json]
+  k1c explain  <kind> [--recursive | -r]
+  k1c config   list | current-context
+  k1c config   use-context <name>
+  k1c config   set-context <name> --account <id> [--zone <id>] [--token-env CLOUDFLARE_API_TOKEN]
+  k1c config   delete-context <name>
   k1c version
+
+context selection (highest wins):
+  --context <name>  ⏵  K1C_CONTEXT  ⏵  currentContext from ~/.k1c/config.yaml
+  ⏵  legacy K1C_ACCOUNT_ID + CLOUDFLARE_API_TOKEN env
 
 environment:
   K1C_ACCOUNT_ID        Cloudflare account id
