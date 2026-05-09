@@ -16,6 +16,7 @@ import { runLogs, runPortForward } from './wrangler.ts';
 import { runTelemetry } from './telemetry.ts';
 import { runExplain } from './explain.ts';
 import { runExportCrds } from './export-crds.ts';
+import { runOperator } from '../operator/reconcile.ts';
 import { readManifestSource } from './manifest-source.ts';
 import { resolveContext, loadContexts, saveContexts, configPath, type K1cContext } from './contexts.ts';
 import { createDefaultRegistry } from '../providers/index.ts';
@@ -114,6 +115,22 @@ async function main(): Promise<number> {
   if (parsed.kind === 'port-forward') return runPortForward(parsed);
   if (parsed.kind === 'telemetry')
     return runTelemetry(parsed, { accountId: accountId!, apiToken: apiToken! });
+  if (parsed.kind === 'operator') {
+    const ac = new AbortController();
+    process.on('SIGINT', () => ac.abort());
+    process.on('SIGTERM', () => ac.abort());
+    await runOperator(
+      {
+        accountId: accountId!,
+        apiToken: apiToken!,
+        ...(zoneId !== undefined ? { zoneId } : {}),
+        ...(parsed.namespace !== undefined ? { namespace: parsed.namespace } : {}),
+        intervalMs: parsed.intervalSec * 1000,
+      },
+      ac.signal,
+    );
+    return 0;
+  }
   return 2;
 }
 

@@ -103,6 +103,13 @@ export interface ExportCrdsArgs {
   readonly includeStandard: boolean;
 }
 
+export interface OperatorRunArgs {
+  readonly kind: 'operator';
+  readonly subCommand: 'run';
+  readonly namespace?: string;
+  readonly intervalSec: number;
+}
+
 export interface ConfigArgs {
   readonly kind: 'config';
   readonly subCommand:
@@ -139,6 +146,7 @@ export type ParsedArgs =
   | ExplainArgs
   | ConfigArgs
   | ExportCrdsArgs
+  | OperatorRunArgs
   | VersionArgs
   | HelpArgs
   | ErrorArgs;
@@ -162,7 +170,44 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   if (first === 'explain') return parseExplain(argv.slice(1));
   if (first === 'config') return parseConfig(argv.slice(1));
   if (first === 'export-crds') return parseExportCrds(argv.slice(1));
+  if (first === 'operator') return parseOperator(argv.slice(1));
   return { kind: 'error', message: `unknown command: ${first}` };
+}
+
+function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
+  const sub = rest[0];
+  if (sub !== 'run') {
+    return { kind: 'error', message: 'operator requires a subcommand: run' };
+  }
+  let namespace: string | undefined;
+  let intervalSec = 30;
+  for (let i = 1; i < rest.length; i += 1) {
+    const arg = rest[i]!;
+    if (arg === '-n' || arg === '--namespace') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      namespace = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '--interval') {
+      const value = rest[i + 1];
+      const parsed = value !== undefined ? Number.parseInt(value, 10) : NaN;
+      if (Number.isNaN(parsed) || parsed <= 0) {
+        return { kind: 'error', message: '--interval requires a positive integer (seconds)' };
+      }
+      intervalSec = parsed;
+      i += 1;
+      continue;
+    }
+    return { kind: 'error', message: `unknown flag for operator run: ${arg}` };
+  }
+  return {
+    kind: 'operator',
+    subCommand: 'run',
+    intervalSec,
+    ...(namespace !== undefined ? { namespace } : {}),
+  };
 }
 
 function parseExportCrds(rest: ReadonlyArray<string>): ParsedArgs {

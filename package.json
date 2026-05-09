@@ -48,6 +48,7 @@
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
+    "@kubernetes/client-node": "^1.4.0",
     "cloudflare": "^4.0.0",
     "yaml": "^2.6.0",
     "zod": "^3.23.0"

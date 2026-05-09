@@ -1,0 +1,112 @@
+# k1c operator install bundle.
+#
+# Usage:
+#
+#   1. Register the Cloudflare CRDs (one-time):
+#      k1c export-crds | kubectl apply -f -
+#
+#   2. Create a Secret with your Cloudflare API token in the operator's
+#      namespace:
+#      kubectl create namespace k1c-system
+#      kubectl -n k1c-system create secret generic cloudflare-api-token \
+#        --from-literal=K1C_ACCOUNT_ID=<your-account-id> \
+#        --from-literal=CLOUDFLARE_API_TOKEN=<your-token>
+#
+#   3. Apply this bundle:
+#      kubectl apply -f examples/k1c-operator/install.yaml
+#
+# After install, label any Deployment / Service / ConfigMap / Secret /
+# Ingress / etc. with `k1c.io/managed=true` to opt it into reconciliation,
+# then `kubectl apply` your manifest. The operator polls every 30s and
+# reconciles managed resources to Cloudflare. Cloudflare CRDs (R2Bucket,
+# KVNamespace, ...) need no label — the operator picks them up unconditionally.
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k1c-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k1c-operator
+  namespace: k1c-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k1c-operator
+rules:
+  # Watch + read every standard kind we may pick up via the managed label.
+  - apiGroups: [""]
+    resources: [configmaps, secrets, services, namespaces]
+    verbs: [get, list, watch]
+  - apiGroups: ["apps"]
+    resources: [deployments, statefulsets]
+    verbs: [get, list, watch]
+  - apiGroups: ["batch"]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: ["networking.k8s.io"]
+    resources: [ingresses]
+    verbs: [get, list, watch]
+  - apiGroups: ["argoproj.io"]
+    resources: [rollouts]
+    verbs: [get, list, watch]
+  # Cloudflare CRDs (cluster-wide).
+  - apiGroups: ["cloudflare.k1c.io"]
+    resources: ["*"]
+    verbs: [get, list, watch, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k1c-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k1c-operator
+subjects:
+  - kind: ServiceAccount
+    name: k1c-operator
+    namespace: k1c-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k1c-operator
+  namespace: k1c-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k1c-operator
+  template:
+    metadata:
+      labels:
+        app: k1c-operator
+    spec:
+      serviceAccountName: k1c-operator
+      containers:
+        - name: operator
+          image: ghcr.io/mizchi/k1c-operator:latest
+          imagePullPolicy: IfNotPresent
+          args: [operator, run, --interval, "30"]
+          env:
+            - name: K1C_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-api-token
+                  key: K1C_ACCOUNT_ID
+            - name: CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-api-token
+                  key: CLOUDFLARE_API_TOKEN
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

@@ -76,6 +76,22 @@ kustomize build ./examples/kustomize/overlays/prod | k1c apply -f -
 See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,
 and [`TODO.md`](TODO.md) for what's queued.
 
+## Operator: real-time reconciliation inside a k8s cluster
+
+For users who want `kubectl apply` to actually reach Cloudflare (not just
+sit in etcd), `k1c operator run` watches CRD instances + label-gated
+standard resources and reconciles them via the same lower / plan / apply
+pipeline the CLI uses. See [`examples/k1c-operator/`](examples/k1c-operator/)
+for the install bundle (ServiceAccount + ClusterRole + Deployment) and a
+sample Dockerfile.
+
+```
+GitOps (Argo CD / Flux) ──► etcd ──watch──► k1c operator ──► Cloudflare API
+```
+
+The operator runs the same code path as the CLI, so a feature added to
+either ships to both at once.
+
 ## Compatibility with real Kubernetes
 
 A k1c manifest is a *subset* of valid k8s YAML — the same file can be
