@@ -10,6 +10,7 @@ import { writeStatus } from './status.ts';
 import { startWatches, type KindSpec } from './watch.ts';
 import { incCounter, observeSummary, setGauge } from './metrics.ts';
 import { startMetricsServer } from './server.ts';
+import { runLeaderElection } from './leader.ts';
 
 export interface OperatorOptions {
   readonly accountId: string;
@@ -35,6 +36,17 @@ export interface OperatorOptions {
    * `0.0.0.0:9090`. Pass empty string to disable.
    */
   readonly metricsAddr?: string;
+  /**
+   * Enable leader election via a `coordination.k8s.io/v1` Lease.
+   * Default false. When true, only one operator replica reconciles at
+   * a time; followers wait on the lease and take over within
+   * `leaseDurationSec` of the leader's last renew.
+   */
+  readonly leaderElection?: boolean;
+  /** Lease object name (default: `k1c-operator`). */
+  readonly leaseName?: string;
+  /** Lease namespace (default: `k1c-system`). */
+  readonly leaseNamespace?: string;
   /** Hook for log lines (default: console.log). */
   readonly out?: (msg: string) => void;
   readonly err?: (msg: string) => void;
@@ -249,41 +261,86 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
     }, debounceMs);
   };
 
-  if (useWatch) {
-    const labelSel = `${MANAGED_LABEL}=true`;
-    const watchSpecs: KindSpec[] = [
-      ...CLOUDFLARE_PLURALS.map((plural) => ({
-        group: CLOUDFLARE_GROUP,
-        version: CLOUDFLARE_VERSION,
-        plural,
-      })),
-      ...STANDARD_KINDS.map((s) => ({ ...s, labelSelector: labelSel })),
-    ];
-    startWatches(kc, watchSpecs, {
-      ...(options.namespace !== undefined ? { namespace: options.namespace } : {}),
+  // Reconcile loop body. Pulled into a closure so leader election can
+  // start/stop it on leadership transitions while the metrics server +
+  // banner remain owned by the outer process.
+  const startReconcileLoop = async (innerSignal: AbortSignal): Promise<void> => {
+    if (useWatch) {
+      const labelSel = `${MANAGED_LABEL}=true`;
+      const watchSpecs: KindSpec[] = [
+        ...CLOUDFLARE_PLURALS.map((plural) => ({
+          group: CLOUDFLARE_GROUP,
+          version: CLOUDFLARE_VERSION,
+          plural,
+        })),
+        ...STANDARD_KINDS.map((s) => ({ ...s, labelSelector: labelSel })),
+      ];
+      startWatches(kc, watchSpecs, {
+        ...(options.namespace !== undefined ? { namespace: options.namespace } : {}),
+        signal: innerSignal,
+        onEvent: (kind, phase) => {
+          incCounter(
+            'k1c_operator_watch_events_total',
+            'watch events delivered by the apiserver',
+            { kind: kind.plural, phase },
+          );
+          triggerSoon();
+        },
+        onWarning: (m) => err(`warning: ${m}`),
+      });
+    }
+
+    await tick();
+    while (!innerSignal.aborted) {
+      // Resync interval doubles as the safety-net poll: even with
+      // watches open, if the apiserver drops events during a reconnect
+      // we'll catch up on the next tick.
+      await sleep(options.intervalMs, innerSignal);
+      if (innerSignal.aborted) break;
+      await tick();
+    }
+    if (debounceTimer) clearTimeout(debounceTimer);
+  };
+
+  if (options.leaderElection) {
+    let inner: AbortController | undefined;
+    const leaseName = options.leaseName ?? 'k1c-operator';
+    const leaseNamespace = options.leaseNamespace ?? 'k1c-system';
+    out(`(leader election enabled; lease=${leaseNamespace}/${leaseName})`);
+    setGauge('k1c_operator_is_leader', '1 while this replica holds the leader lease', 0);
+    await runLeaderElection({
+      kc,
+      leaseName,
+      leaseNamespace,
       signal,
-      onEvent: (kind, phase) => {
-        incCounter(
-          'k1c_operator_watch_events_total',
-          'watch events delivered by the apiserver',
-          { kind: kind.plural, phase },
+      onAcquire: () => {
+        out('(acquired leadership)');
+        setGauge(
+          'k1c_operator_is_leader',
+          '1 while this replica holds the leader lease',
+          1,
         );
-        triggerSoon();
+        inner = new AbortController();
+        // Mirror the outer abort to the inner controller so a graceful
+        // shutdown also stops the active reconcile loop.
+        signal.addEventListener('abort', () => inner?.abort(), { once: true });
+        void startReconcileLoop(inner.signal);
+      },
+      onLose: () => {
+        out('(lost leadership)');
+        setGauge(
+          'k1c_operator_is_leader',
+          '1 while this replica holds the leader lease',
+          0,
+        );
+        inner?.abort();
+        inner = undefined;
       },
       onWarning: (m) => err(`warning: ${m}`),
     });
+  } else {
+    await startReconcileLoop(signal);
   }
-
-  await tick();
-  while (!signal.aborted) {
-    // Resync interval doubles as the safety-net poll: even with watches
-    // open, if the apiserver drops events during a reconnect we'll
-    // catch up on the next tick.
-    await sleep(options.intervalMs, signal);
-    if (signal.aborted) break;
-    await tick();
-  }
-  if (debounceTimer) clearTimeout(debounceTimer);
   out('(operator stopped)');
 }
 

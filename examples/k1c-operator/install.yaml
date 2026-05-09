@@ -61,6 +61,13 @@ rules:
   - apiGroups: ["cloudflare.k1c.io"]
     resources: ["*/status"]
     verbs: [get, update, patch]
+  # Leader election: only one operator replica reconciles at a time.
+  # Required when `--leader-election` is passed (default off, but the
+  # bundle is shipped with replicas: 2 + the flag, so multi-replica
+  # rollouts are safe out of the box).
+  - apiGroups: ["coordination.k8s.io"]
+    resources: [leases]
+    verbs: [get, create, update, patch, delete]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -81,6 +88,10 @@ metadata:
   name: k1c-operator
   namespace: k1c-system
 spec:
+  # Default replicas: 1. Bump to 2+ for HA — leader election is
+  # already enabled via `--leader-election` so the standby will pick
+  # up the lease within ~15s of the leader's failure. The Lease RBAC
+  # rule below covers both cases.
   replicas: 1
   selector:
     matchLabels:
@@ -95,12 +106,18 @@ spec:
         - name: operator
           image: ghcr.io/mizchi/k1c-operator:latest
           imagePullPolicy: IfNotPresent
-          args: [operator, run, --interval, "30"]
+          args: [operator, run, --interval, "30", --leader-election]
           ports:
             - name: metrics
               containerPort: 9090
               protocol: TCP
           env:
+            # Pod name is used as the leader-election identity. Falls
+            # back to hostname-uuid for non-pod runs.
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: K1C_ACCOUNT_ID
               valueFrom:
                 secretKeyRef:
