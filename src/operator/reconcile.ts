@@ -300,6 +300,25 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
       await tick();
     }
     if (debounceTimer) clearTimeout(debounceTimer);
+    // Graceful drain: wait up to 30s for the in-flight tick (if any)
+    // to settle before returning. Better to let an apply finish
+    // posting to Cloudflare than to kill it mid-call. Hard cap so a
+    // hung Cloudflare connection can't block shutdown indefinitely.
+    if (pending) {
+      out('(draining in-flight reconcile…)');
+      const DRAIN_DEADLINE_MS = 30_000;
+      let drainTimeout: NodeJS.Timeout | undefined;
+      await Promise.race([
+        pending,
+        new Promise<void>((resolve) => {
+          drainTimeout = setTimeout(() => {
+            err('warning: in-flight reconcile did not finish within 30s; abandoning');
+            resolve();
+          }, DRAIN_DEADLINE_MS);
+        }),
+      ]);
+      if (drainTimeout) clearTimeout(drainTimeout);
+    }
   };
 
   if (options.leaderElection) {

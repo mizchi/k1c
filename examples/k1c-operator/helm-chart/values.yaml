@@ -1,0 +1,62 @@
+# k1c-operator helm values.
+
+# Override the release namespace; left as `k1c-system` to match the
+# install.yaml bundle. Set to "" to use the namespace from
+# `--namespace` on the install command.
+namespace: k1c-system
+# Create the namespace as part of the release (so `helm install` is
+# self-contained). Set false if your CD pipeline manages namespaces.
+createNamespace: true
+
+image:
+  repository: ghcr.io/mizchi/k1c-operator
+  # Empty = use Chart.appVersion. Override for pinning.
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+replicaCount: 1
+
+# Cloudflare credentials. The Secret is created by you (out of band)
+# and referenced by name. Required keys: K1C_ACCOUNT_ID and
+# CLOUDFLARE_API_TOKEN.
+cloudflareSecretName: cloudflare-api-token
+
+# Operator runtime args.
+operator:
+  intervalSec: 30
+  watch: true
+  leaderElection: true
+  leaseName: k1c-operator
+  # leaseNamespace defaults to the release namespace.
+  leaseNamespace: ""
+  metricsAddr: "0.0.0.0:9090"
+  # If set, restrict the operator to this single namespace. Empty
+  # means cluster-wide (default).
+  restrictNamespace: ""
+
+# Probe + listener port for /metrics, /healthz, /readyz.
+metricsPort: 9090
+metricsService:
+  enabled: true
+  type: ClusterIP
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+# Standard k8s scheduling knobs.
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}
+podLabels: {}
+
+# When true, the chart also emits all 21 Cloudflare CRDs. Off by
+# default — keep CRDs out of the helm release lifecycle so a
+# `helm uninstall` doesn't delete them and orphan every CR.
+installCrds: false
