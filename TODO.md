@@ -96,8 +96,15 @@ manifest passes both. See commit "fix: every example passes kubectl apply
 - [x] npm provenance attestation present on `@mizchi/k1c@0.9.0`
 - [x] OCI image index multi-arch (amd64 + arm64) at `ghcr.io/mizchi/k1c-operator:0.9.0`
 - [x] Both arches `docker pull --platform` + `docker run version` succeed
-- [ ] OCI image SBOM attestation surfaces in `cosign download attestation`
-- [ ] OCI image SLSA provenance attestation surfaces in `cosign verify-attestation`
+- [x] SBOM attestation present (SPDX 2.3, syft v1.42.3, 255 packages per arch);
+      retrieved via `docker buildx imagetools inspect ... --format '{{json .SBOM}}'`
+- [x] SLSA provenance attestation present (`buildType: …/buildkit/blob/master/docs/attestations/slsa-definitions.md`);
+      retrieved via `... --format '{{json .Provenance}}'`. Note: cosign-style
+      `verify-attestation` does NOT find these — buildx publishes them as
+      OCI 1.1 referrer manifests (the two `unknown/unknown` manifests in the
+      image index), not as cosign-tag attestations. Either tooling reads them
+      via the OCI Referrers API; cosign requires `--type custom` plus a
+      manual subject digest.
 
 ## Workload primitives still missing
 
