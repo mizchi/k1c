@@ -650,10 +650,39 @@ export const ingressSchema = z.object({
   }),
 });
 
-const telemetryStreamSpecSchema = z.object({
-  enabled: z.boolean().optional(),
-  destination: z.string().min(1),
-  filter: z.string().optional(),
+const telemetryStreamSpecSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    destination: z.string().min(1).optional(),
+    viaAggregator: z.boolean().optional(),
+    filter: z.string().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const hasDest = typeof data.destination === 'string' && data.destination.length > 0;
+    if (hasDest && data.viaAggregator) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['destination'],
+        message: 'destination and viaAggregator are mutually exclusive',
+      });
+    }
+    if (!hasDest && data.viaAggregator !== true) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['destination'],
+        message: 'each stream needs either destination or viaAggregator: true',
+      });
+    }
+  });
+
+const telemetryAggregatorSchema = z.object({
+  hostname: z.string().min(1),
+  queueRef: z.string().min(1).optional(),
+  r2Ref: z.string().min(1).optional(),
+  otlpUrl: z.string().url().optional(),
+  hmacSecretRef: z
+    .object({ name: z.string().min(1), key: z.string().min(1) })
+    .optional(),
 });
 
 export const telemetryStackSchema = z.object({
@@ -668,6 +697,7 @@ export const telemetryStackSchema = z.object({
       firewallEvents: telemetryStreamSpecSchema.optional(),
       dnsLogs: telemetryStreamSpecSchema.optional(),
       auditLogs: telemetryStreamSpecSchema.optional(),
+      aggregator: telemetryAggregatorSchema.optional(),
     })
     .superRefine((data, ctx) => {
       const zoneScopedKeys = ['httpRequests', 'firewallEvents', 'dnsLogs'] as const;
@@ -690,6 +720,19 @@ export const telemetryStackSchema = z.object({
           path: [],
           message:
             'TelemetryStack must enable at least one stream (workersTrace / httpRequests / firewallEvents / dnsLogs / auditLogs)',
+        });
+      }
+      const usesAggregator =
+        (data.workersTrace?.viaAggregator ?? false) ||
+        (data.httpRequests?.viaAggregator ?? false) ||
+        (data.firewallEvents?.viaAggregator ?? false) ||
+        (data.dnsLogs?.viaAggregator ?? false) ||
+        (data.auditLogs?.viaAggregator ?? false);
+      if (usesAggregator && data.aggregator === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['aggregator'],
+          message: 'a stream sets viaAggregator: true but spec.aggregator is not declared',
         });
       }
     }),

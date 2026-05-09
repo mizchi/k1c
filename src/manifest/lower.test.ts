@@ -2089,6 +2089,164 @@ spec:
     });
   });
 
+  it('lowers TelemetryStack into one LogpushJob per enabled stream', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TelemetryStack
+metadata: { name: prod-obs }
+spec:
+  zoneId: zone-abc
+  workersTrace:
+    destination: 'r2://logs/workers/{DATE}.json'
+  httpRequests:
+    destination: 'r2://logs/http/{DATE}.json'
+    filter: '{"where":{"key":"ClientRequestPath","operator":"startsWith","value":"/api/"}}'
+  firewallEvents:
+    destination: 'r2://logs/waf/{DATE}.json'
+    enabled: false
+`);
+    const jobs = result.desired.filter((d) => d.resourceType === 'LogpushJob');
+    expect(jobs.map((j) => j.label).sort()).toEqual([
+      'default/prod-obs--firewall',
+      'default/prod-obs--http',
+      'default/prod-obs--workers',
+    ]);
+    const workers = jobs.find((j) => j.label === 'default/prod-obs--workers')!.properties as
+      Record<string, unknown>;
+    expect(workers.dataset).toBe('workers_trace_events');
+    expect(workers.scope).toEqual({ accountId: '<resolved-at-apply:Context:accountId>' });
+    const http = jobs.find((j) => j.label === 'default/prod-obs--http')!.properties as
+      Record<string, unknown>;
+    expect(http.scope).toEqual({ zoneId: 'zone-abc' });
+    expect(http.filter as string).toContain('ClientRequestPath');
+    expect(
+      (jobs.find((j) => j.label === 'default/prod-obs--firewall')!.properties as Record<string, unknown>).enabled,
+    ).toBe(false);
+  });
+
+  it('TelemetryStack with viaAggregator emits a generated aggregator Worker + LogpushJobs pointing at it', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Queue
+metadata: { name: telemetry-events }
+spec: {}
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2Bucket
+metadata: { name: cold-logs }
+spec: {}
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: logpush-creds }
+stringData:
+  hmac: 's3cret'
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TelemetryStack
+metadata: { name: agg-stack }
+spec:
+  zoneId: zone-abc
+  workersTrace:
+    viaAggregator: true
+  httpRequests:
+    viaAggregator: true
+  aggregator:
+    hostname: telemetry.example.com
+    queueRef: telemetry-events
+    r2Ref: cold-logs
+    otlpUrl: 'https://otlp.example/api/traces'
+    hmacSecretRef: { name: logpush-creds, key: hmac }
+`);
+    const aggregator = result.desired.find(
+      (d) => d.resourceType === 'Worker' && d.label === 'default/agg-stack--aggregator',
+    );
+    expect(aggregator).toBeDefined();
+    const aggProps = aggregator!.properties as Record<string, unknown>;
+    const bindings = aggProps.bindings as Array<Record<string, string>>;
+    expect(bindings.find((b) => b.type === 'queue')).toMatchObject({ name: 'QUEUE' });
+    expect(bindings.find((b) => b.type === 'r2_bucket')).toMatchObject({ name: 'SINK_R2' });
+    expect((aggProps.vars as Record<string, string>).OTLP_URL).toBe(
+      'https://otlp.example/api/traces',
+    );
+    expect((aggProps.secrets as Record<string, string>).LOGPUSH_HMAC).toBe('s3cret');
+
+    const lp = result.desired.filter((d) => d.resourceType === 'LogpushJob');
+    expect(lp).toHaveLength(2);
+    for (const job of lp) {
+      expect((job.properties as Record<string, unknown>).destinationConf).toBe(
+        'https://telemetry.example.com/',
+      );
+    }
+  });
+
+  it('rejects TelemetryStack stream with both destination and viaAggregator', () => {
+    expect(() =>
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TelemetryStack
+metadata: { name: bad }
+spec:
+  workersTrace:
+    destination: 'r2://logs'
+    viaAggregator: true
+`),
+    ).toThrow(/mutually exclusive/);
+  });
+
+  it('rejects TelemetryStack stream with neither destination nor viaAggregator', () => {
+    expect(() =>
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TelemetryStack
+metadata: { name: bad }
+spec:
+  workersTrace: {}
+`),
+    ).toThrow(/destination or viaAggregator/);
+  });
+
+  it('rejects TelemetryStack with viaAggregator but no aggregator declared', () => {
+    expect(() =>
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TelemetryStack
+metadata: { name: bad }
+spec:
+  workersTrace:
+    viaAggregator: true
+`),
+    ).toThrow(/spec.aggregator is not declared/);
+  });
+
+  it('auto-emits a per-Worker LogpushJob from cloudflare.com/logpush annotation', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  annotations:
+    cloudflare.com/logpush: 'r2://logs/api/{DATE}.json'
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers: [{ name: api, image: ./api.js }]
+`);
+    const lp = result.desired.find((d) => d.resourceType === 'LogpushJob');
+    expect(lp).toBeDefined();
+    expect(lp!.label).toBe('default/api--logpush');
+    const props = lp!.properties as Record<string, unknown>;
+    expect(props.dataset).toBe('workers_trace_events');
+    expect(props.destinationConf).toBe('r2://logs/api/{DATE}.json');
+    expect(props.scope).toEqual({ accountId: '<resolved-at-apply:Context:accountId>' });
+    expect(props.filter as string).toContain('"ScriptName"');
+    expect(props.filter as string).toContain('"k1c--default--api"');
+    expect(lp!.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'Deployment', name: 'api' }),
+    );
+  });
+
   it('lowers URIRewriteRule with a static path replacement', async () => {
     const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1

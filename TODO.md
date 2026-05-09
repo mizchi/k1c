@@ -131,9 +131,11 @@ dragged into `Deployment`.
   auditLogs) under one resource; lowers to one LogpushJob per enabled
   stream. Zone-scoped streams require `spec.zoneId`; account-scoped streams
   resolve `accountId` from the apply context.
-- **Aggregator Worker template** — generated Worker that consumes Logpush
-  HTTP destinations and forwards to OTLP / a queue / a third-party SaaS.
-  Pending.
+- ~~**Aggregator Worker template**~~ — shipped. `TelemetryStack.spec.aggregator`
+  generates a Worker that receives Logpush HTTP batches, HMAC-verifies the
+  request, and fans out to Queue / R2 / OTLP (any subset). Streams set
+  `viaAggregator: true` to ship to the aggregator hostname instead of a
+  static destination URL.
 
 ## Operational features
 

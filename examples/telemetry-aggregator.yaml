@@ -1,0 +1,52 @@
+# TelemetryStack with an in-edge aggregator Worker. Logpush ships log
+# batches to a generated Worker, which fans them out to:
+#   - a Cloudflare Queue (env.QUEUE) for downstream processing,
+#   - an R2 bucket (env.SINK_R2) for cold storage,
+#   - an OTLP collector (env.OTLP_URL) for distributed tracing tools.
+#
+# Each leg is optional. The Worker also HMAC-verifies incoming requests
+# using the secret bound on env.LOGPUSH_HMAC.
+#
+# Apply with: K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... \
+#             pnpm k1c apply -f examples/telemetry-aggregator.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Queue
+metadata: { name: telemetry-events }
+spec: {}
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2Bucket
+metadata: { name: cold-logs }
+spec: { location: weur }
+---
+apiVersion: v1
+kind: Secret
+metadata: { name: logpush-creds }
+stringData:
+  hmac: REPLACE_WITH_SHARED_SECRET
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TelemetryStack
+metadata: { name: agg-stack }
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+
+  # Both streams ship to the aggregator Worker instead of a static URL.
+  workersTrace:
+    viaAggregator: true
+  httpRequests:
+    viaAggregator: true
+    filter: '{"where":{"key":"ClientRequestPath","operator":"startsWith","value":"/api/"}}'
+
+  # Aggregator config. The hostname must point at a Worker route serving
+  # this script (set up via Custom Domain or Workers Route, declared
+  # separately).
+  aggregator:
+    hostname: telemetry.example.com
+    queueRef: telemetry-events
+    r2Ref: cold-logs
+    otlpUrl: 'https://otlp.example/api/traces'
+    hmacSecretRef:
+      name: logpush-creds
+      key: hmac

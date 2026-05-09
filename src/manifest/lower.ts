@@ -71,6 +71,7 @@ import type { ResponseHeaderRuleProperties } from '../providers/response-header-
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
+import { generateTelemetryAggregator } from '../telemetry/aggregator-template.ts';
 import { generateRouter, type RouterRoute } from '../ingress/router-template.ts';
 import { placeholder } from '../reconciler/placeholders.ts';
 
@@ -275,7 +276,7 @@ export async function lower(
   for (const r of dnsRecords) desired.push(lowerDNSRecord(r));
   for (const j of logpushJobs) desired.push(lowerLogpushJob(j));
   for (const t of telemetryStacks) {
-    for (const j of lowerTelemetryStack(t)) desired.push(j);
+    for (const j of await lowerTelemetryStack(t, tables, options)) desired.push(j);
   }
   for (const d of deployments) {
     for (const w of await lowerDeployment(d, tables, options)) {
@@ -720,19 +721,118 @@ const TELEMETRY_STREAMS: ReadonlyArray<{
 
 function lowerTelemetryStack(
   ts: TelemetryStack,
-): ReadonlyArray<DesiredResource<LogpushJobProperties>> {
+  tables: LookupTables,
+  options: LowerOptions | undefined,
+): Promise<ReadonlyArray<DesiredResource>> {
+  return lowerTelemetryStackAsync(ts, tables, options);
+}
+
+async function lowerTelemetryStackAsync(
+  ts: TelemetryStack,
+  tables: LookupTables,
+  options: LowerOptions | undefined,
+): Promise<ReadonlyArray<DesiredResource>> {
   const ns = ts.metadata.namespace ?? 'default';
   const name = ts.metadata.name;
   const ref = refOf(ts);
-  const out: DesiredResource<LogpushJobProperties>[] = [];
+  const out: DesiredResource[] = [];
+
+  // Aggregator: optional generated Worker that receives Logpush HTTP and
+  // fans out to Queue / R2 / OTLP. Emitted before the LogpushJobs so the
+  // viaAggregator streams can depend on the Worker ref.
+  let aggregatorScriptName: string | undefined;
+  let aggregatorRef: ResourceRef | undefined;
+  if (ts.spec.aggregator !== undefined) {
+    const agg = ts.spec.aggregator;
+    aggregatorScriptName = `k1c--${ns}--${name}--aggregator`;
+    aggregatorRef = { ...ref, name: `${name}--aggregator` };
+
+    const bindings: WorkerBinding[] = [];
+    const dependsOn: ResourceRef[] = [];
+    if (agg.queueRef !== undefined) {
+      const q = tables.queues.get(`${ns}/${agg.queueRef}`);
+      if (!q) {
+        throw new LowerError(
+          `TelemetryStack ${ns}/${name}: aggregator.queueRef "${agg.queueRef}" matches no Queue in namespace "${ns}"`,
+        );
+      }
+      bindings.push({ type: 'queue', name: 'QUEUE', queueName: `k1c-${ns}-${q.metadata.name}` });
+      pushUnique(dependsOn, refOf(q));
+    }
+    if (agg.r2Ref !== undefined) {
+      const b = tables.r2Buckets.get(`${ns}/${agg.r2Ref}`);
+      if (!b) {
+        throw new LowerError(
+          `TelemetryStack ${ns}/${name}: aggregator.r2Ref "${agg.r2Ref}" matches no R2Bucket in namespace "${ns}"`,
+        );
+      }
+      bindings.push({
+        type: 'r2_bucket',
+        name: 'SINK_R2',
+        bucketName: `k1c-${ns}-${b.metadata.name}`,
+      });
+      pushUnique(dependsOn, refOf(b));
+    }
+    const vars: Record<string, string> = {};
+    if (agg.otlpUrl !== undefined) vars['OTLP_URL'] = agg.otlpUrl;
+    const secrets: Record<string, string> = {};
+    if (agg.hmacSecretRef !== undefined) {
+      const sec = tables.secrets.get(`${ns}/${agg.hmacSecretRef.name}`);
+      if (!sec) {
+        throw new LowerError(
+          `TelemetryStack ${ns}/${name}: aggregator.hmacSecretRef "${agg.hmacSecretRef.name}" not found in namespace "${ns}"`,
+        );
+      }
+      const value = secretValue(sec, agg.hmacSecretRef.key);
+      if (value === undefined) {
+        throw new LowerError(
+          `TelemetryStack ${ns}/${name}: aggregator.hmacSecretRef "${agg.hmacSecretRef.name}" has no key "${agg.hmacSecretRef.key}"`,
+        );
+      }
+      secrets['LOGPUSH_HMAC'] = value;
+      pushUnique(dependsOn, refOf(sec));
+    }
+
+    const aggregatorSource = generateTelemetryAggregator({ verifyHmac: true });
+    const baseProperties: WorkerProperties = {
+      scriptName: aggregatorScriptName,
+      entrypoint: '<k1c-generated:telemetry-aggregator>',
+      entrypointContent: aggregatorSource,
+      compatibilityDate: DEFAULT_COMPATIBILITY_DATE,
+      ...(Object.keys(vars).length > 0 ? { vars } : {}),
+      ...(Object.keys(secrets).length > 0 ? { secrets } : {}),
+      ...(bindings.length > 0 ? { bindings } : {}),
+      observability: { enabled: true },
+    };
+    const properties: WorkerProperties = {
+      ...baseProperties,
+      entrypointHash: await hashEntrypoint(baseProperties, options),
+    };
+    out.push({
+      resourceType: 'Worker',
+      ref: aggregatorRef,
+      label: `${ns}/${name}--aggregator`,
+      properties,
+      ...(dependsOn.length > 0 ? { dependsOn } : {}),
+    });
+  }
+
   for (const { key, wiring } of TELEMETRY_STREAMS) {
     const stream = ts.spec[key] as TelemetryStreamSpec | undefined;
     if (stream === undefined) continue;
     const enabled = stream.enabled ?? true;
+    const destination =
+      stream.viaAggregator === true
+        ? `https://${ts.spec.aggregator!.hostname}/`
+        : stream.destination!;
     const scope =
       wiring.scope === 'zone'
         ? { zoneId: ts.spec.zoneId! } // schema enforces presence
         : { accountId: makePlaceholder('Context', 'accountId') };
+    const dependsOn: ResourceRef[] = [ref];
+    if (stream.viaAggregator === true && aggregatorRef !== undefined) {
+      dependsOn.push(aggregatorRef);
+    }
     out.push({
       resourceType: 'LogpushJob',
       ref: { ...ref, name: `${name}--${wiring.streamKey}` },
@@ -741,11 +841,11 @@ function lowerTelemetryStack(
         jobName: `k1c-${ns}-${name}--${wiring.streamKey}`,
         scope,
         dataset: wiring.dataset,
-        destinationConf: stream.destination,
+        destinationConf: destination,
         enabled,
         ...(stream.filter !== undefined ? { filter: stream.filter } : {}),
       },
-      dependsOn: [ref],
+      dependsOn,
     });
   }
   return out;

@@ -280,25 +280,49 @@ export type LogpushJob = BaseResource<'LogpushJob', 'cloudflare.k1c.io/v1alpha1'
 
 export interface TelemetryStreamSpec {
   readonly enabled?: boolean;
-  /** Cloudflare Logpush destination — `r2://...`, `s3://...`, `https://...`, etc. */
-  readonly destination: string;
+  /**
+   * Cloudflare Logpush destination — `r2://...`, `s3://...`, `https://...`,
+   * etc. Mutually exclusive with `viaAggregator: true`.
+   */
+  readonly destination?: string;
+  /**
+   * Route this stream through the TelemetryStack's aggregator Worker
+   * instead of using a static destination. Cannot be combined with
+   * `destination`.
+   */
+  readonly viaAggregator?: boolean;
   /** Optional Logpush filter (JSON-encoded predicate). */
   readonly filter?: string;
+}
+
+export interface TelemetryAggregatorSpec {
+  /** Public hostname the Logpush HTTP target points at. */
+  readonly hostname: string;
+  /** Existing k1c-managed Queue (metadata.name). Bound as env.QUEUE. */
+  readonly queueRef?: string;
+  /** Existing k1c-managed R2Bucket (metadata.name). Bound as env.SINK_R2. */
+  readonly r2Ref?: string;
+  /** OTLP collector URL set on the Worker as env.OTLP_URL. */
+  readonly otlpUrl?: string;
+  /** Secret carrying the LOGPUSH_HMAC verification key. */
+  readonly hmacSecretRef?: { readonly name: string; readonly key: string };
 }
 
 export interface TelemetryStackSpec {
   /** Zone id used for zone-scoped streams (`httpRequests`, `firewallEvents`, `dnsLogs`). */
   readonly zoneId?: string;
-  /** Worker trace events (account-scoped). */
   readonly workersTrace?: TelemetryStreamSpec;
-  /** Zone HTTP request logs (zone-scoped). */
   readonly httpRequests?: TelemetryStreamSpec;
-  /** Zone firewall events (zone-scoped). */
   readonly firewallEvents?: TelemetryStreamSpec;
-  /** Zone DNS logs (zone-scoped). */
   readonly dnsLogs?: TelemetryStreamSpec;
-  /** Audit logs (account-scoped). */
   readonly auditLogs?: TelemetryStreamSpec;
+  /**
+   * Optional in-edge aggregator. When set, k1c generates a Worker that
+   * receives Logpush HTTP POSTs and fans them out (Queue / R2 / OTLP).
+   * Streams with `viaAggregator: true` ship to the aggregator's hostname
+   * instead of their own destination.
+   */
+  readonly aggregator?: TelemetryAggregatorSpec;
 }
 
 export type TelemetryStack = BaseResource<
