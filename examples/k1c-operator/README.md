@@ -45,9 +45,44 @@ The operator is a thin facade — every reconcile pass:
   2. Feeds them through the same `parseManifest → lower → plan → apply`
      pipeline `k1c apply -f` uses.
   3. Reports per-op status on stdout.
+  4. Patches `.status.conditions` on every touched Cloudflare CRD so
+     `kubectl get r2bucket` (etc.) reflects `Reconciled` /
+     `ReconcileFailed` plus the underlying error message.
 
 So the operator and the CLI share 99% of the implementation. A change to
 the lower / plan / apply core ships to both at once.
+
+### Reconcile triggers
+
+By default the operator opens k8s **watch streams** on every Cloudflare
+CRD plural and every label-gated standard kind, debounces events by
+500ms, and triggers a reconcile pass on each burst. The `--interval`
+flag (default 30s) doubles as a resync safety net to catch any events
+the apiserver might drop during a watch reconnect. Pass `--no-watch`
+to fall back to pure interval-driven polling — useful for clusters
+that don't permit long-lived watch connections.
+
+### Status conditions
+
+```sh
+$ kubectl get r2bucket -A
+NAMESPACE   NAME    AGE
+default     media   3m
+
+$ kubectl get r2bucket media -o jsonpath='{.status.conditions}' | jq
+[
+  {
+    "type": "Ready",
+    "status": "True",
+    "reason": "Reconciled",
+    "message": "1 ok / 0 failed / 0 skipped",
+    "lastTransitionTime": "2026-05-09T15:42:01.123Z"
+  }
+]
+```
+
+A `Ready=False` / `reason=ReconcileFailed` condition includes the
+underlying provider error in `message` (e.g. `[NotFound] 404 ...`).
 
 ## Install
 
@@ -98,7 +133,8 @@ Environment variables (set on the Deployment):
 
 Container args:
 
-  operator run [-n <namespace>] [--interval 30]
+  operator run [-n <namespace>] [--interval 30] [--no-watch]
 
 `-n` restricts reconciliation to a single namespace. By default the
-operator is cluster-wide.
+operator is cluster-wide. `--no-watch` disables k8s watch streams and
+falls back to interval-driven polling.

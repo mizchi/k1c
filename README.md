@@ -90,7 +90,13 @@ GitOps (Argo CD / Flux) ──► etcd ──watch──► k1c operator ──�
 ```
 
 The operator runs the same code path as the CLI, so a feature added to
-either ships to both at once.
+either ships to both at once. It opens k8s watch streams on every
+Cloudflare CRD plural + label-gated standard kind (debounced 500ms;
+`--interval` doubles as a resync safety net; `--no-watch` falls back
+to pure polling), and after each reconcile pass patches
+`.status.conditions` on every touched Cloudflare CRD so
+`kubectl get r2bucket` reflects `Reconciled` / `ReconcileFailed` plus
+the underlying error message.
 
 ## Compatibility with real Kubernetes
 
