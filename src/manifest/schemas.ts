@@ -404,6 +404,44 @@ export const cacheRuleSchema = z.object({
   }),
 });
 
+const pageRuleActionSchema = z.object({
+  id: z.string().min(1),
+  value: z.unknown().optional(),
+});
+
+export const pageRuleSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('PageRule'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1).optional(),
+    url: z.string().min(1),
+    status: z.enum(['active', 'disabled']).optional(),
+    priority: z.number().int().nonnegative().optional(),
+    actions: z.array(pageRuleActionSchema),
+  }),
+});
+
+const liveInputRecordingSchema = z.object({
+  mode: z.enum(['off', 'automatic']).optional(),
+  requireSignedURLs: z.boolean().optional(),
+  allowedOrigins: z.array(z.string()).optional(),
+  hideLiveViewerCount: z.boolean().optional(),
+  timeoutSeconds: z.number().int().nonnegative().optional(),
+});
+
+export const streamLiveInputSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('StreamLiveInput'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    defaultCreator: z.string().optional(),
+    deleteRecordingAfterDays: z.number().int().nonnegative().optional(),
+    recording: liveInputRecordingSchema.optional(),
+    meta: z.record(z.string()).optional(),
+  }),
+});
+
 const transformHeaderActionSchema = z.object({
   operation: z.enum(['set', 'add', 'remove']),
   value: z.string().optional(),
@@ -771,6 +809,8 @@ export const SCHEMAS_BY_KIND = {
   EmailRoutingRule: emailRoutingRuleSchema,
   URIRewriteRule: uriRewriteRuleSchema,
   ResponseHeaderRule: responseHeaderRuleSchema,
+  PageRule: pageRuleSchema,
+  StreamLiveInput: streamLiveInputSchema,
 } as const;
 
 export type K1cKind = keyof typeof SCHEMAS_BY_KIND;
@@ -815,4 +855,6 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   emailRoutingRuleSchema,
   uriRewriteRuleSchema,
   responseHeaderRuleSchema,
+  pageRuleSchema,
+  streamLiveInputSchema,
 ]);

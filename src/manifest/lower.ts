@@ -15,6 +15,8 @@ import type {
   EmailRoutingRule,
   URIRewriteRule,
   ResponseHeaderRule,
+  PageRule,
+  StreamLiveInput,
   ConfigMapResource,
   CronJob,
   D1Database,
@@ -68,6 +70,8 @@ import type { WAFManagedRulesetProperties } from '../providers/waf-managed-rules
 import type { EmailRoutingRuleProperties } from '../providers/email-routing-rule.ts';
 import type { URIRewriteRuleProperties } from '../providers/uri-rewrite-rule.ts';
 import type { ResponseHeaderRuleProperties } from '../providers/response-header-rule.ts';
+import type { PageRuleProperties } from '../providers/page-rule.ts';
+import type { StreamLiveInputProperties } from '../providers/stream-live-input.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -152,6 +156,8 @@ export async function lower(
   const emailRoutingRules: EmailRoutingRule[] = [];
   const uriRewriteRules: URIRewriteRule[] = [];
   const responseHeaderRules: ResponseHeaderRule[] = [];
+  const pageRules: PageRule[] = [];
+  const streamLiveInputs: StreamLiveInput[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -247,6 +253,12 @@ export async function lower(
         break;
       case 'ResponseHeaderRule':
         responseHeaderRules.push(r);
+        break;
+      case 'PageRule':
+        pageRules.push(r);
+        break;
+      case 'StreamLiveInput':
+        streamLiveInputs.push(r);
         break;
     }
   }
@@ -399,7 +411,62 @@ export async function lower(
     desired.push(lowerResponseHeaderRule(rh));
   }
 
+  for (const pr of pageRules) {
+    desired.push(lowerPageRule(pr));
+  }
+
+  for (const sli of streamLiveInputs) {
+    desired.push(lowerStreamLiveInput(sli));
+  }
+
   return { desired, warnings };
+}
+
+function lowerStreamLiveInput(
+  sli: StreamLiveInput,
+): DesiredResource<StreamLiveInputProperties> {
+  const ns = sli.metadata.namespace ?? 'default';
+  const name = sli.metadata.name;
+  return {
+    resourceType: 'StreamLiveInput',
+    ref: refOf(sli),
+    label: `${ns}/${name}`,
+    properties: {
+      ...(sli.spec.defaultCreator !== undefined
+        ? { defaultCreator: sli.spec.defaultCreator }
+        : {}),
+      ...(sli.spec.deleteRecordingAfterDays !== undefined
+        ? { deleteRecordingAfterDays: sli.spec.deleteRecordingAfterDays }
+        : {}),
+      ...(sli.spec.recording !== undefined ? { recording: sli.spec.recording } : {}),
+      ...(sli.spec.meta !== undefined ? { meta: sli.spec.meta } : {}),
+    },
+  };
+}
+
+function lowerPageRule(pr: PageRule): DesiredResource<PageRuleProperties> {
+  // PageRule identity is (zoneId, url, priority); the manifest's
+  // ns/name doesn't make it onto the API record (no comment field on
+  // PageRules). Use the synthesised label so list() yields a matching
+  // identity. The zoneId may be left out of the manifest and resolved
+  // from ctx at apply time, so we default to a placeholder when absent
+  // — `<resolved-at-apply:Context:zoneId>` would conflict with the
+  // resolver, so we just stash the manifest zoneId or `''`. The
+  // provider rejects empty zoneId at create/update.
+  const priority = pr.spec.priority ?? 1;
+  const zoneId = pr.spec.zoneId ?? '';
+  return {
+    resourceType: 'PageRule',
+    ref: refOf(pr),
+    label: `${zoneId}::${pr.spec.url}::${priority}`,
+    properties: {
+      ...(pr.spec.zoneId !== undefined ? { zoneId: pr.spec.zoneId } : {}),
+      url: pr.spec.url,
+      ...(pr.spec.status !== undefined ? { status: pr.spec.status } : {}),
+      priority,
+      actions: pr.spec.actions,
+    },
+  };
 }
 
 function lowerURIRewriteRule(ur: URIRewriteRule): DesiredResource<URIRewriteRuleProperties> {

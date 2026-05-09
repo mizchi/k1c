@@ -19,11 +19,11 @@ OCI annotations carry source / revision / version, plus the
 `docker/build-push-action` SLSA provenance + SBOM attestations are
 attached so consumers can verify the image came from this workflow run.
 
-A wasm-component build (WASI 0.2 + `componentize-js`, packaged as an
-OCI artifact for runwasi / containerd-shim-wasmtime) is on the roadmap
-once `@kubernetes/client-node` has a wasm-friendly path; the same source
-tree compiles to both targets so wasm runtimes can drop in without a
-fork.
+The CLI bundle (`pnpm build:wasm`) compiles to a WASI 0.2 component
+via `componentize-js` — see the project README. The operator itself
+still runs only as a Node container because `@kubernetes/client-node`
+uses HTTP/2 + raw streams that wasi-http preview-2 doesn't expose
+yet; the CLI ships first because it only needs `fetch`.
 
 ## Architecture
 

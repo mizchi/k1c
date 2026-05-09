@@ -1,0 +1,47 @@
+# Cloudflare Page Rules — legacy zone-level rules engine.
+#
+# Page Rules have been superseded by Cloudflare's Rules engine
+# (Cache Rules, Transform Rules, Response Header Rules, etc., all
+# already shipped here as separate CRDs). New deployments should
+# prefer those. This CRD covers zones that haven't migrated yet.
+#
+# Caveat: Cloudflare's Page Rules API has no comment / name /
+# metadata field, so k1c identifies rules by (zoneId, url, priority).
+# Two PageRule manifests with the same triple in the same zone
+# collide — same as two Deployment manifests with the same name.
+#
+# Apply with: pnpm k1c apply -f examples/page-rule.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: PageRule
+metadata:
+  name: redirect-www-to-apex
+spec:
+  # zoneId can be omitted if the apply context already binds one
+  # (k1c config use-context with --zone, or K1C_ZONE_ID env).
+  zoneId: 023e105f4ecef8ad9ca31a8372d0c353
+  url: "www.example.com/*"
+  priority: 1
+  status: active
+  actions:
+    - id: forwarding_url
+      value:
+        url: "https://example.com/$1"
+        status_code: 301
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: PageRule
+metadata:
+  name: cache-static-assets
+spec:
+  zoneId: 023e105f4ecef8ad9ca31a8372d0c353
+  url: "*.example.com/static/*"
+  priority: 5
+  status: active
+  actions:
+    - id: cache_level
+      value: cache_everything
+    - id: edge_cache_ttl
+      value: 7200
+    - id: browser_cache_ttl
+      value: 14400

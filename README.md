@@ -98,6 +98,27 @@ to pure polling), and after each reconcile pass patches
 `kubectl get r2bucket` reflects `Reconciled` / `ReconcileFailed` plus
 the underlying error message.
 
+## Wasm component build (preview)
+
+The CLI compiles to a [WebAssembly Component](https://component-model.bytecodealliance.org/)
+via `pnpm build:wasm`. The pipeline:
+
+1. `tsc` emits the JS sources.
+2. `esbuild` bundles `dist/cli/wasm-main.js` (a Node-free entry that
+   drops `operator`, `logs`, `port-forward`, `rollout`, `config`, and
+   `apply --watch` — see [`src/cli/wasm-main.ts`](src/cli/wasm-main.ts))
+   into a single ~1.8 MB ESM module at `dist-wasm/k1c.bundle.mjs`.
+3. `componentize-js` (optional) wraps the bundle in a `wasi:cli/run`
+   component at `dist-wasm/k1c.wasm`. This step needs the wasi-cli
+   WIT packages vendored under [`wit/deps/`](wit/) — see the
+   `wit/README.md` for the vendoring procedure. If the deps are
+   missing the script logs the failure but still emits the bundle, so
+   you can re-componentize out-of-band.
+
+The bundle works in any wasi-cli host once wrapped. `apply` /
+`diff` / `get` / `describe` / `delete` / `telemetry` / `explain` /
+`export-crds` / `version` are the supported commands.
+
 ## Compatibility with real Kubernetes
 
 A k1c manifest is a *subset* of valid k8s YAML — the same file can be

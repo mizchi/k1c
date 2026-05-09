@@ -232,16 +232,25 @@ dragged into `Deployment`.
 - ~~**Rate Limiting Rules**~~ — shipped as `RateLimitRule` CRD (in `http_ratelimit`).
   All four ruleset CRDs share `_ruleset-shared.ts` for the read-modify-write
   plumbing.
-- **Page Rules** (legacy).
+- ~~**Page Rules**~~ — shipped as `PageRule` CRD. Legacy zone-level
+  rules engine; superseded by Cache / Transform / Response Header
+  Rules but still works on un-migrated zones. Caveat: Cloudflare's
+  Page Rules API has no comment / metadata field, so identity is
+  derived from `(zoneId, url, priority)`. Two manifests with the same
+  triple in the same zone collide.
 - ~~**Email Routing**~~ — shipped as `EmailRoutingRule` CRD. Supports
   literal-`to` and catch-all matchers; forward / drop / worker actions.
   Ownership encoded in the rule's `name` field via `k1c:` prefix.
 
-## Media-heavy products (low fit, defer)
+## Media-heavy products
 
-- **Stream** (video). CRD `Stream`. Mostly an upload + per-asset metadata story,
-  not really a Pod-shaped thing.
-- **Images**. Same shape as Stream.
+- ~~**Stream Live Input**~~ — shipped as `StreamLiveInput` CRD. The
+  long-lived RTMPS / SRT ingest endpoint with a configurable recording
+  policy, allowed origins, signed-URL gate, and auto-purge window.
+  Ownership tracked in the `meta` field via
+  `meta['k1c.io/managed'] = "<ns>/<name>"`. Uploaded videos are still
+  out of scope (one-shot binary blobs).
+- **Images**. Similar binary-upload shape — out of scope.
 
 ## Telemetry
 
