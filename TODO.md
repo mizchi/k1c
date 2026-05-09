@@ -8,10 +8,34 @@ upstream Cloudflare changes (Workers VPC, Workflows-as-runtime, async polling).
 
 ## End-to-end verification checklist
 
-Code is exercised by 464 mock-based tests today, but real-world round-trips
-against actual Cloudflare and actual k8s have not happened. Each box below
-is "tried it, it worked" vs "no one has run it yet". Use the `nix develop`
-shell (kind + kubectl + helm + kustomize preinstalled) for k8s-side checks.
+Code is exercised by 464 mock-based tests today; the rows below track real
+round-trips against actual Cloudflare and actual k8s. Each box is "tried
+it, it worked" vs "no one has run it yet". Use the `nix develop` shell
+(kind + kubectl + helm + kustomize preinstalled) for k8s-side checks.
+
+Most recent verification session (0.9.0):
+
+- All 7 k8s-side rows ticked on a kind cluster: CRD registration via
+  `k1c export-crds | kubectl apply -f -`, `kubectl explain` for the
+  Cloudflare CRDs, every `examples/*.yaml` through `kubectl apply
+  --dry-run=server`, `helm template … | kubectl apply --dry-run=server -f
+  -`, and the kustomize base + prod overlay through the same pipe.
+- 5/12 operator rows ticked: pod boots inside kind, reconcile loop fires
+  on the configured interval, an `R2Bucket` instance added via `kubectl
+  apply` is detected on the next pass, the resulting Cloudflare API call
+  fails with a structured `[NotFound] 404 ...` line (against a dummy
+  account — the loop itself is healthy).
+- Distribution rows: `ghcr.io/mizchi/k1c-operator:0.9.0` `docker pull` +
+  `docker run version` confirmed on both `linux/amd64` and `linux/arm64`.
+
+Side effect: 14 example manifests + the helm-chart and kustomize-base
+deployments needed `template.metadata.labels` (matching the selector),
+`restartPolicy` on Job/CronJob templates, `Service.spec.ports`, and
+`Ingress.backend.service.port.number` to pass strict k8s validation.
+None of those fields affect k1c's lower step; they were missing because
+the manifest only had to satisfy the k1c schema before. Now the same
+manifest passes both. See commit "fix: every example passes kubectl apply
+--dry-run=server".
 
 ### Cloudflare API round-trips (env-gated, K1C_E2E=1 + real token)
 
@@ -64,13 +88,14 @@ shell (kind + kubectl + helm + kustomize preinstalled) for k8s-side checks.
 - [ ] Operator picks up label-gated standard kinds (`k1c.io/managed=true` Deployment / etc.)
 - [ ] Operator forwards changes to Cloudflare on a real account
 - [ ] Operator survives a kubectl-side delete and reverse-topo deletes the Cloudflare side
-- [ ] OCI image (`ghcr.io/mizchi/k1c-operator:latest`) pulls + runs on linux/amd64
-- [ ] OCI image pulls + runs on linux/arm64
+- [x] OCI image (`ghcr.io/mizchi/k1c-operator:0.9.0`) pulls + runs on linux/amd64 (`docker run --platform linux/amd64 ... version` → `k1c 0.9.0`)
+- [x] OCI image pulls + runs on linux/arm64 (same, `--platform linux/arm64`)
 
 ### Distribution
 
 - [x] npm provenance attestation present on `@mizchi/k1c@0.9.0`
-- [x] OCI image index multi-arch (amd64 + arm64) at ghcr.io/mizchi/k1c-operator:0.9.0
+- [x] OCI image index multi-arch (amd64 + arm64) at `ghcr.io/mizchi/k1c-operator:0.9.0`
+- [x] Both arches `docker pull --platform` + `docker run version` succeed
 - [ ] OCI image SBOM attestation surfaces in `cosign download attestation`
 - [ ] OCI image SLSA provenance attestation surfaces in `cosign verify-attestation`
 
