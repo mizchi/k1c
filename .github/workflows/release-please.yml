@@ -3,6 +3,9 @@ name: release-please
 on:
   push:
     branches: [main]
+  # Manual escape hatch for retries (needed once after enabling
+  # "Allow GitHub Actions to create and approve pull requests" in repo settings).
+  workflow_dispatch: {}
 
 permissions:
   contents: write
