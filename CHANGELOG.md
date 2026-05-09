@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.0](https://github.com/mizchi/k1c/compare/v0.8.0...v0.9.0) (2026-05-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* switch volume bindings to standard k8s CSI shape
+
+### Features
+
+* examples migrated to CSI volume shape; k1c export-crds ([bd8ac27](https://github.com/mizchi/k1c/commit/bd8ac27d640c0774e7e8fd66d911c1673efc8284))
+* k1c operator — k8s controller wraps the same lower/plan/apply core ([767187a](https://github.com/mizchi/k1c/commit/767187aac940f1ff36c748d8b3c9b8cd63c56bcb))
+* switch volume bindings to standard k8s CSI shape ([4237282](https://github.com/mizchi/k1c/commit/4237282d1c7bfc2ef5f96bec0f8337970b08ff03))
+
 ## [0.8.0](https://github.com/mizchi/k1c/compare/v0.7.0...v0.8.0) (2026-05-09)
 
 
