@@ -33,6 +33,9 @@ spec:
     matchLabels:
       app: rag
   template:
+    metadata:
+      labels:
+        app: rag
     spec:
       containers:
         - name: rag

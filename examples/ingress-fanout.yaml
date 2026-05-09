@@ -13,6 +13,7 @@ metadata:
 spec:
   selector: { matchLabels: { app: api } }
   template:
+    metadata: { labels: { app: api } }
     spec:
       containers:
         - { name: api, image: ./examples/hello-worker.mjs }
@@ -24,6 +25,7 @@ metadata:
 spec:
   selector: { matchLabels: { app: web } }
   template:
+    metadata: { labels: { app: web } }
     spec:
       containers:
         - { name: web, image: ./examples/hello-worker.mjs }
@@ -33,12 +35,16 @@ kind: Service
 metadata: { name: api-svc }
 spec:
   selector: { app: api }
+  # k8s requires Services to declare ports; k1c ignores them (Workers
+  # don't have ports per se), so the value is just a placeholder.
+  ports: [{ port: 80, targetPort: 80 }]
 ---
 apiVersion: v1
 kind: Service
 metadata: { name: web-svc }
 spec:
   selector: { app: web }
+  ports: [{ port: 80, targetPort: 80 }]
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress

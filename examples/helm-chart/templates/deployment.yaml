@@ -10,6 +10,9 @@ spec:
     matchLabels:
       app: {{ include "k1c-hello.workerRefName" . }}
   template:
+    metadata:
+      labels:
+        app: {{ include "k1c-hello.workerRefName" . }}
     spec:
       containers:
         - name: {{ include "k1c-hello.workerRefName" . }}

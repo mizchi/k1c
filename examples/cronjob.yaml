@@ -16,6 +16,9 @@ spec:
     spec:
       template:
         spec:
+          # restartPolicy is required by k8s for Job/CronJob templates;
+          # k1c ignores it (the Worker is invoked once per cron firing).
+          restartPolicy: OnFailure
           containers:
             - name: cleanup
               image: ./examples/hello-worker.mjs

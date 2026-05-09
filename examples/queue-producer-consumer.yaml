@@ -22,6 +22,9 @@ spec:
     matchLabels:
       app: api
   template:
+    metadata:
+      labels:
+        app: api
     spec:
       containers:
         - name: api
@@ -47,6 +50,9 @@ spec:
     matchLabels:
       app: events-consumer
   template:
+    metadata:
+      labels:
+        app: events-consumer
     spec:
       containers:
         - name: events-consumer

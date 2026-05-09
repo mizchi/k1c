@@ -9,6 +9,9 @@ spec:
     matchLabels:
       app: hello
   template:
+    metadata:
+      labels:
+        app: hello
     spec:
       containers:
         - name: hello

@@ -27,6 +27,9 @@ spec:
     matchLabels:
       app: api
   template:
+    metadata:
+      labels:
+        app: api
     spec:
       containers:
         - name: api

@@ -82,7 +82,7 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
           }
         }
       } catch (e) {
-        err(`reconcile error: ${e instanceof Error ? e.message : String(e)}`);
+        err(`reconcile error: ${formatReconcileError(e)}`);
       } finally {
         pending = undefined;
       }
@@ -96,6 +96,27 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
     await tick();
   }
   out('(operator stopped)');
+}
+
+/**
+ * Same shape as the CLI's `formatError`: ProviderError instances are plain
+ * objects so `String(err)` would produce `[object Object]`. Pull `code` and
+ * `message` out by hand when the value looks structured.
+ */
+function formatReconcileError(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (err !== null && typeof err === 'object') {
+    const e = err as { code?: unknown; message?: unknown };
+    if (typeof e.message === 'string') {
+      return typeof e.code === 'string' ? `[${e.code}] ${e.message}` : e.message;
+    }
+    try {
+      return JSON.stringify(err);
+    } catch {
+      return Object.prototype.toString.call(err);
+    }
+  }
+  return String(err);
 }
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {

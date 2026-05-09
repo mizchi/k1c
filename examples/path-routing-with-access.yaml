@@ -15,6 +15,7 @@ metadata: { name: public }
 spec:
   selector: { matchLabels: { app: public } }
   template:
+    metadata: { labels: { app: public } }
     spec:
       containers: [{ name: public, image: ./examples/hello-worker.mjs }]
 ---
@@ -24,6 +25,7 @@ metadata: { name: admin }
 spec:
   selector: { matchLabels: { app: admin } }
   template:
+    metadata: { labels: { app: admin } }
     spec:
       containers: [{ name: admin, image: ./examples/hello-worker.mjs }]
 ---
@@ -32,12 +34,14 @@ kind: Service
 metadata: { name: public-svc }
 spec:
   selector: { app: public }
+  ports: [{ port: 80, targetPort: 80 }]
 ---
 apiVersion: v1
 kind: Service
 metadata: { name: admin-svc }
 spec:
   selector: { app: admin }
+  ports: [{ port: 80, targetPort: 80 }]
 ---
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -52,10 +56,10 @@ spec:
         paths:
           - path: /admin
             pathType: Prefix
-            backend: { service: { name: admin-svc } }
+            backend: { service: { name: admin-svc, port: { number: 80 } } }
           - path: /
             pathType: Prefix
-            backend: { service: { name: public-svc } }
+            backend: { service: { name: public-svc, port: { number: 80 } } }
 ---
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: AccessPolicy

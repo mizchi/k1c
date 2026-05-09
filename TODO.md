@@ -46,19 +46,22 @@ shell (kind + kubectl + helm + kustomize preinstalled) for k8s-side checks.
 
 ### k8s side (use `nix develop` to get kind/kubectl/helm/kustomize)
 
-- [ ] `kind create cluster --name k1c-test` succeeds
-- [ ] `k1c export-crds | kubectl apply -f -` registers all 24 CRDs
-- [ ] `kubectl explain r2bucket.cloudflare.k1c.io` returns the kind metadata
-- [ ] `kubectl apply --dry-run=server -f examples/hello-worker.yaml` passes schema validation
-- [ ] `kubectl apply -f examples/hello-worker.yaml` accepts the manifest into etcd
-- [ ] `helm template ./examples/helm-chart | kubectl apply --dry-run=server -f -` passes
-- [ ] `kustomize build ./examples/kustomize/overlays/prod | kubectl apply --dry-run=server -f -` passes
+- [x] `kind create cluster --name k1c-test` succeeds
+- [x] `k1c export-crds | kubectl apply -f -` registers all 21 CRDs
+- [x] `kubectl explain r2bucket.cloudflare.k1c.io` returns the kind metadata
+- [x] `kubectl apply --dry-run=server -f examples/<every>.yaml` passes schema validation (every example file fixed: every Deployment/Rollout/StatefulSet now has `template.metadata.labels` matching its selector; every CronJob/Job has `restartPolicy: OnFailure`; every Service has `ports`; every Ingress backend has `port.number`)
+- [x] `helm template ./examples/helm-chart | kubectl apply --dry-run=server -f -` passes
+- [x] `kustomize build ./examples/kustomize/base | kubectl apply --dry-run=server -f -` passes
+- [x] `kustomize build ./examples/kustomize/overlays/prod | kubectl apply --dry-run=server -f -` passes (after `kubectl create namespace prod`)
 
 ### Operator (Phase 1: polling)
 
-- [ ] `docker run k1c-operator:dev operator run` starts up against a kind cluster (kubeconfig mounted)
-- [ ] Operator picks up CRDs added via `kubectl apply` and shows them in the reconcile log
-- [ ] Operator picks up label-gated standard kinds (`k1c.io/managed=true`)
+- [x] `kind load docker-image k1c-operator:dev` + Deployment with `imagePullPolicy: Never` starts up cleanly inside the kind cluster
+- [x] `(k1c operator starting; account=... cluster-wide interval=10000ms)` is the first log line
+- [x] Reconcile loop fires every interval; "no managed resources found" when etcd is empty
+- [x] `kubectl apply` of an `R2Bucket` CRD instance is picked up on the next reconcile pass
+- [x] Cloudflare API failure surfaces as a structured `[NotFound] 404 ...` log line (not `[object Object]`)
+- [ ] Operator picks up label-gated standard kinds (`k1c.io/managed=true` Deployment / etc.)
 - [ ] Operator forwards changes to Cloudflare on a real account
 - [ ] Operator survives a kubectl-side delete and reverse-topo deletes the Cloudflare side
 - [ ] OCI image (`ghcr.io/mizchi/k1c-operator:latest`) pulls + runs on linux/amd64

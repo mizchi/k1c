@@ -18,6 +18,9 @@ spec:
     matchLabels:
       app: counter
   template:
+    metadata:
+      labels:
+        app: counter
     spec:
       containers:
         - name: counter

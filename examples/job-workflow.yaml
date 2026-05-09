@@ -17,6 +17,9 @@ metadata:
 spec:
   template:
     spec:
+      # restartPolicy is required by k8s for Job templates;
+      # k1c ignores it (the Workflow is registered, not run as a Pod).
+      restartPolicy: OnFailure
       containers:
         - name: backfill
           image: ./examples/hello-worker.mjs
