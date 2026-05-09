@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k1c-operator
+  namespace: {{ include "k1c-operator.namespace" . }}
+  labels:
+    {{- include "k1c-operator.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "k1c-operator.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "k1c-operator.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: k1c-operator
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: operator
+          image: {{ include "k1c-operator.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - operator
+            - run
+            - --interval
+            - {{ .Values.operator.intervalSec | quote }}
+            {{- if not .Values.operator.watch }}
+            - --no-watch
+            {{- end }}
+            {{- if .Values.operator.leaderElection }}
+            - --leader-election
+            - --lease-name
+            - {{ .Values.operator.leaseName | quote }}
+            - --lease-namespace
+            - {{ include "k1c-operator.leaseNamespace" . | quote }}
+            {{- end }}
+            {{- if .Values.operator.metricsAddr }}
+            - --metrics-addr
+            - {{ .Values.operator.metricsAddr | quote }}
+            {{- end }}
+            {{- if .Values.operator.restrictNamespace }}
+            - --namespace
+            - {{ .Values.operator.restrictNamespace | quote }}
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.metricsPort }}
+              protocol: TCP
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: K1C_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cloudflareSecretName }}
+                  key: K1C_ACCOUNT_ID
+            - name: CLOUDFLARE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cloudflareSecretName }}
+                  key: CLOUDFLARE_API_TOKEN
+          livenessProbe:
+            httpGet: { path: /healthz, port: metrics }
+            periodSeconds: 30
+          readinessProbe:
+            httpGet: { path: /readyz, port: metrics }
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
