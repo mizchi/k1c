@@ -50,6 +50,10 @@ async function main(): Promise<number> {
     readFile: async (path: string) => readFile(path),
   };
 
+  // Standard out / error sinks. `--quiet` swaps stdout for a no-op so the
+  // command still exits with the right status but does not print per-op
+  // progress; errors continue to flow through stderr unchanged.
+  const quiet = parsed.kind === 'apply' && parsed.quiet;
   const deps = {
     registry: createDefaultRegistry(),
     providerCtx: ctx,
@@ -57,7 +61,7 @@ async function main(): Promise<number> {
       const buf = await readFile(path);
       return buf.toString('utf-8');
     },
-    out: (msg: string) => process.stdout.write(`${msg}\n`),
+    out: quiet ? () => {} : (msg: string) => process.stdout.write(`${msg}\n`),
     err: (msg: string) => process.stderr.write(`${msg}\n`),
   };
 

@@ -5,6 +5,7 @@ export interface ApplyArgs {
   readonly file: string;
   readonly dryRun: boolean;
   readonly watch: boolean;
+  readonly quiet: boolean;
 }
 
 export interface DiffArgs {
@@ -222,6 +223,7 @@ function parseApply(rest: ReadonlyArray<string>): ParsedArgs {
   let file: string | undefined;
   let dryRun = false;
   let watch = false;
+  let quiet = false;
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i]!;
     if (arg === '-f' || arg === '--file') {
@@ -239,6 +241,10 @@ function parseApply(rest: ReadonlyArray<string>): ParsedArgs {
       watch = true;
       continue;
     }
+    if (arg === '--quiet' || arg === '-q') {
+      quiet = true;
+      continue;
+    }
     return { kind: 'error', message: `unknown flag for apply: ${arg}` };
   }
   if (file === undefined) {
@@ -247,7 +253,7 @@ function parseApply(rest: ReadonlyArray<string>): ParsedArgs {
   if (dryRun && watch) {
     return { kind: 'error', message: '--dry-run and --watch are mutually exclusive' };
   }
-  return { kind: 'apply', file, dryRun, watch };
+  return { kind: 'apply', file, dryRun, watch, quiet };
 }
 
 function parseDiff(rest: ReadonlyArray<string>): ParsedArgs {
@@ -280,7 +286,7 @@ function parseDiff(rest: ReadonlyArray<string>): ParsedArgs {
 export const USAGE = `k1c — apply a subset of Kubernetes manifests to Cloudflare
 
 usage:
-  k1c apply    -f <manifest.yaml> [--dry-run | --watch]
+  k1c apply    -f <manifest.yaml> [--dry-run | --watch] [--quiet | -q]
   k1c diff     -f <manifest.yaml> [-o text|json]
   k1c delete   -f <manifest.yaml> [--cascade]
   k1c get      <kind> [name] [-n <namespace>] [-o text|json]

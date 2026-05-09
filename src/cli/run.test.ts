@@ -55,7 +55,7 @@ function buildDeps(manifest: string = MANIFEST) {
 describe('runApply', () => {
   it('returns 0 and creates resources on a fresh manifest', async () => {
     const deps = buildDeps();
-    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false, watch: false }, deps);
+    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false, watch: false, quiet: false }, deps);
     expect(code).toBe(0);
     expect(deps.r2.state.size).toBe(1);
     expect(deps.worker.state.size).toBe(1);
@@ -69,7 +69,7 @@ describe('runApply', () => {
     const deps = buildDeps();
     const eventsBefore =
       deps.r2.events.length + deps.worker.events.length + deps.kv.events.length;
-    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: true, watch: false }, deps);
+    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: true, watch: false, quiet: false }, deps);
     expect(code).toBe(0);
     const eventsAfter =
       deps.r2.events.length + deps.worker.events.length + deps.kv.events.length;
@@ -88,7 +88,7 @@ describe('runApply', () => {
     const deps = buildDeps();
     const err: ProviderError = { code: 'AccessDenied', recoverable: false, message: 'forbidden' };
     deps.worker.injectFailure({ op: 'create', remaining: 99, error: err });
-    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false, watch: false }, deps);
+    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false, watch: false, quiet: false }, deps);
     expect(code).not.toBe(0);
     const printedErr = deps.captured.out.join('\n') + deps.captured.err.join('\n');
     expect(printedErr).toMatch(/FAILED/);
@@ -97,7 +97,7 @@ describe('runApply', () => {
 
   it('writes parse errors to stderr and returns non-zero', async () => {
     const deps = buildDeps('apiVersion: v1\nkind: Pod\nmetadata: { name: p }\nspec: { containers: [{name: c, image: i}] }\n');
-    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false, watch: false }, deps);
+    const code = await runApply({ kind: 'apply', file: 'm.yaml', dryRun: false, watch: false, quiet: false }, deps);
     expect(code).not.toBe(0);
     expect(deps.captured.err.join('\n')).toMatch(/Pod.*not supported/);
   });

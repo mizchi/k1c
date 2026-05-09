@@ -87,7 +87,7 @@ pnpm k1c apply   -f examples/hello-worker.yaml [--dry-run]
 ## CLI
 
 ```sh
-k1c apply    -f <manifest.yaml> [--dry-run | --watch]
+k1c apply    -f <manifest.yaml> [--dry-run | --watch] [--quiet | -q]
 k1c diff     -f <manifest.yaml> [-o text|json]
 k1c delete   -f <manifest.yaml> [--cascade]
 k1c get      <kind> [name] [-n <namespace>] [-o text|json]

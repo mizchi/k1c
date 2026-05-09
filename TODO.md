@@ -110,7 +110,8 @@ dragged into `Deployment`.
   mirroring the create direction in reverse.
 - **`k1c logs <kind> <name>`** — wrap `wrangler tail`.
 - **`k1c port-forward`** — only meaningful if running against `wrangler dev`.
-- **`--quiet` mode** — suppress non-error output for scripting.
+- ~~**`--quiet` mode**~~ — shipped (`-q` / `--quiet` on `apply`). Errors still
+  flow to stderr; only the per-op progress on stdout is suppressed.
 - **Real Cloudflare e2e tests** — env-gated, in `tests/e2e/`. Currently every
   provider is exercised through SDK mocks only.
 

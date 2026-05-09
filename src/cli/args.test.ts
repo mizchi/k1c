@@ -17,6 +17,7 @@ describe('parseArgs', () => {
       file: 'manifest.yaml',
       dryRun: false,
       watch: false,
+      quiet: false,
     });
   });
 
@@ -26,6 +27,7 @@ describe('parseArgs', () => {
       file: 'manifest.yaml',
       dryRun: false,
       watch: false,
+      quiet: false,
     });
   });
 
@@ -35,6 +37,7 @@ describe('parseArgs', () => {
       file: 'm.yaml',
       dryRun: true,
       watch: false,
+      quiet: false,
     });
   });
 
@@ -44,7 +47,16 @@ describe('parseArgs', () => {
       file: 'm.yaml',
       dryRun: false,
       watch: true,
+      quiet: false,
     });
+  });
+
+  it('parses --quiet / -q flag', () => {
+    expect(parseArgs(['apply', '-f', 'm.yaml', '--quiet'])).toMatchObject({
+      kind: 'apply',
+      quiet: true,
+    });
+    expect(parseArgs(['apply', '-f', 'm.yaml', '-q'])).toMatchObject({ quiet: true });
   });
 
   it('rejects --dry-run + --watch together', () => {
