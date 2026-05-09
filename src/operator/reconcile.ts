@@ -134,11 +134,17 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
   // Mark the process up; the gauge flips to 0 only at clean shutdown.
   setGauge('k1c_operator_up', '1 while the operator process is alive', 1);
 
-  let firstPassDone = false;
+  // `ready` flips to true once startup completes successfully — either
+  // after the first reconcile pass (single-replica / no LE) or as soon
+  // as the leader-election loop is active (HA mode, where a follower
+  // is ready to take leadership but never reconciles itself). Without
+  // the latter, follower pods never pass their `readinessProbe` and
+  // the rollout stalls at 1/2.
+  let ready = false;
   if (metricsAddr) {
     startMetricsServer({
       addr: metricsAddr,
-      isReady: () => firstPassDone,
+      isReady: () => ready,
       signal,
       onWarning: (m) => err(`warning: ${m}`),
     });
@@ -243,7 +249,7 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
           'wall-clock duration of each reconcile pass',
           (Date.now() - start) / 1000,
         );
-        firstPassDone = true;
+        ready = true;
         pending = undefined;
       }
     })();
@@ -327,6 +333,10 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
     const leaseNamespace = options.leaseNamespace ?? 'k1c-system';
     out(`(leader election enabled; lease=${leaseNamespace}/${leaseName})`);
     setGauge('k1c_operator_is_leader', '1 while this replica holds the leader lease', 0);
+    // Followers never tick(), so flip `ready` here to true so their
+    // readinessProbe passes. The leader will tick + flip it again
+    // when its first reconcile lands; that's idempotent.
+    ready = true;
     await runLeaderElection({
       kc,
       leaseName,
