@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.8.0](https://github.com/mizchi/k1c/compare/v0.7.0...v0.8.0) (2026-05-09)
+
+
+### Features
+
+* **cli:** add k1c explain to introspect manifest schemas ([d62e3d1](https://github.com/mizchi/k1c/commit/d62e3d14d5f872d44b25a8bfe4caa85598f667a8))
+* **cli:** apply --validate-only and richer diff output ([38f3980](https://github.com/mizchi/k1c/commit/38f39801e14772dd6ce93c93b1b7c5b38c54872b))
+* **cli:** kubeconfig-style context store for multi-account / multi-zone ([177438d](https://github.com/mizchi/k1c/commit/177438dd9bd382542197efd9b4a1505d0a6e0c4a))
+
 ## [0.7.0](https://github.com/mizchi/k1c/compare/v0.6.0...v0.7.0) (2026-05-09)
 
 
