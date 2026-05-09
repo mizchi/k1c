@@ -48,6 +48,14 @@ jobs:
       - name: Register k1c CRDs
         run: pnpm --silent k1c export-crds | kubectl apply -f -
 
+      - name: Register argo-rollouts CRDs
+        # examples/rollout-*.yaml use `kind: Rollout` from
+        # argoproj.io/v1alpha1 — the CRD ships with argo-rollouts, not
+        # with k1c. Install just the CRDs (not the controller) so
+        # server-side dry-run can resolve the kind.
+        run: |
+          kubectl apply -f https://raw.githubusercontent.com/argoproj/argo-rollouts/v1.7.2/manifests/crds/rollout-crd.yaml
+
       - name: kubectl apply --dry-run=server on every example manifest
         run: |
           set -e
