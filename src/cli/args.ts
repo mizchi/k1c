@@ -108,6 +108,12 @@ export interface OperatorRunArgs {
   readonly subCommand: 'run';
   readonly namespace?: string;
   readonly intervalSec: number;
+  /**
+   * Use k8s watch streams (default true). `--no-watch` falls back to
+   * pure interval-driven polling, which is useful for clusters that
+   * don't permit long-lived watch connections.
+   */
+  readonly watch: boolean;
 }
 
 export interface ConfigArgs {
@@ -181,6 +187,7 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
   }
   let namespace: string | undefined;
   let intervalSec = 30;
+  let watch = true;
   for (let i = 1; i < rest.length; i += 1) {
     const arg = rest[i]!;
     if (arg === '-n' || arg === '--namespace') {
@@ -200,12 +207,21 @@ function parseOperator(rest: ReadonlyArray<string>): ParsedArgs {
       i += 1;
       continue;
     }
+    if (arg === '--no-watch') {
+      watch = false;
+      continue;
+    }
+    if (arg === '--watch') {
+      watch = true;
+      continue;
+    }
     return { kind: 'error', message: `unknown flag for operator run: ${arg}` };
   }
   return {
     kind: 'operator',
     subCommand: 'run',
     intervalSec,
+    watch,
     ...(namespace !== undefined ? { namespace } : {}),
   };
 }

@@ -1,0 +1,93 @@
+name: k8s-validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  # Stand up a kind cluster, register the k1c CRDs, and run every example
+  # manifest through `kubectl apply --dry-run=server`. This catches the
+  # exact class of strict-validation regressions the 0.9.0 verification
+  # session uncovered (selector/template-label mismatch, missing
+  # restartPolicy on Job/CronJob, Service ports omitted, Ingress backend
+  # port omitted) before they reach main.
+  k8s-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install kustomize + helm
+        uses: yokawasa/action-setup-kube-tools@v0.11.2
+        with:
+          kustomize: "5.4.3"
+          helm: "3.16.4"
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: k1c-validate
+          wait: 60s
+
+      - name: Register k1c CRDs
+        run: pnpm --silent k1c export-crds | kubectl apply -f -
+
+      - name: kubectl apply --dry-run=server on every example manifest
+        run: |
+          set -e
+          shopt -s nullglob
+          fail=0
+          for f in examples/*.yaml; do
+            echo "::group::dry-run $f"
+            if ! kubectl apply --dry-run=server -f "$f"; then
+              echo "::error file=$f::strict server-side validation failed"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $fail
+
+      - name: Validate operator install bundle
+        run: |
+          # The install bundle creates its own `k1c-system` namespace; a
+          # server-side dry-run never actually persists that, so the
+          # Deployment in the same multi-doc file would fail to resolve
+          # its namespace. Pre-create it so the bundle validates as a
+          # whole.
+          kubectl create namespace k1c-system
+          kubectl apply --dry-run=server -f examples/k1c-operator/install.yaml
+
+      - name: helm template | kubectl apply --dry-run=server
+        run: |
+          helm template hello ./examples/helm-chart \
+            | kubectl apply --dry-run=server -f -
+
+      - name: kustomize build base | kubectl apply --dry-run=server
+        run: |
+          kustomize build ./examples/kustomize/base \
+            | kubectl apply --dry-run=server -f -
+
+      - name: kustomize build prod overlay | kubectl apply --dry-run=server
+        run: |
+          # Prod overlay sets `namespace: prod` on every resource; the
+          # cluster needs that namespace to exist for server-side dry-run
+          # validation to resolve namespaced refs.
+          kubectl create namespace prod
+          kustomize build ./examples/kustomize/overlays/prod \
+            | kubectl apply --dry-run=server -f -
