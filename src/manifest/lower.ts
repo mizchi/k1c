@@ -4,6 +4,7 @@ import type {
   AccessApplication,
   AccessAppPolicy,
   AccessRule,
+  CacheRule,
   ConfigMapResource,
   CronJob,
   D1Database,
@@ -46,6 +47,7 @@ import type {
   AccessApplicationProperties,
   AccessRuleWire,
 } from '../providers/access-application.ts';
+import type { CacheRuleProperties } from '../providers/cache-rule.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 import { generateRouter, type RouterRoute } from '../ingress/router-template.ts';
 import { placeholder } from '../reconciler/placeholders.ts';
@@ -116,6 +118,7 @@ export async function lower(
   const logpushJobs: LogpushJob[] = [];
   const ingresses: Ingress[] = [];
   const accessApplications: AccessApplication[] = [];
+  const cacheRules: CacheRule[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -178,6 +181,9 @@ export async function lower(
         break;
       case 'AccessApplication':
         accessApplications.push(r);
+        break;
+      case 'CacheRule':
+        cacheRules.push(r);
         break;
     }
   }
@@ -248,7 +254,30 @@ export async function lower(
     desired.push(lowerAccessApplication(app));
   }
 
+  for (const cr of cacheRules) {
+    desired.push(lowerCacheRule(cr));
+  }
+
   return { desired, warnings };
+}
+
+function lowerCacheRule(cr: CacheRule): DesiredResource<CacheRuleProperties> {
+  const ns = cr.metadata.namespace ?? 'default';
+  const name = cr.metadata.name;
+  return {
+    resourceType: 'CacheRule',
+    ref: refOf(cr),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: cr.spec.zoneId,
+      expression: cr.spec.expression,
+      cache: cr.spec.cache,
+      enabled: cr.spec.enabled ?? true,
+      ...(cr.spec.edgeTtl !== undefined ? { edgeTtl: cr.spec.edgeTtl } : {}),
+      ...(cr.spec.browserTtl !== undefined ? { browserTtl: cr.spec.browserTtl } : {}),
+      ...(cr.spec.description !== undefined ? { description: cr.spec.description } : {}),
+    },
+  };
 }
 
 function ruleToWire(rule: AccessRule): AccessRuleWire {

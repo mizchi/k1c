@@ -1762,6 +1762,48 @@ spec:
     ]);
   });
 
+  it('lowers CacheRule to a DesiredResource with default enabled=true', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: CacheRule
+metadata: { name: static-assets, namespace: prod }
+spec:
+  zoneId: zone-abc
+  expression: '(http.request.uri.path matches "^/static/.*$")'
+  cache: true
+  edgeTtl: { mode: override_origin, default: 86400 }
+  browserTtl: { mode: respect_origin }
+  description: 'cache /static for a day'
+`);
+    expect(result.desired).toHaveLength(1);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('CacheRule');
+    expect(d.label).toBe('prod/static-assets');
+    expect(d.properties).toEqual({
+      zoneId: 'zone-abc',
+      expression: '(http.request.uri.path matches "^/static/.*$")',
+      cache: true,
+      enabled: true,
+      edgeTtl: { mode: 'override_origin', default: 86400 },
+      browserTtl: { mode: 'respect_origin' },
+      description: 'cache /static for a day',
+    });
+  });
+
+  it('lowers CacheRule with enabled=false', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: CacheRule
+metadata: { name: paused }
+spec:
+  zoneId: zone-abc
+  expression: 'true'
+  cache: false
+  enabled: false
+`);
+    expect((result.desired[0]!.properties as { enabled: boolean }).enabled).toBe(false);
+  });
+
   it('hashes the entrypoint content into Worker.entrypointHash', async () => {
     const { resources } = parseManifest(`
 apiVersion: apps/v1

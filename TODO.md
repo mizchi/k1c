@@ -87,7 +87,10 @@ These are zone- or account-level and feel awkward to express as Pod-shaped
 manifests. Likely better as their own top-level k1c CRD group rather than
 dragged into `Deployment`.
 
-- **Cache Rules** (zone-scoped).
+- ~~**Cache Rules**~~ — shipped as `CacheRule` CRD. Each k1c CacheRule maps to
+  one rule inside the zone's `http_request_cache_settings` phase ruleset;
+  ownership is tracked via the rule's description (`k1c.io/managed=<label>`)
+  and non-k1c rules in the same ruleset are preserved across mutations.
 - **Transform Rules** (zone-scoped, request / response rewrites).
 - **WAF Custom Rules** (zone-scoped).
 - **Rate Limiting Rules**.

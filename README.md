@@ -51,6 +51,7 @@ $ K1C_ACCOUNT_ID=...  CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f manifest.yaml
 | `ai` / `browser` / `version_metadata` / `analytics_engine` Worker bindings | annotation- / volume-driven | working |
 | `Ingress` (`networking.k8s.io/v1`) | generated router Worker + Custom Domain per literal host (Workers Route per wildcard host) | working |
 | `AccessApplication` (CRD) | Cloudflare Access self-hosted app with inline policies | working |
+| `CacheRule` (CRD) | Cache Rule inside the zone's cache_settings phase ruleset | working |
 | `CustomHostname` | — | not implemented (see [`TODO.md`](TODO.md)) |
 
 See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,

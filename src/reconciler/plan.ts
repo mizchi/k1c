@@ -194,6 +194,7 @@ function deletePriority(resourceType: string): number {
     case 'LogpushJob':
     case 'Workflow':
     case 'AccessApplication':
+    case 'CacheRule':
       return 0;
     case 'Worker':
       return 1;

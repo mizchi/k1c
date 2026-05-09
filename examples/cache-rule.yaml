@@ -1,0 +1,23 @@
+# Zone-scoped Cache Rule. k1c manages a single rule inside the zone's
+# cache_settings phase ruleset; non-k1c rules in the same ruleset are left
+# untouched (ownership is tracked via the description marker
+# `k1c.io/managed=<ns>/<name>`).
+#
+# Apply with: K1C_ACCOUNT_ID=... K1C_ZONE_ID=... CLOUDFLARE_API_TOKEN=... \
+#             pnpm k1c apply -f examples/cache-rule.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: CacheRule
+metadata:
+  name: static-assets
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+  expression: '(http.request.uri.path matches "^/static/.*$")'
+  cache: true
+  edgeTtl:
+    mode: override_origin
+    default: 86400
+  browserTtl:
+    mode: override_origin
+    default: 3600
+  description: 'cache /static for 1 day'

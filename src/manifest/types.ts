@@ -336,6 +336,26 @@ export type AccessApplication = BaseResource<
   AccessApplicationSpec
 >;
 
+export type CacheRuleTtlMode = 'respect_origin' | 'bypass_by_default' | 'override_origin';
+
+export interface CacheRuleTtl {
+  readonly mode: CacheRuleTtlMode;
+  readonly default?: number;
+}
+
+export interface CacheRuleSpec {
+  readonly zoneId: string;
+  readonly expression: string;
+  readonly cache: boolean;
+  readonly enabled?: boolean;
+  readonly edgeTtl?: CacheRuleTtl;
+  readonly browserTtl?: CacheRuleTtl;
+  /** Free-form description shown in the dashboard alongside the k1c ownership marker. */
+  readonly description?: string;
+}
+
+export type CacheRule = BaseResource<'CacheRule', 'cloudflare.k1c.io/v1alpha1', CacheRuleSpec>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -356,7 +376,8 @@ export type K1cResource =
   | DNSRecord
   | LogpushJob
   | Ingress
-  | AccessApplication;
+  | AccessApplication
+  | CacheRule;
 
 export type ResourceKind = K1cResource['kind'];
 
