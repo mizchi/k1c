@@ -70,6 +70,7 @@ kustomize build ./examples/kustomize/overlays/prod | k1c apply -f -
 | `RateLimitRule` (CRD) | request-rate threshold inside the http_ratelimit phase ruleset | working |
 | `CustomHostname` (CRD) | Cloudflare for SaaS hostname with async SSL provisioning (polled) | working |
 | `EmailRoutingRule` (CRD) | per-zone email routing (forward / drop / dispatch to Worker) | working |
+| `TelemetryStack` (CRD) | bundle Logpush streams (workers / http / firewall / dns / audit) in one manifest | working |
 | `CustomHostname` | — | not implemented (see [`TODO.md`](TODO.md)) |
 
 See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,

@@ -650,6 +650,51 @@ export const ingressSchema = z.object({
   }),
 });
 
+const telemetryStreamSpecSchema = z.object({
+  enabled: z.boolean().optional(),
+  destination: z.string().min(1),
+  filter: z.string().optional(),
+});
+
+export const telemetryStackSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('TelemetryStack'),
+  metadata: objectMetaSchema,
+  spec: z
+    .object({
+      zoneId: z.string().min(1).optional(),
+      workersTrace: telemetryStreamSpecSchema.optional(),
+      httpRequests: telemetryStreamSpecSchema.optional(),
+      firewallEvents: telemetryStreamSpecSchema.optional(),
+      dnsLogs: telemetryStreamSpecSchema.optional(),
+      auditLogs: telemetryStreamSpecSchema.optional(),
+    })
+    .superRefine((data, ctx) => {
+      const zoneScopedKeys = ['httpRequests', 'firewallEvents', 'dnsLogs'] as const;
+      const usesZoneScoped = zoneScopedKeys.some((k) => data[k] !== undefined);
+      if (usesZoneScoped && data.zoneId === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['zoneId'],
+          message:
+            'TelemetryStack with httpRequests / firewallEvents / dnsLogs requires spec.zoneId',
+        });
+      }
+      const anyStream =
+        data.workersTrace !== undefined ||
+        usesZoneScoped ||
+        data.auditLogs !== undefined;
+      if (!anyStream) {
+        ctx.addIssue({
+          code: 'custom',
+          path: [],
+          message:
+            'TelemetryStack must enable at least one stream (workersTrace / httpRequests / firewallEvents / dnsLogs / auditLogs)',
+        });
+      }
+    }),
+});
+
 export const k1cResourceSchema = z.discriminatedUnion('kind', [
   deploymentSchema,
   rolloutSchema,
@@ -669,6 +714,7 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   vectorizeSchema,
   dnsRecordSchema,
   logpushJobSchema,
+  telemetryStackSchema,
   ingressSchema,
   accessApplicationSchema,
   accessPolicySchema,

@@ -27,6 +27,8 @@ import type {
   K1cResource,
   KVNamespace,
   LogpushJob,
+  TelemetryStack,
+  TelemetryStreamSpec,
   ObjectMeta,
   PodTemplateSpec,
   Queue,
@@ -136,6 +138,7 @@ export async function lower(
   const jobs: Job[] = [];
   const dnsRecords: DNSRecord[] = [];
   const logpushJobs: LogpushJob[] = [];
+  const telemetryStacks: TelemetryStack[] = [];
   const ingresses: Ingress[] = [];
   const accessApplications: AccessApplication[] = [];
   const accessPolicies: AccessPolicy[] = [];
@@ -205,6 +208,9 @@ export async function lower(
       case 'LogpushJob':
         logpushJobs.push(r);
         break;
+      case 'TelemetryStack':
+        telemetryStacks.push(r);
+        break;
       case 'Ingress':
         ingresses.push(r);
         break;
@@ -268,6 +274,9 @@ export async function lower(
   for (const v of tables.vectorizes.values()) desired.push(lowerVectorize(v));
   for (const r of dnsRecords) desired.push(lowerDNSRecord(r));
   for (const j of logpushJobs) desired.push(lowerLogpushJob(j));
+  for (const t of telemetryStacks) {
+    for (const j of lowerTelemetryStack(t)) desired.push(j);
+  }
   for (const d of deployments) {
     for (const w of await lowerDeployment(d, tables, options)) {
       desired.push(w);
@@ -675,6 +684,71 @@ function lowerVectorize(v: Vectorize): DesiredResource<VectorizeProperties> {
       ...(v.spec.description !== undefined ? { description: v.spec.description } : {}),
     },
   };
+}
+
+interface TelemetryStreamWiring {
+  readonly streamKey: string;     // suffix on the resource label / name
+  readonly dataset: string;       // Cloudflare Logpush dataset
+  readonly scope: 'zone' | 'account';
+}
+
+const TELEMETRY_STREAMS: ReadonlyArray<{
+  readonly key: keyof Pick<
+    TelemetryStack['spec'],
+    'workersTrace' | 'httpRequests' | 'firewallEvents' | 'dnsLogs' | 'auditLogs'
+  >;
+  readonly wiring: TelemetryStreamWiring;
+}> = [
+  {
+    key: 'workersTrace',
+    wiring: { streamKey: 'workers', dataset: 'workers_trace_events', scope: 'account' },
+  },
+  {
+    key: 'httpRequests',
+    wiring: { streamKey: 'http', dataset: 'http_requests', scope: 'zone' },
+  },
+  {
+    key: 'firewallEvents',
+    wiring: { streamKey: 'firewall', dataset: 'firewall_events', scope: 'zone' },
+  },
+  { key: 'dnsLogs', wiring: { streamKey: 'dns', dataset: 'dns_logs', scope: 'zone' } },
+  {
+    key: 'auditLogs',
+    wiring: { streamKey: 'audit', dataset: 'audit_logs', scope: 'account' },
+  },
+];
+
+function lowerTelemetryStack(
+  ts: TelemetryStack,
+): ReadonlyArray<DesiredResource<LogpushJobProperties>> {
+  const ns = ts.metadata.namespace ?? 'default';
+  const name = ts.metadata.name;
+  const ref = refOf(ts);
+  const out: DesiredResource<LogpushJobProperties>[] = [];
+  for (const { key, wiring } of TELEMETRY_STREAMS) {
+    const stream = ts.spec[key] as TelemetryStreamSpec | undefined;
+    if (stream === undefined) continue;
+    const enabled = stream.enabled ?? true;
+    const scope =
+      wiring.scope === 'zone'
+        ? { zoneId: ts.spec.zoneId! } // schema enforces presence
+        : { accountId: makePlaceholder('Context', 'accountId') };
+    out.push({
+      resourceType: 'LogpushJob',
+      ref: { ...ref, name: `${name}--${wiring.streamKey}` },
+      label: `${ns}/${name}--${wiring.streamKey}`,
+      properties: {
+        jobName: `k1c-${ns}-${name}--${wiring.streamKey}`,
+        scope,
+        dataset: wiring.dataset,
+        destinationConf: stream.destination,
+        enabled,
+        ...(stream.filter !== undefined ? { filter: stream.filter } : {}),
+      },
+      dependsOn: [ref],
+    });
+  }
+  return out;
 }
 
 interface LogpushAutoCandidate {

@@ -21,7 +21,7 @@ describe('durationToSince', () => {
 describe('runTelemetry: workers', () => {
   it('issues a GraphQL POST against the analytics endpoint with the resolved script name + window', async () => {
     const calls: Array<{ url: string; body: unknown; auth: string | null }> = [];
-    const fakeFetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    const fakeFetch = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({
         url: String(url),
         body: JSON.parse(String(init?.body ?? '{}')),

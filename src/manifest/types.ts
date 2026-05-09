@@ -278,6 +278,35 @@ export interface LogpushJobSpec {
 
 export type LogpushJob = BaseResource<'LogpushJob', 'cloudflare.k1c.io/v1alpha1', LogpushJobSpec>;
 
+export interface TelemetryStreamSpec {
+  readonly enabled?: boolean;
+  /** Cloudflare Logpush destination — `r2://...`, `s3://...`, `https://...`, etc. */
+  readonly destination: string;
+  /** Optional Logpush filter (JSON-encoded predicate). */
+  readonly filter?: string;
+}
+
+export interface TelemetryStackSpec {
+  /** Zone id used for zone-scoped streams (`httpRequests`, `firewallEvents`, `dnsLogs`). */
+  readonly zoneId?: string;
+  /** Worker trace events (account-scoped). */
+  readonly workersTrace?: TelemetryStreamSpec;
+  /** Zone HTTP request logs (zone-scoped). */
+  readonly httpRequests?: TelemetryStreamSpec;
+  /** Zone firewall events (zone-scoped). */
+  readonly firewallEvents?: TelemetryStreamSpec;
+  /** Zone DNS logs (zone-scoped). */
+  readonly dnsLogs?: TelemetryStreamSpec;
+  /** Audit logs (account-scoped). */
+  readonly auditLogs?: TelemetryStreamSpec;
+}
+
+export type TelemetryStack = BaseResource<
+  'TelemetryStack',
+  'cloudflare.k1c.io/v1alpha1',
+  TelemetryStackSpec
+>;
+
 export type IngressPathType = 'Prefix' | 'Exact' | 'ImplementationSpecific';
 
 export interface IngressBackend {
@@ -600,6 +629,7 @@ export type K1cResource =
   | Vectorize
   | DNSRecord
   | LogpushJob
+  | TelemetryStack
   | Ingress
   | AccessApplication
   | AccessPolicy

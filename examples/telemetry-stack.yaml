@@ -1,0 +1,45 @@
+# TelemetryStack — declare a whole zone's log shipping (HTTP requests,
+# WAF events, DNS) plus account-level streams (workers trace, audit log)
+# in a single manifest. k1c lowers each enabled stream into its own
+# LogpushJob, so deletes / disables are one-line edits.
+#
+# This complements the per-Worker `cloudflare.com/logpush` annotation:
+# use the annotation when only some Workers should ship trace events,
+# use TelemetryStack when you want zone-wide collection.
+#
+# Apply with: K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... \
+#             pnpm k1c apply -f examples/telemetry-stack.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2Bucket
+metadata: { name: logs }
+spec: { location: weur }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TelemetryStack
+metadata:
+  name: prod-obs
+spec:
+  zoneId: REPLACE_WITH_YOUR_ZONE_ID
+
+  # All Workers in this account → R2.
+  workersTrace:
+    destination: 'r2://logs/workers/{DATE}.json'
+
+  # Every HTTP request hitting the zone → R2 (filterable).
+  httpRequests:
+    destination: 'r2://logs/http/{DATE}.json'
+    filter: '{"where":{"key":"ClientRequestPath","operator":"startsWith","value":"/api/"}}'
+
+  # WAF / firewall events → R2.
+  firewallEvents:
+    destination: 'r2://logs/waf/{DATE}.json'
+
+  # DNS query log → R2 (off by default in this example).
+  dnsLogs:
+    destination: 'r2://logs/dns/{DATE}.json'
+    enabled: false
+
+  # Account audit log → R2 (admin actions, API token usage, etc).
+  auditLogs:
+    destination: 'r2://logs/audit/{DATE}.json'

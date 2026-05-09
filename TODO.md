@@ -117,6 +117,24 @@ dragged into `Deployment`.
   not really a Pod-shaped thing.
 - **Images**. Same shape as Stream.
 
+## Telemetry
+
+- ~~**Per-Worker Logpush via annotation**~~ — shipped. Deployment / Rollout /
+  CronJob / Job / StatefulSet with `cloudflare.com/logpush: <destinationConf>`
+  auto-emits a LogpushJob filtered to that Worker's trace events. The
+  resolver substitutes `<resolved-at-apply:Context:accountId>` with the
+  apply ctx so lower stays decoupled from env.
+- ~~**`k1c telemetry workers`**~~ — shipped. Queries the GraphQL Analytics
+  API for invocations / errors / CPU+wall p99 over a `--since` window.
+- ~~**Telemetry stack CRD**~~ — shipped as `TelemetryStack`. Bundles up to
+  five streams (workersTrace / httpRequests / firewallEvents / dnsLogs /
+  auditLogs) under one resource; lowers to one LogpushJob per enabled
+  stream. Zone-scoped streams require `spec.zoneId`; account-scoped streams
+  resolve `accountId` from the apply context.
+- **Aggregator Worker template** — generated Worker that consumes Logpush
+  HTTP destinations and forwards to OTLP / a queue / a third-party SaaS.
+  Pending.
+
 ## Operational features
 
 - ~~**`k1c apply --watch`**~~ — shipped.

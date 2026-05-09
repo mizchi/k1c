@@ -66,6 +66,7 @@ so they stay in sync with the schemas.
 | File | What it shows |
 |---|---|
 | [`telemetry-logpush.yaml`](telemetry-logpush.yaml) | per-Worker Logpush via `cloudflare.com/logpush` annotation (auto-emits a LogpushJob filtered to the Worker's trace events) |
+| [`telemetry-stack.yaml`](telemetry-stack.yaml) | TelemetryStack — one manifest covering workers / http / firewall / dns / audit log shipping |
 
 Beyond the manifest side, `k1c telemetry workers <kind> <name>` queries the
 GraphQL Analytics API for invocation count / error rate / CPU + wall time
