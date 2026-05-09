@@ -448,6 +448,20 @@ const ratelimitConfigSpecSchema = z.object({
   requestsToOrigin: z.boolean().optional(),
 });
 
+export const wafManagedRulesetSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('WAFManagedRuleset'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    rulesetId: z.string().min(1),
+    enabled: z.boolean().optional(),
+    expression: z.string().optional(),
+    overrideAction: z.enum(['block', 'challenge', 'managed_challenge', 'js_challenge', 'log']).optional(),
+    description: z.string().optional(),
+  }),
+});
+
 export const customHostnameSchema = z.object({
   apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
   kind: z.literal('CustomHostname'),
@@ -481,13 +495,17 @@ export const rateLimitRuleSchema = z.object({
 const accessApplicationSpecSchema = z
   .object({
     domain: z.string().min(1),
-    type: z.enum(['self_hosted', 'ssh', 'vnc', 'bookmark']).optional(),
+    type: z
+      .enum(['self_hosted', 'ssh', 'vnc', 'biso', 'saas', 'infrastructure', 'bookmark'])
+      .optional(),
     sessionDuration: z.string().optional(),
     autoRedirectToIdentity: z.boolean().optional(),
     allowedIdps: z.array(z.string()).optional(),
     policies: z.array(accessApplicationPolicyItemSchema).optional(),
     logoUrl: z.string().url().optional(),
     appLauncherVisible: z.boolean().optional(),
+    saasApp: z.record(z.unknown()).optional(),
+    targetCriteria: z.array(z.record(z.unknown())).optional(),
   })
   .superRefine((data, ctx) => {
     const t = data.type ?? 'self_hosted';
@@ -512,6 +530,34 @@ const accessApplicationSpecSchema = z
         code: 'custom',
         path: ['logoUrl'],
         message: 'logoUrl only applies to bookmark AccessApplications',
+      });
+    }
+    if (t !== 'saas' && data.saasApp !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['saasApp'],
+        message: 'saasApp only applies to type=saas AccessApplications',
+      });
+    }
+    if (t === 'saas' && data.saasApp === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['saasApp'],
+        message: 'type=saas AccessApplications require spec.saasApp',
+      });
+    }
+    if (t !== 'infrastructure' && data.targetCriteria !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targetCriteria'],
+        message: 'targetCriteria only applies to type=infrastructure AccessApplications',
+      });
+    }
+    if (t === 'infrastructure' && (data.targetCriteria === undefined || data.targetCriteria.length === 0)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['targetCriteria'],
+        message: 'type=infrastructure AccessApplications require at least one targetCriteria entry',
       });
     }
   });
@@ -560,4 +606,5 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   wafCustomRuleSchema,
   rateLimitRuleSchema,
   customHostnameSchema,
+  wafManagedRulesetSchema,
 ]);

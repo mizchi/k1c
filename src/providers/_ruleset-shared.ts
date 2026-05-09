@@ -16,6 +16,7 @@ export type RulesetPhase =
   | 'http_request_late_transform'
   | 'http_response_headers_transform'
   | 'http_request_firewall_custom'
+  | 'http_request_firewall_managed'
   | 'http_ratelimit';
 
 /**

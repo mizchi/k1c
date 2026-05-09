@@ -11,6 +11,7 @@ import type {
   WAFCustomRule,
   RateLimitRule,
   CustomHostname,
+  WAFManagedRuleset,
   ConfigMapResource,
   CronJob,
   D1Database,
@@ -58,6 +59,7 @@ import type { TransformRuleProperties } from '../providers/transform-rule.ts';
 import type { WAFCustomRuleProperties } from '../providers/waf-custom-rule.ts';
 import type { RateLimitRuleProperties } from '../providers/rate-limit-rule.ts';
 import type { CustomHostnameProperties } from '../providers/custom-hostname.ts';
+import type { WAFManagedRulesetProperties } from '../providers/waf-managed-ruleset.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -136,6 +138,7 @@ export async function lower(
   const wafCustomRules: WAFCustomRule[] = [];
   const rateLimitRules: RateLimitRule[] = [];
   const customHostnames: CustomHostname[] = [];
+  const wafManagedRulesets: WAFManagedRuleset[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -216,6 +219,9 @@ export async function lower(
         break;
       case 'CustomHostname':
         customHostnames.push(r);
+        break;
+      case 'WAFManagedRuleset':
+        wafManagedRulesets.push(r);
         break;
     }
   }
@@ -310,7 +316,31 @@ export async function lower(
     desired.push(lowerCustomHostname(ch));
   }
 
+  for (const wm of wafManagedRulesets) {
+    desired.push(lowerWAFManagedRuleset(wm));
+  }
+
   return { desired, warnings };
+}
+
+function lowerWAFManagedRuleset(
+  wm: WAFManagedRuleset,
+): DesiredResource<WAFManagedRulesetProperties> {
+  const ns = wm.metadata.namespace ?? 'default';
+  const name = wm.metadata.name;
+  return {
+    resourceType: 'WAFManagedRuleset',
+    ref: refOf(wm),
+    label: `${ns}/${name}`,
+    properties: {
+      zoneId: wm.spec.zoneId,
+      rulesetId: wm.spec.rulesetId,
+      enabled: wm.spec.enabled ?? true,
+      ...(wm.spec.expression !== undefined ? { expression: wm.spec.expression } : {}),
+      ...(wm.spec.overrideAction !== undefined ? { overrideAction: wm.spec.overrideAction } : {}),
+      ...(wm.spec.description !== undefined ? { description: wm.spec.description } : {}),
+    },
+  };
 }
 
 function lowerCustomHostname(ch: CustomHostname): DesiredResource<CustomHostnameProperties> {
@@ -487,6 +517,10 @@ function lowerAccessApplication(
     ...(app.spec.logoUrl !== undefined ? { logoUrl: app.spec.logoUrl } : {}),
     ...(app.spec.appLauncherVisible !== undefined
       ? { appLauncherVisible: app.spec.appLauncherVisible }
+      : {}),
+    ...(app.spec.saasApp !== undefined ? { saasApp: { ...app.spec.saasApp } } : {}),
+    ...(app.spec.targetCriteria !== undefined
+      ? { targetCriteria: app.spec.targetCriteria.map((t) => ({ ...t })) }
       : {}),
     policies,
   };

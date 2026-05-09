@@ -329,29 +329,52 @@ export interface AccessPolicyRef {
 
 export type AccessApplicationPolicyItem = AccessAppPolicy | AccessPolicyRef;
 
-export type AccessApplicationType = 'self_hosted' | 'ssh' | 'vnc' | 'bookmark';
+export type AccessApplicationType =
+  | 'self_hosted'
+  | 'ssh'
+  | 'vnc'
+  | 'biso'
+  | 'saas'
+  | 'infrastructure'
+  | 'bookmark';
 
 export interface AccessApplicationSpec {
   readonly domain: string;
   /**
-   * Cloudflare Access application type. Defaults to `self_hosted`. `ssh` and
-   * `vnc` produce browser-rendered SSH / VNC sessions and share the
-   * `self_hosted` manifest shape. `bookmark` is an App Launcher tile only —
-   * it has no policies and instead carries `logoUrl` / `appLauncherVisible`.
+   * Cloudflare Access application type. Defaults to `self_hosted`.
+   *
+   *   - `self_hosted` / `ssh` / `vnc` / `biso` (Browser Isolation): share the
+   *     base shape (domain + policies + IdP config).
+   *   - `saas`: domain is the user-visible app name; the IdP-side SAML / OIDC
+   *     config is passed through verbatim as `saasApp`.
+   *   - `infrastructure`: target connector list passed through as `targetCriteria`.
+   *   - `bookmark`: App Launcher tile only — no policies, instead `logoUrl` /
+   *     `appLauncherVisible`.
    */
   readonly type?: AccessApplicationType;
   readonly sessionDuration?: string;
   readonly autoRedirectToIdentity?: boolean;
   readonly allowedIdps?: ReadonlyArray<string>;
   /**
-   * Required (>=1) for `self_hosted` / `ssh` / `vnc`. Must be empty for
-   * `bookmark`. The schema enforces both rules.
+   * Required (>=1) for everything except `bookmark`, which must have zero.
+   * The schema enforces both rules.
    */
   readonly policies?: ReadonlyArray<AccessApplicationPolicyItem>;
   /** Bookmark only: image URL shown on the App Launcher tile. */
   readonly logoUrl?: string;
-  /** Bookmark only (also applies to other types): show in the App Launcher. */
+  /** Show in the App Launcher dashboard. Applies to non-bookmark types too. */
   readonly appLauncherVisible?: boolean;
+  /**
+   * SaaS-only. Raw `saas_app` payload passed through to the Cloudflare API
+   * verbatim (SAML or OIDC config). Schema is intentionally untyped at this
+   * layer — k1c does not currently model the protocol-specific fields.
+   */
+  readonly saasApp?: Readonly<Record<string, unknown>>;
+  /**
+   * Infrastructure-only. Raw `target_criteria` payload (an array of target
+   * connector descriptors) passed through verbatim.
+   */
+  readonly targetCriteria?: ReadonlyArray<Readonly<Record<string, unknown>>>;
 }
 
 export interface AccessPolicySpec {
@@ -478,6 +501,28 @@ export type CustomHostname = BaseResource<
   CustomHostnameSpec
 >;
 
+export type WAFManagedOverrideAction =
+  | 'block'
+  | 'challenge'
+  | 'managed_challenge'
+  | 'js_challenge'
+  | 'log';
+
+export interface WAFManagedRulesetSpec {
+  readonly zoneId: string;
+  readonly rulesetId: string;
+  readonly enabled?: boolean;
+  readonly expression?: string;
+  readonly overrideAction?: WAFManagedOverrideAction;
+  readonly description?: string;
+}
+
+export type WAFManagedRuleset = BaseResource<
+  'WAFManagedRuleset',
+  'cloudflare.k1c.io/v1alpha1',
+  WAFManagedRulesetSpec
+>;
+
 export type K1cResource =
   | Deployment
   | Rollout
@@ -504,7 +549,8 @@ export type K1cResource =
   | TransformRule
   | WAFCustomRule
   | RateLimitRule
-  | CustomHostname;
+  | CustomHostname
+  | WAFManagedRuleset;
 
 export type ResourceKind = K1cResource['kind'];
 

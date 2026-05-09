@@ -1998,6 +1998,80 @@ spec:
     });
   });
 
+  it('lowers WAFManagedRuleset to a DesiredResource with prefixed ruleset id + override action', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WAFManagedRuleset
+metadata: { name: owasp }
+spec:
+  zoneId: zone-abc
+  rulesetId: efb7b8c949ac4650a09736fc376e9aee
+  overrideAction: log
+`);
+    expect(result.desired[0]!.resourceType).toBe('WAFManagedRuleset');
+    expect(result.desired[0]!.properties).toMatchObject({
+      zoneId: 'zone-abc',
+      rulesetId: 'efb7b8c949ac4650a09736fc376e9aee',
+      overrideAction: 'log',
+      enabled: true,
+    });
+  });
+
+  it('lowers a saas AccessApplication passing saasApp through verbatim', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: salesforce }
+spec:
+  type: saas
+  domain: anthropic.my.salesforce.com
+  saasApp:
+    auth_type: saml
+    sp_entity_id: salesforce-id
+  policies:
+    - name: allow
+      decision: allow
+      include: [{ everyone: {} }]
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    expect(props.appType).toBe('saas');
+    expect(props.saasApp).toEqual({ auth_type: 'saml', sp_entity_id: 'salesforce-id' });
+  });
+
+  it('rejects a saas AccessApplication missing saasApp', () => {
+    expect(() =>
+      lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: bad }
+spec:
+  type: saas
+  domain: example.com
+  policies:
+    - name: x
+      decision: allow
+      include: [{ everyone: {} }]
+`),
+    ).toThrow(/type=saas AccessApplications require spec.saasApp/);
+  });
+
+  it('lowers a biso AccessApplication (Browser Isolation) using the self_hosted shape', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AccessApplication
+metadata: { name: untrusted }
+spec:
+  type: biso
+  domain: untrusted.example.com
+  policies:
+    - name: contractors
+      decision: allow
+      include: [{ emailDomain: { domain: external.example.com } }]
+`);
+    const props = result.desired[0]!.properties as { appType: string };
+    expect(props.appType).toBe('biso');
+  });
+
   it('lowers CustomHostname to a DesiredResource passing ssl options through', async () => {
     const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
