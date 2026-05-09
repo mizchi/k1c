@@ -175,20 +175,37 @@ export const customHostnameProvider: CloudflareResourceProvider<CustomHostnamePr
     }
   },
 
-  async update(_ctx, nativeId, _prior, desired): Promise<UpdateResult> {
-    // Custom Hostnames have no atomic update endpoint that matches the manifest
-    // shape (the SDK's `edit` covers SSL only). Recreating is not safe because
-    // it would tear down DCV and the live cert. For v0.5 we surface this as a
-    // hard error so the user can drop + recreate intentionally.
-    void nativeId;
-    void desired;
-    throw {
-      code: 'NotUpdatable',
-      recoverable: false,
-      suggest: 'recreate' as const,
-      message:
-        'CustomHostname in-place update is not implemented; delete and re-apply to change hostname or SSL config',
-    };
+  async update(ctx, nativeId, prior, desired): Promise<UpdateResult> {
+    // Cloudflare's customHostnames.edit endpoint can mutate `custom_metadata`
+    // and `ssl` in place but cannot rename the hostname itself. Surface the
+    // hostname-change case as NotUpdatable so the user opts into the
+    // destructive recreate explicitly.
+    if (prior.hostname !== desired.hostname) {
+      throw {
+        code: 'NotUpdatable',
+        recoverable: false,
+        suggest: 'recreate' as const,
+        message: `CustomHostname hostname change (${prior.hostname} → ${desired.hostname}) requires recreate; delete and re-apply`,
+      };
+    }
+    try {
+      const body: Record<string, unknown> = {};
+      if (desired.ssl !== undefined) {
+        body['ssl'] = {
+          ...(desired.ssl.method !== undefined ? { method: desired.ssl.method } : {}),
+          ...(desired.ssl.type !== undefined ? { type: desired.ssl.type } : {}),
+        };
+      }
+      const ch = (await ctx.cloudflare.customHostnames.edit(nativeId, {
+        zone_id: desired.zoneId,
+        ...body,
+      } as never)) as CFCustomHostname;
+      // Re-issuing SSL config returns the hostname to a pending state until
+      // CF re-validates; surface as async so the apply loop polls for active.
+      return { kind: 'async', nativeId: ch.id ?? nativeId, opId: 'edit' };
+    } catch (raw) {
+      throw toProviderError(raw);
+    }
   },
 
   async delete(ctx, nativeId): Promise<DeleteResult> {

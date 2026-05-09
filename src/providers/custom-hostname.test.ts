@@ -5,6 +5,7 @@ import type { ProviderContext } from './types.ts';
 
 interface MockCalls {
   readonly create: ReturnType<typeof vi.fn>;
+  readonly edit: ReturnType<typeof vi.fn>;
   readonly list: ReturnType<typeof vi.fn>;
   readonly get: ReturnType<typeof vi.fn>;
   readonly delete: ReturnType<typeof vi.fn>;
@@ -24,6 +25,7 @@ function buildCtx(mock: MockCalls, zoneId = 'zone-abc'): ProviderContext {
 
 const buildMock = (): MockCalls => ({
   create: vi.fn(),
+  edit: vi.fn(),
   list: vi.fn(),
   get: vi.fn(),
   delete: vi.fn(),
@@ -116,7 +118,7 @@ describe('customHostnameProvider', () => {
     expect(result.kind).toBe('failure');
   });
 
-  it('update is rejected with NotUpdatable + suggest=recreate (no in-place update yet)', async () => {
+  it('update rejects hostname change with NotUpdatable + suggest=recreate', async () => {
     const mock = buildMock();
     await expect(
       customHostnameProvider.update(
@@ -126,6 +128,22 @@ describe('customHostnameProvider', () => {
         { zoneId: 'zone-abc', hostname: 'app2.example.com' },
       ),
     ).rejects.toMatchObject({ code: 'NotUpdatable', suggest: 'recreate' });
+  });
+
+  it('update edits SSL config in place and returns kind=async for re-poll', async () => {
+    const mock = buildMock();
+    mock.edit.mockResolvedValueOnce({ id: 'c-1', hostname: 'app.example.com', status: 'pending_validation' });
+    const result = await customHostnameProvider.update(
+      buildCtx(mock),
+      'c-1',
+      { zoneId: 'zone-abc', hostname: 'app.example.com', ssl: { method: 'http' } },
+      { zoneId: 'zone-abc', hostname: 'app.example.com', ssl: { method: 'cname' } },
+    );
+    expect(result).toMatchObject({ kind: 'async', nativeId: 'c-1' });
+    expect(mock.edit).toHaveBeenCalledWith('c-1', {
+      zone_id: 'zone-abc',
+      ssl: { method: 'cname' },
+    });
   });
 
   it('delete passes hostname id and zone id to the SDK', async () => {
