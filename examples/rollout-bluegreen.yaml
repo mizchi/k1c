@@ -24,4 +24,9 @@ spec:
           image: ./examples/hello-worker.mjs
   strategy:
     blueGreen:
+      # Required by the upstream argo-rollouts CRD. k1c's lower step
+      # ignores Rollout's Service plumbing — Workers are dispatched via
+      # Cloudflare's Versions API, not via k8s Services — but the field
+      # has to be set for `kubectl apply --dry-run=server` to validate.
+      activeService: api
       autoPromotionEnabled: true

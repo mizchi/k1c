@@ -83,8 +83,12 @@ manifest passes both. See commit "fix: every example passes kubectl apply
 - [x] `helm template ./examples/helm-chart | kubectl apply --dry-run=server -f -` passes
 - [x] `kustomize build ./examples/kustomize/base | kubectl apply --dry-run=server -f -` passes
 - [x] `kustomize build ./examples/kustomize/overlays/prod | kubectl apply --dry-run=server -f -` passes (after `kubectl create namespace prod`)
+- [x] CI gate (`.github/workflows/k8s-validate.yml`): every example +
+      operator install bundle + helm + kustomize is dry-run validated
+      against a kind cluster on every PR — catches the same
+      strict-validation regressions before they merge
 
-### Operator (Phase 1: polling)
+### Operator (Phase 1: polling, Phase 2: watch + status writeback)
 
 - [x] `kind load docker-image k1c-operator:dev` + Deployment with `imagePullPolicy: Never` starts up cleanly inside the kind cluster
 - [x] `(k1c operator starting; account=... cluster-wide interval=10000ms)` is the first log line
@@ -101,6 +105,17 @@ manifest passes both. See commit "fix: every example passes kubectl apply
 - [ ] Operator survives a kubectl-side delete and reverse-topo deletes the Cloudflare side
 - [x] OCI image (`ghcr.io/mizchi/k1c-operator:0.9.0`) pulls + runs on linux/amd64 (`docker run --platform linux/amd64 ... version` → `k1c 0.9.0`)
 - [x] OCI image pulls + runs on linux/arm64 (same, `--platform linux/arm64`)
+- [x] Phase 2: watch streams (`src/operator/watch.ts`). Default-on; the
+      reconcile loop subscribes to every Cloudflare CRD plural plus
+      every label-gated standard kind, debounces events by 500ms, and
+      uses the configured interval as a resync safety net. `--no-watch`
+      falls back to pure polling.
+- [x] Phase 3: status writeback (`src/operator/status.ts`). After each
+      reconcile pass the operator patches `.status.conditions` on every
+      touched Cloudflare CRD via the `/status` subresource (enabled in
+      `export-crds`), so `kubectl get r2bucket` shows Ready /
+      ReconcileFailed + the underlying error message. RBAC in
+      `examples/k1c-operator/install.yaml` extended with `*/status`.
 
 ### Distribution
 
@@ -281,5 +296,7 @@ dragged into `Deployment`.
   has a base + prod overlay demonstrating namespace propagation, multi-file
   resources, and JSON-Patch transforms; the rendered output is exercised
   in the integration test.
-- **Renovate / dependabot config** for the repo itself.
+- ~~**Renovate / dependabot config**~~ — shipped (`renovate.json`).
+  Patch + dev-minor auto-merge; core libs (`@kubernetes/client-node`,
+  `cloudflare`, `zod`) grouped; weekly schedule; lockfile maintenance.
 - ~~**npm package** distribution~~ — shipped (`@mizchi/k1c` on npm via release-please + OIDC).

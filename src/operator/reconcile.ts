@@ -5,7 +5,9 @@ import { createDefaultRegistry } from '../providers/index.ts';
 import { lower } from '../manifest/lower.ts';
 import { plan } from '../reconciler/plan.ts';
 import { apply } from '../reconciler/apply.ts';
-import { listManagedResources } from './source.ts';
+import { listManagedResources, MANAGED_LABEL } from './source.ts';
+import { writeStatus } from './status.ts';
+import { startWatches, type KindSpec } from './watch.ts';
 
 export interface OperatorOptions {
   readonly accountId: string;
@@ -13,12 +15,70 @@ export interface OperatorOptions {
   readonly zoneId?: string;
   /** Restrict watching to a single namespace; default: cluster-wide. */
   readonly namespace?: string;
-  /** How often to re-list and reconcile. Polling interval in ms. */
+  /**
+   * Resync interval in ms. With watches enabled this acts as a safety
+   * net to catch any events the operator might have missed during a
+   * reconnect; reconcile is primarily driven by watch events.
+   */
   readonly intervalMs: number;
+  /**
+   * Use k8s watch streams to drive reconciles. Default true (Phase 2).
+   * Pass false to fall back to pure polling at `intervalMs`.
+   */
+  readonly watch?: boolean;
+  /** Debounce events by this many ms before triggering reconcile. */
+  readonly debounceMs?: number;
   /** Hook for log lines (default: console.log). */
   readonly out?: (msg: string) => void;
   readonly err?: (msg: string) => void;
 }
+
+const CLOUDFLARE_GROUP = 'cloudflare.k1c.io';
+const CLOUDFLARE_VERSION = 'v1alpha1';
+
+/**
+ * Plurals for every Cloudflare CRD kind we want to react to. Mirrors
+ * `CLOUDFLARE_KINDS_BY_PLURAL` in source.ts but inverted; kept in sync
+ * because watch + list both walk the same set of kinds.
+ */
+const CLOUDFLARE_PLURALS: ReadonlyArray<string> = [
+  'r2buckets',
+  'kvnamespaces',
+  'd1databases',
+  'hyperdrives',
+  'queues',
+  'vectorizes',
+  'dnsrecords',
+  'dispatchnamespaces',
+  'logpushjobs',
+  'telemetrystacks',
+  'accessapplications',
+  'accesspolicies',
+  'cacherules',
+  'transformrules',
+  'urirewriterules',
+  'responseheaderrules',
+  'wafcustomrules',
+  'wafmanagedrulesets',
+  'ratelimitrules',
+  'customhostnames',
+  'emailroutingrules',
+];
+
+/**
+ * Standard kinds we observe with the `k1c.io/managed=true` label
+ * gate. Same set source.ts queries.
+ */
+const STANDARD_KINDS: ReadonlyArray<KindSpec> = [
+  { group: 'apps', version: 'v1', plural: 'deployments' },
+  { group: 'apps', version: 'v1', plural: 'statefulsets' },
+  { group: '', version: 'v1', plural: 'configmaps' },
+  { group: '', version: 'v1', plural: 'secrets' },
+  { group: '', version: 'v1', plural: 'services' },
+  { group: 'batch', version: 'v1', plural: 'cronjobs' },
+  { group: 'batch', version: 'v1', plural: 'jobs' },
+  { group: 'networking.k8s.io', version: 'v1', plural: 'ingresses' },
+];
 
 /**
  * Run the operator reconcile loop. Lists every k1c-managed resource (CRDs +
@@ -44,8 +104,11 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
   };
   const registry = createDefaultRegistry();
 
+  const useWatch = options.watch ?? true;
+  const debounceMs = options.debounceMs ?? 500;
+
   out(
-    `(k1c operator starting; account=${options.accountId}${options.namespace ? ` ns=${options.namespace}` : ' cluster-wide'} interval=${options.intervalMs}ms)`,
+    `(k1c operator starting; account=${options.accountId}${options.namespace ? ` ns=${options.namespace}` : ' cluster-wide'} ${useWatch ? `watch+resync=${options.intervalMs}ms` : `interval=${options.intervalMs}ms`})`,
   );
 
   // Run a first pass immediately so the operator does useful work without
@@ -81,6 +144,15 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
             }
           }
         }
+        // Patch .status.conditions on every Cloudflare CRD instance
+        // touched this pass so `kubectl get r2bucket` reflects the
+        // actual reconcile state. Best-effort: status writeback errors
+        // never fail the reconcile loop.
+        await writeStatus({
+          kc,
+          report,
+          onWarning: (m) => err(`warning: ${m}`),
+        });
       } catch (e) {
         err(`reconcile error: ${formatReconcileError(e)}`);
       } finally {
@@ -89,12 +161,46 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
     })();
   };
 
+  // Coalesce a burst of watch events into a single tick. Without this
+  // every ADDED phase fired during the apiserver's initial replay would
+  // trigger its own reconcile pass; with this they collapse to one.
+  let debounceTimer: NodeJS.Timeout | undefined;
+  const triggerSoon = () => {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      debounceTimer = undefined;
+      void tick();
+    }, debounceMs);
+  };
+
+  if (useWatch) {
+    const labelSel = `${MANAGED_LABEL}=true`;
+    const watchSpecs: KindSpec[] = [
+      ...CLOUDFLARE_PLURALS.map((plural) => ({
+        group: CLOUDFLARE_GROUP,
+        version: CLOUDFLARE_VERSION,
+        plural,
+      })),
+      ...STANDARD_KINDS.map((s) => ({ ...s, labelSelector: labelSel })),
+    ];
+    startWatches(kc, watchSpecs, {
+      ...(options.namespace !== undefined ? { namespace: options.namespace } : {}),
+      signal,
+      onEvent: (_kind, _phase) => triggerSoon(),
+      onWarning: (m) => err(`warning: ${m}`),
+    });
+  }
+
   await tick();
   while (!signal.aborted) {
+    // Resync interval doubles as the safety-net poll: even with watches
+    // open, if the apiserver drops events during a reconnect we'll
+    // catch up on the next tick.
     await sleep(options.intervalMs, signal);
     if (signal.aborted) break;
     await tick();
   }
+  if (debounceTimer) clearTimeout(debounceTimer);
   out('(operator stopped)');
 }
 

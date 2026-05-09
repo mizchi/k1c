@@ -73,6 +73,11 @@ function buildCrd(kind: string): unknown {
               'x-kubernetes-preserve-unknown-fields': true,
             },
           },
+          // Enable the /status subresource so the operator can patch
+          // .status.conditions independently of .spec — without this,
+          // every status patch would also bump the resource's
+          // generation and feed back into the reconcile loop.
+          subresources: { status: {} },
         },
       ],
     },
