@@ -122,7 +122,7 @@ K1C_E2E=1 K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm test:e2e
 ## CLI
 
 ```sh
-k1c apply    -f <file|dir|-> [--dry-run | --watch] [--quiet | -q]
+k1c apply    -f <file|dir|-> [--dry-run | --watch | --validate-only] [--quiet | -q]
 k1c diff     -f <manifest.yaml> [-o text|json]
 k1c delete   -f <manifest.yaml> [--cascade]
 k1c get      <kind> [name] [-n <namespace>] [-o text|json]
@@ -131,6 +131,10 @@ k1c rollout  {status|promote|abort} <ns>/<name> --dispatch <name>
 k1c logs     <kind> <name> [-n <namespace>] [--format pretty|json] [--status <s>] [--limit N]
 k1c port-forward <kind> <name> [-n <namespace>] [--port 8787]
 k1c telemetry workers <kind> <name> [-n <ns>] [--since 1h] [-o text|json]
+k1c explain  <kind | list> [--recursive | -r]
+k1c config   list | current-context | use-context <name>
+             | set-context <name> --account <id> [--zone <id>] [--token-env <env>]
+             | delete-context <name>
 k1c version
 ```
 
@@ -143,9 +147,18 @@ Authentication is via two environment variables:
 
 | Variable | Purpose |
 |---|---|
-| `K1C_ACCOUNT_ID` | Cloudflare account id |
-| `K1C_ZONE_ID` | (optional) default zone id; resources can also pin a `zoneId` field, but having this set lets `<resolved-at-apply:Context:zoneId>` placeholders resolve and lets `k1c get/describe` enumerate zone-scoped resources |
-| `CLOUDFLARE_API_TOKEN` | API token with Workers Edit + R2 + KV + Analytics Read permissions |
+| `K1C_ACCOUNT_ID` | Cloudflare account id (legacy fallback when no context is selected) |
+| `K1C_ZONE_ID` | optional default zone id; lets `<resolved-at-apply:Context:zoneId>` placeholders resolve and `get/describe` enumerate zone-scoped resources |
+| `CLOUDFLARE_API_TOKEN` | API token with Workers Edit + R2 + KV + Analytics Read (legacy fallback) |
+| `K1C_CONTEXT` | name of a context defined in `~/.k1c/config.yaml` to use; `--context <name>` flag overrides this |
+| `K1C_CONFIG` | path to the context file (default: `~/.k1c/config.yaml`) |
+
+For multi-account / multi-zone setups, use `k1c config set-context` to record
+each environment's account / zone / API token env-var name in
+`~/.k1c/config.yaml`, then switch with `k1c config use-context <name>` or per
+invocation with `--context <name>`. Tokens themselves stay in env vars
+(`apiTokenEnv` only stores the var *name*) so the file is safe to share
+across machines.
 
 ## Architecture in one screen
 
