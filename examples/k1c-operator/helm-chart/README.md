@@ -36,6 +36,7 @@ helm install k1c examples/k1c-operator/helm-chart \
 | `operator.restrictNamespace`     | `""`                               | restrict reconciliation to a single namespace |
 | `operator.logFormat`             | `text`                             | `text` for human consumption, `json` for log aggregators |
 | `metricsService.enabled`         | `true`                             | emit a Service for Prometheus scrape |
+| `serviceMonitor.enabled`         | `false`                            | emit a `monitoring.coreos.com/v1 ServiceMonitor` for kube-prometheus / prometheus-operator. Pair with the `additionalLabels` your Prometheus instance selects on. |
 
 ## Why the chart doesn't ship CRDs
 

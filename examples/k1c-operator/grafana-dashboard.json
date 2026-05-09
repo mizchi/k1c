@@ -1,0 +1,143 @@
+{
+  "title": "k1c operator",
+  "uid": "k1c-operator",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "tags": ["k1c", "cloudflare"],
+  "templating": {
+    "list": [
+      {
+        "name": "ds",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "Prometheus" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Up",
+      "datasource": { "uid": "$ds", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(k1c_operator_up)",
+          "legendFormat": "operators",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Leader",
+      "datasource": { "uid": "$ds", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum(k1c_operator_is_leader)",
+          "legendFormat": "leaders",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 },
+              { "color": "orange", "value": 2 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Managed resources",
+      "datasource": { "uid": "$ds", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "max(k1c_operator_managed_resources)",
+          "legendFormat": "resources",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Reconcile pass outcome (1m rate)",
+      "datasource": { "uid": "$ds", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(k1c_operator_reconcile_passes_total[1m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Per-op result (1m rate)",
+      "datasource": { "uid": "$ds", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (result) (rate(k1c_operator_reconcile_total[1m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Watch events (1m rate, by kind)",
+      "datasource": { "uid": "$ds", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (kind) (rate(k1c_operator_watch_events_total[1m]))",
+          "legendFormat": "{{kind}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 8 }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Reconcile duration (avg over 1m)",
+      "datasource": { "uid": "$ds", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "rate(k1c_operator_reconcile_duration_seconds_sum[1m]) / rate(k1c_operator_reconcile_duration_seconds_count[1m])",
+          "legendFormat": "avg seconds",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 8 },
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      }
+    }
+  ]
+}
