@@ -48,6 +48,7 @@ import type {
 } from '../providers/access-application.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
 import { generateRouter, type RouterRoute } from '../ingress/router-template.ts';
+import { placeholder } from '../reconciler/placeholders.ts';
 
 export class LowerError extends Error {
   constructor(message: string) {
@@ -1054,7 +1055,11 @@ async function lowerCanaryRollout(
       DEFAULT_COMPATIBILITY_DATE,
     bindings: [
       { type: 'dispatch_namespace', name: 'NAMESPACE', dispatchNamespace: dispatchNsCFName },
-      { type: 'kv_namespace', name: 'STATE', namespaceId: `<resolved-at-apply:${stateKvK8sName}>` },
+      {
+        type: 'kv_namespace',
+        name: 'STATE',
+        namespaceId: placeholder('KVNamespace', `${ns}/${stateKvK8sName}`),
+      },
     ],
   };
   const dispatcherProperties: WorkerProperties = {
@@ -1289,7 +1294,7 @@ async function buildContainerProperties(
       bindings.push({
         type: 'kv_namespace',
         name: mount.mountPath,
-        namespaceId: `<resolved-at-apply:${kv.metadata.name}>`,
+        namespaceId: placeholder('KVNamespace', `${ns}/${kv.metadata.name}`),
       });
       pushUnique(dependsOn, refOf(kv));
     } else if (vol.serviceRef) {
@@ -1320,7 +1325,7 @@ async function buildContainerProperties(
       bindings.push({
         type: 'hyperdrive',
         name: mount.mountPath,
-        hyperdriveId: `<resolved-at-apply:hyperdrive:${h.metadata.name}>`,
+        hyperdriveId: placeholder('Hyperdrive', `${ns}/${h.metadata.name}`),
       });
       pushUnique(dependsOn, refOf(h));
     } else if (vol.d1DatabaseRef) {
@@ -1333,7 +1338,7 @@ async function buildContainerProperties(
       bindings.push({
         type: 'd1',
         name: mount.mountPath,
-        databaseId: `<resolved-at-apply:d1:${d.metadata.name}>`,
+        databaseId: placeholder('D1Database', `${ns}/${d.metadata.name}`),
       });
       pushUnique(dependsOn, refOf(d));
     } else if (vol.queueRef) {

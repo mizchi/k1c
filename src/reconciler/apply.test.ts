@@ -158,6 +158,78 @@ describe('apply', () => {
     expect(deleteIdx).toBeGreaterThan(createIdx);
   });
 
+  it('substitutes placeholders with native ids of resources created earlier in the run', async () => {
+    // Two providers: Foo (the dependency) and Bar (the consumer that holds a
+    // <resolved-at-apply:Foo:default/a> placeholder in its property).
+    const fooProvider = new FakeProvider('Foo', fooSchema);
+    const barProvider = new FakeProvider('Bar', fooSchema);
+    const registry = new ProviderRegistry();
+    registry.register(fooProvider);
+    registry.register(barProvider);
+    const ctx = makeFakeContext();
+
+    const fooRef: ResourceRef = {
+      apiVersion: 'cloudflare.k1c.io/v1alpha1',
+      kind: 'R2Bucket',
+      namespace: 'default',
+      name: 'a',
+    };
+    const barRef: ResourceRef = {
+      apiVersion: 'cloudflare.k1c.io/v1alpha1',
+      kind: 'R2Bucket',
+      namespace: 'default',
+      name: 'b',
+    };
+
+    const customPlan: Plan = {
+      operations: [
+        {
+          kind: 'create',
+          resourceType: 'Foo',
+          ref: fooRef,
+          label: 'default/a',
+          properties: { value: 'foo' },
+        },
+        {
+          kind: 'create',
+          resourceType: 'Bar',
+          ref: barRef,
+          label: 'default/b',
+          properties: { value: '<resolved-at-apply:Foo:default/a>' },
+        },
+      ],
+    };
+    const report = await apply(customPlan, registry, ctx);
+    expect(report.succeeded).toBe(2);
+    // Bar should have the resolved Foo native id, not the placeholder.
+    const barEntry = [...barProvider.state.values()][0]!;
+    const fooNativeId = [...fooProvider.state.keys()][0]!;
+    expect((barEntry.properties as FooProps).value).toBe(fooNativeId);
+  });
+
+  it('fails the operation when a placeholder cannot be resolved', async () => {
+    const { registry, ctx } = setup();
+    const customPlan: Plan = {
+      operations: [
+        {
+          kind: 'create',
+          resourceType: 'Foo',
+          ref: {
+            apiVersion: 'cloudflare.k1c.io/v1alpha1',
+            kind: 'R2Bucket',
+            namespace: 'default',
+            name: 'b',
+          },
+          label: 'default/b',
+          properties: { value: '<resolved-at-apply:Foo:default/missing>' },
+        },
+      ],
+    };
+    const report = await apply(customPlan, registry, ctx);
+    expect(report.failed).toBe(1);
+    expect(report.results[0]!.status).toBe('failed');
+  });
+
   it('passes plan operations through unchanged when given directly', async () => {
     const { provider, registry, ctx } = setup();
     const op: Operation = {

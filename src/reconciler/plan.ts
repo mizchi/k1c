@@ -5,6 +5,7 @@ import type { DesiredResource, Operation, Plan } from './types.ts';
 import { namespaceFromLabel } from './types.ts';
 import { refKey } from '../manifest/types.ts';
 import { topoSort } from './topo.ts';
+import { cacheKey, resolveValue, type ResolutionCache } from './resolve.ts';
 
 export async function plan(
   desired: ReadonlyArray<DesiredResource>,
@@ -22,18 +23,37 @@ export async function plan(
 
   const operations: Operation[] = [];
 
+  // Pre-pass: list every registered provider once and seed the resolution
+  // cache with `resourceType:label → nativeId`. The same cache is used to
+  // substitute `<resolved-at-apply:...>` placeholders in desired properties
+  // before they are compared to prior state, so an unchanged manifest does
+  // not look "drifted" just because lower emits placeholders that the
+  // provider already serialized as concrete IDs.
+  const actualsByType = new Map<string, Map<string, { nativeId: string; label: string }>>();
+  const resolutionCache: ResolutionCache = new Map();
+  for (const resourceType of registry.types()) {
+    const provider = registry.get(resourceType);
+    const actualByLabel = new Map<string, { nativeId: string; label: string }>();
+    for await (const item of provider.list(ctx)) {
+      actualByLabel.set(item.label, item);
+      resolutionCache.set(cacheKey(resourceType, item.label), item.nativeId);
+    }
+    actualsByType.set(resourceType, actualByLabel);
+  }
+
   for (const resourceType of registry.types()) {
     const provider = registry.get(resourceType);
     const desiredOfType = desiredByType.get(resourceType) ?? [];
     const desiredByLabel = new Map<string, DesiredResource>();
     for (const d of desiredOfType) desiredByLabel.set(d.label, d);
-
-    const actualByLabel = new Map<string, { nativeId: string; label: string }>();
-    for await (const item of provider.list(ctx)) {
-      actualByLabel.set(item.label, item);
-    }
+    const actualByLabel = actualsByType.get(resourceType)!;
 
     for (const d of desiredOfType) {
+      // Resolve placeholders against the actuals listed above. New resources
+      // (no actual yet) leave their placeholders intact; apply.ts will resolve
+      // them after their dependencies are created in the same run.
+      const resolvedProps = await resolveValueQuietly(d.properties, registry, ctx, resolutionCache);
+
       const actual = actualByLabel.get(d.label);
       if (!actual) {
         operations.push({
@@ -41,7 +61,7 @@ export async function plan(
           resourceType,
           ref: d.ref,
           label: d.label,
-          properties: d.properties,
+          properties: resolvedProps,
         });
         continue;
       }
@@ -52,11 +72,11 @@ export async function plan(
           resourceType,
           ref: d.ref,
           label: d.label,
-          properties: d.properties,
+          properties: resolvedProps,
         });
         continue;
       }
-      if (propertiesEqual(prior, d.properties)) {
+      if (propertiesEqual(prior, resolvedProps)) {
         operations.push({
           kind: 'noop',
           resourceType,
@@ -71,7 +91,7 @@ export async function plan(
           label: d.label,
           nativeId: actual.nativeId,
           prior,
-          properties: d.properties,
+          properties: resolvedProps,
         });
       }
     }
@@ -89,6 +109,32 @@ export async function plan(
   }
 
   return { operations: orderByDependencies(operations, desired) };
+}
+
+/**
+ * Best-effort resolution: unlike `resolveValue` in apply, we tolerate misses at
+ * plan time because the missing resource may simply not exist yet (it will be
+ * created earlier in the same plan run). Apply re-resolves once the dependency
+ * has been created, and at that point a miss is a real error.
+ */
+async function resolveValueQuietly(
+  value: unknown,
+  registry: ProviderRegistry,
+  ctx: ProviderContext,
+  cache: ResolutionCache,
+): Promise<unknown> {
+  try {
+    return await resolveValue(value, registry, ctx, cache);
+  } catch (err) {
+    if (
+      err !== null &&
+      typeof err === 'object' &&
+      (err as { code?: string }).code === 'NotFound'
+    ) {
+      return value;
+    }
+    throw err;
+  }
 }
 
 function orderByDependencies(
