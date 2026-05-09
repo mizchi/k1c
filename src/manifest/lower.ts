@@ -295,6 +295,44 @@ export async function lower(
     }
   }
 
+  // Annotation-driven LogpushJob auto-emission. Any workload that emits a
+  // primary Worker can carry `cloudflare.com/logpush: <destinationConf>`,
+  // and k1c emits a per-workload LogpushJob filtered to that script's
+  // trace events. The filter format is the Logpush JSON-encoded predicate
+  // syntax — `ScriptName eq <script>` is the only condition.
+  for (const j of collectLogpushAutoEmits([
+    ...deployments.map((d) => ({
+      ref: refOf(d),
+      meta: d.metadata,
+      scriptName: `k1c--${d.metadata.namespace ?? 'default'}--${d.metadata.name}`,
+    })),
+    ...rollouts.map((r) => ({
+      ref: refOf(r),
+      meta: r.metadata,
+      // Canary rollouts deploy a dispatcher Worker at the unsuffixed name;
+      // either way the user-facing script (and the one trace events come
+      // from on the wire) is `k1c--<ns>--<name>`.
+      scriptName: `k1c--${r.metadata.namespace ?? 'default'}--${r.metadata.name}`,
+    })),
+    ...cronJobs.map((c) => ({
+      ref: refOf(c),
+      meta: c.metadata,
+      scriptName: `k1c--${c.metadata.namespace ?? 'default'}--${c.metadata.name}`,
+    })),
+    ...statefulSets.map((s) => ({
+      ref: refOf(s),
+      meta: s.metadata,
+      scriptName: `k1c--${s.metadata.namespace ?? 'default'}--${s.metadata.name}`,
+    })),
+    ...jobs.map((j) => ({
+      ref: refOf(j),
+      meta: j.metadata,
+      scriptName: `k1c--${j.metadata.namespace ?? 'default'}--${j.metadata.name}`,
+    })),
+  ])) {
+    desired.push(j);
+  }
+
   for (const s of services) {
     for (const out of lowerService(s, deployments, rollouts, warnings)) {
       desired.push(out);
@@ -637,6 +675,47 @@ function lowerVectorize(v: Vectorize): DesiredResource<VectorizeProperties> {
       ...(v.spec.description !== undefined ? { description: v.spec.description } : {}),
     },
   };
+}
+
+interface LogpushAutoCandidate {
+  readonly ref: ResourceRef;
+  readonly meta: ObjectMeta;
+  readonly scriptName: string;
+}
+
+function collectLogpushAutoEmits(
+  candidates: ReadonlyArray<LogpushAutoCandidate>,
+): ReadonlyArray<DesiredResource<LogpushJobProperties>> {
+  const out: DesiredResource<LogpushJobProperties>[] = [];
+  for (const c of candidates) {
+    const dest = c.meta.annotations?.['cloudflare.com/logpush'];
+    if (typeof dest !== 'string' || dest.length === 0) continue;
+    const dataset =
+      c.meta.annotations?.['cloudflare.com/logpush-dataset'] ?? 'workers_trace_events';
+    const ns = c.meta.namespace ?? 'default';
+    const name = c.meta.name;
+    const filter = JSON.stringify({
+      where: { key: 'ScriptName', operator: 'eq', value: c.scriptName },
+    });
+    const enabled = c.meta.annotations?.['cloudflare.com/logpush-enabled'] !== 'false';
+    out.push({
+      resourceType: 'LogpushJob',
+      ref: { ...c.ref, name: `${name}--logpush` },
+      label: `${ns}/${name}--logpush`,
+      properties: {
+        jobName: `k1c-${ns}-${name}--logpush`,
+        // Worker trace events are account-scoped. The resolver substitutes
+        // the placeholder with the apply context's account id.
+        scope: { accountId: makePlaceholder('Context', 'accountId') },
+        dataset,
+        destinationConf: dest,
+        enabled,
+        filter,
+      },
+      dependsOn: [c.ref],
+    });
+  }
+  return out;
 }
 
 function lowerLogpushJob(l: LogpushJob): DesiredResource<LogpushJobProperties> {

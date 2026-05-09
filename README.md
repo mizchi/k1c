@@ -129,6 +129,7 @@ k1c describe <kind> <name> [-n <namespace>] [-o text|json]
 k1c rollout  {status|promote|abort} <ns>/<name> --dispatch <name>
 k1c logs     <kind> <name> [-n <namespace>] [--format pretty|json] [--status <s>] [--limit N]
 k1c port-forward <kind> <name> [-n <namespace>] [--port 8787]
+k1c telemetry workers <kind> <name> [-n <ns>] [--since 1h] [-o text|json]
 k1c version
 ```
 
@@ -142,7 +143,8 @@ Authentication is via two environment variables:
 | Variable | Purpose |
 |---|---|
 | `K1C_ACCOUNT_ID` | Cloudflare account id |
-| `CLOUDFLARE_API_TOKEN` | API token with Workers Edit + R2 + KV permissions |
+| `K1C_ZONE_ID` | (optional) default zone id; resources can also pin a `zoneId` field, but having this set lets `<resolved-at-apply:Context:zoneId>` placeholders resolve and lets `k1c get/describe` enumerate zone-scoped resources |
+| `CLOUDFLARE_API_TOKEN` | API token with Workers Edit + R2 + KV + Analytics Read permissions |
 
 ## Architecture in one screen
 

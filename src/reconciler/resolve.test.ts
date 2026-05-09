@@ -62,6 +62,34 @@ describe('resolveValue', () => {
     ).rejects.toMatchObject({ code: 'NotFound' });
   });
 
+  it('Context:accountId resolves to ctx.accountId without listing', async () => {
+    const { registry, ctx } = setup();
+    const cache: ResolutionCache = new Map();
+    const out = await resolveValue(placeholder('Context', 'accountId'), registry, ctx, cache);
+    expect(out).toBe(ctx.accountId);
+  });
+
+  it('Context:zoneId resolves to ctx.zoneId when set', async () => {
+    const { registry } = setup();
+    const ctxWithZone = { ...makeFakeContext(), zoneId: 'zone-xyz' };
+    const cache: ResolutionCache = new Map();
+    const out = await resolveValue(
+      placeholder('Context', 'zoneId'),
+      registry,
+      ctxWithZone,
+      cache,
+    );
+    expect(out).toBe('zone-xyz');
+  });
+
+  it('Context:zoneId throws when ctx has no zone', async () => {
+    const { registry, ctx } = setup();
+    const cache: ResolutionCache = new Map();
+    await expect(
+      resolveValue(placeholder('Context', 'zoneId'), registry, ctx, cache),
+    ).rejects.toMatchObject({ code: 'InvalidRequest' });
+  });
+
   it('passes non-placeholder primitives through unchanged', async () => {
     const { registry, ctx } = setup();
     const cache: ResolutionCache = new Map();

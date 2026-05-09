@@ -36,6 +36,25 @@ export async function resolveValue(
 ): Promise<unknown> {
   const ph = parsePlaceholder(value);
   if (ph !== null) {
+    // Special pseudo-resource "Context" reads directly from ProviderContext —
+    // used for things like the current account id or zone id, which the lower
+    // step does not (and should not) need to know at parse time.
+    if (ph.resourceType === 'Context') {
+      if (ph.label === 'accountId') return ctx.accountId;
+      if (ph.label === 'zoneId') {
+        if (ctx.zoneId !== undefined) return ctx.zoneId;
+        throw {
+          code: 'InvalidRequest',
+          recoverable: false,
+          message: `unable to resolve ${value}: ProviderContext has no zoneId set (export K1C_ZONE_ID or set it on the resource)`,
+        };
+      }
+      throw {
+        code: 'InvalidRequest',
+        recoverable: false,
+        message: `unable to resolve ${value}: unknown Context label "${ph.label}" (expected accountId or zoneId)`,
+      };
+    }
     const key = cacheKey(ph.resourceType, ph.label);
     let resolved = cache.get(key);
     if (resolved === undefined) {

@@ -6,6 +6,7 @@ import Cloudflare from 'cloudflare';
 import { parseArgs, USAGE, type ApplyArgs, type RolloutArgs } from './args.ts';
 import { runApply, runDelete, runDescribe, runDiff, runGet, type RunDeps } from './run.ts';
 import { runLogs, runPortForward } from './wrangler.ts';
+import { runTelemetry } from './telemetry.ts';
 import { readManifestSource } from './manifest-source.ts';
 import { createDefaultRegistry } from '../providers/index.ts';
 import type { ProviderContext } from '../providers/types.ts';
@@ -43,9 +44,11 @@ async function main(): Promise<number> {
   }
 
   const cloudflare = new Cloudflare({ apiToken });
+  const zoneId = process.env['K1C_ZONE_ID'];
   const ctx: ProviderContext = {
     cloudflare,
     accountId,
+    ...(zoneId !== undefined && zoneId.length > 0 ? { zoneId } : {}),
     namespace: 'default',
     managedByLabel: 'k1c.io/managed-by=k1c',
     signal: new AbortController().signal,
@@ -74,6 +77,7 @@ async function main(): Promise<number> {
   if (parsed.kind === 'rollout') return runRollout(parsed, cloudflare, accountId);
   if (parsed.kind === 'logs') return runLogs(parsed);
   if (parsed.kind === 'port-forward') return runPortForward(parsed);
+  if (parsed.kind === 'telemetry') return runTelemetry(parsed, { accountId, apiToken });
   return 2;
 }
 

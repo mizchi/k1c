@@ -1,0 +1,33 @@
+# Per-Worker Logpush via annotation. The Deployment carries
+# `cloudflare.com/logpush: <destinationConf>`, and k1c auto-emits a
+# LogpushJob filtered to that Worker's trace events. The destination is
+# any Cloudflare-supported sink — R2, S3, GCS, Splunk, Datadog, etc.
+#
+# Apply with: K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... \
+#             pnpm k1c apply -f examples/telemetry-logpush.yaml --dry-run
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2Bucket
+metadata: { name: logs }
+spec: { location: weur }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  annotations:
+    cloudflare.com/observability: enabled        # turn on workers trace events
+    # Auto-emit a LogpushJob that ships this Worker's trace events to R2.
+    cloudflare.com/logpush: 'r2://logs/api/{DATE}.json'
+    # Optional overrides:
+    # cloudflare.com/logpush-dataset: 'workers_trace_events'
+    # cloudflare.com/logpush-enabled: 'false'   # ship the manifest with logging paused
+spec:
+  selector:
+    matchLabels:
+      app: api
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./examples/hello-worker.mjs

@@ -61,6 +61,28 @@ so they stay in sync with the schemas.
 | [`access-policy.yaml`](access-policy.yaml) | reusable AccessPolicy referenced from an AccessApplication |
 | [`access-bookmark.yaml`](access-bookmark.yaml) | App Launcher bookmark tile |
 
+## Telemetry
+
+| File | What it shows |
+|---|---|
+| [`telemetry-logpush.yaml`](telemetry-logpush.yaml) | per-Worker Logpush via `cloudflare.com/logpush` annotation (auto-emits a LogpushJob filtered to the Worker's trace events) |
+
+Beyond the manifest side, `k1c telemetry workers <kind> <name>` queries the
+GraphQL Analytics API for invocation count / error rate / CPU + wall time
+p99 over the last `--since` window:
+
+```sh
+$ k1c telemetry workers Deployment api -n prod --since 1h
+script:        k1c--prod--api
+window:        last 1h (3600s)
+requests:      1,234,567
+subrequests:   1,420
+errors:        1,205 (0.10%)
+req/s:         342.935
+cpu p99 (ms):  23.50
+wall p99 (ms): 41.20
+```
+
 ## Full-stack
 
 | File | What it shows |

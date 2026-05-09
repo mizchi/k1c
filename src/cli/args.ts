@@ -70,6 +70,18 @@ export interface PortForwardArgs {
   readonly localPort: number;
 }
 
+export interface TelemetryArgs {
+  readonly kind: 'telemetry';
+  /** Currently only `workers` is supported. */
+  readonly subject: 'workers';
+  readonly resourceKind: string;
+  readonly name: string;
+  readonly namespace?: string;
+  /** Lookback window: `5m`, `1h`, `24h`, `7d`. */
+  readonly since: string;
+  readonly output: OutputFormat;
+}
+
 export interface HelpArgs {
   readonly kind: 'help';
 }
@@ -88,6 +100,7 @@ export type ParsedArgs =
   | DeleteArgs
   | LogsArgs
   | PortForwardArgs
+  | TelemetryArgs
   | VersionArgs
   | HelpArgs
   | ErrorArgs;
@@ -107,7 +120,69 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   if (first === 'delete') return parseDelete(argv.slice(1));
   if (first === 'logs') return parseLogs(argv.slice(1));
   if (first === 'port-forward') return parsePortForward(argv.slice(1));
+  if (first === 'telemetry') return parseTelemetry(argv.slice(1));
   return { kind: 'error', message: `unknown command: ${first}` };
+}
+
+function parseTelemetry(rest: ReadonlyArray<string>): ParsedArgs {
+  const subject = rest[0];
+  if (subject !== 'workers') {
+    return {
+      kind: 'error',
+      message: `telemetry requires a subject: workers (got "${subject ?? '(missing)'}")`,
+    };
+  }
+  const resourceKind = rest[1];
+  const name = rest[2];
+  if (resourceKind === undefined || resourceKind.startsWith('-')) {
+    return { kind: 'error', message: 'telemetry workers requires a resource kind' };
+  }
+  if (name === undefined || name.startsWith('-')) {
+    return { kind: 'error', message: 'telemetry workers requires a resource name' };
+  }
+  let namespace: string | undefined;
+  let since = '1h';
+  let output: OutputFormat = 'text';
+  for (let i = 3; i < rest.length; i += 1) {
+    const arg = rest[i]!;
+    if (arg === '-n' || arg === '--namespace') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      namespace = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '--since') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: '--since requires a value' };
+      if (!/^\d+[smhd]$/.test(value)) {
+        return {
+          kind: 'error',
+          message: `--since must look like 5m / 1h / 24h / 7d (got "${value}")`,
+        };
+      }
+      since = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '-o' || arg === '--output') {
+      const parsed = parseOutput(rest[i + 1]);
+      if (typeof parsed === 'object') return { kind: 'error', message: parsed.error };
+      output = parsed;
+      i += 1;
+      continue;
+    }
+    return { kind: 'error', message: `unknown flag for telemetry: ${arg}` };
+  }
+  return {
+    kind: 'telemetry',
+    subject: 'workers',
+    resourceKind,
+    name,
+    since,
+    output,
+    ...(namespace !== undefined ? { namespace } : {}),
+  };
 }
 
 function parseLogs(rest: ReadonlyArray<string>): ParsedArgs {
@@ -423,6 +498,7 @@ usage:
   k1c rollout  {status|promote|abort} <ns>/<name> --dispatch <name>
   k1c logs     <kind> <name> [-n <namespace>] [--format pretty|json] [--status <s>] [--limit N]
   k1c port-forward <kind> <name> [-n <namespace>] [--port 8787]
+  k1c telemetry workers <kind> <name> [-n <ns>] [--since 1h] [-o text|json]
   k1c version
 
 environment:
