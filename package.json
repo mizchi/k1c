@@ -1,20 +1,50 @@
 {
-  "name": "k1c",
-  "version": "0.0.0",
-  "description": "Apply a subset of Kubernetes manifests to Cloudflare",
+  "name": "@mizchi/k1c",
+  "version": "0.1.0",
+  "description": "Experimental kubectl-style apply tool for Cloudflare",
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "iac",
+    "kubectl",
+    "kubernetes",
+    "manifest"
+  ],
+  "homepage": "https://github.com/mizchi/k1c",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mizchi/k1c.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mizchi/k1c/issues"
+  },
+  "license": "MIT",
+  "author": "mizchi",
   "type": "module",
-  "private": true,
   "engines": {
     "node": ">=24"
   },
   "packageManager": "pnpm@10.0.0",
+  "bin": {
+    "k1c": "./dist/cli/main.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "secretlint": "secretlint --secretlintignore .secretlintignore '**/*'",
-    "k1c": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/cli/main.ts"
+    "k1c": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/cli/main.ts",
+    "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"
   },
   "dependencies": {
     "cloudflare": "^4.0.0",

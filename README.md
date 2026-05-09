@@ -37,16 +37,22 @@ $ K1C_ACCOUNT_ID=...  CLOUDFLARE_API_TOKEN=... pnpm k1c apply -f manifest.yaml
 
 | Manifest kind | Backed by | State |
 |---|---|---|
-| `Deployment` | Worker (Versions + Deployments API, 100% cutover) | working |
+| `Deployment` (single- or multi-container Pods) | Worker(s) wired by service bindings | working |
 | `ConfigMap` / `Secret` | folded into Worker `vars` / `secrets` | working |
-| `R2Bucket` (CRD) | R2 bucket | working |
-| `KVNamespace` (CRD) | KV namespace | working |
+| `Service` (`ClusterIP` / `LoadBalancer`) | service binding / Custom Domain | working |
+| `R2Bucket`, `KVNamespace`, `D1Database`, `Vectorize`, `Hyperdrive` (CRDs) | matching CF data services | working |
+| `Queue` (CRD) + producer / consumer wiring | Cloudflare Queues + consumer | working |
 | `DispatchNamespace` (CRD) | Workers for Platforms namespace | working |
-| `Rollout` (Argo Rollouts subset, blueGreen / canary.steps) | Worker Versions, or Workers for Platforms dispatcher with KV-stored canary state | working |
-| `Service` / `Ingress` / `CustomHostname` | Worker Routes / Custom Domain | not implemented |
-| `Job` / `StatefulSet` / `D1` / `Hyperdrive` / `Vectorize` / `Queue` | — | not implemented |
+| `Rollout` (Argo Rollouts subset, `blueGreen` / `canary.steps`) | Worker Versions, or WfP dispatcher with KV-stored canary state | working |
+| `StatefulSet` → `DurableObject` class | Workers Durable Objects + migrations | working (greenfield only) |
+| `CronJob` / `Job` | Worker + Cron Trigger / Workflow registration | working |
+| `DNSRecord` (CRD) | DNS records | working |
+| `LogpushJob` (CRD) | Logpush (zone- or account-scoped) | working |
+| `ai` / `browser` / `version_metadata` / `analytics_engine` Worker bindings | annotation- / volume-driven | working |
+| `Ingress` / `CustomHostname` / Zero Trust Access | — | not implemented (see [`TODO.md`](TODO.md)) |
 
-See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations.
+See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,
+and [`TODO.md`](TODO.md) for what's queued.
 
 ## Why this exists
 
@@ -54,17 +60,38 @@ I wanted a `kubectl apply` UX for personal Cloudflare projects but did not want 
 
 The architecture is documented as [Architecture Decision Records](docs/adr/) (ADR-0001 through ADR-0007).
 
-## Quick start
+## Install
+
+Once published:
+
+```sh
+npm install -g @mizchi/k1c
+# or:
+pnpm dlx @mizchi/k1c apply -f manifest.yaml
+```
+
+From source (this repo):
 
 ```sh
 pnpm install
-pnpm test          # 193 tests
+pnpm test          # 297 tests
 pnpm typecheck
+pnpm build         # emits dist/
 
-# the CLI:
+# Run the CLI in-repo (TypeScript via Node strip-types):
 pnpm k1c apply   -f examples/hello-worker.yaml [--dry-run]
-pnpm k1c diff    -f examples/hello-worker.yaml
-pnpm k1c rollout {status|promote|abort} <ns>/<name> --dispatch <name>
+```
+
+## CLI
+
+```sh
+k1c apply    -f <manifest.yaml> [--dry-run | --watch]
+k1c diff     -f <manifest.yaml> [-o text|json]
+k1c delete   -f <manifest.yaml> [--cascade]
+k1c get      <kind> [name] [-n <namespace>] [-o text|json]
+k1c describe <kind> <name> [-n <namespace>] [-o text|json]
+k1c rollout  {status|promote|abort} <ns>/<name> --dispatch <name>
+k1c version
 ```
 
 Authentication is via two environment variables:

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { readFile, watch } from 'node:fs/promises';
 import process from 'node:process';
 import { resolve as resolvePath } from 'node:path';
@@ -8,8 +9,9 @@ import { createDefaultRegistry } from '../providers/index.ts';
 import type { ProviderContext } from '../providers/types.ts';
 import { runRolloutCommand } from '../canary/rollout-command.ts';
 import type { RolloutStateClient } from '../canary/runtime.ts';
+import pkg from '../../package.json' with { type: 'json' };
 
-const VERSION = '0.0.0';
+const VERSION = pkg.version;
 
 async function main(): Promise<number> {
   const parsed = parseArgs(process.argv.slice(2));
