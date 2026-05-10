@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.11.0](https://github.com/mizchi/k1c/compare/v0.10.0...v0.11.0) (2026-05-10)
+
+
+### Features
+
+* **operator:** finalizer-driven cascade delete ([#26](https://github.com/mizchi/k1c/issues/26)) ([2516e30](https://github.com/mizchi/k1c/commit/2516e304163af2aa206e11865ca6401cd944f405))
+
+
+### Bug Fixes
+
+* **idempotency:** re-apply of unchanged manifest is now NOOP across the board ([#25](https://github.com/mizchi/k1c/issues/25)) ([fd55696](https://github.com/mizchi/k1c/commit/fd556961c2e3e01a57ff2fe5622d643db59b1632))
+* **providers:** toProviderError pass-through on already-wrapped errors ([#21](https://github.com/mizchi/k1c/issues/21)) ([62708db](https://github.com/mizchi/k1c/commit/62708db243f14d87db93d3dcda50d14b77df4db9))
+* **r2:** lowercase Cloudflare's location response so re-apply is idempotent ([#24](https://github.com/mizchi/k1c/issues/24)) ([931ee37](https://github.com/mizchi/k1c/commit/931ee3737f2f8c0e467cc3a3043f02979833f4d4))
+* **vectorize,dns:** re-apply NOOP for default-valued fields ([#27](https://github.com/mizchi/k1c/issues/27)) ([f7e9ae4](https://github.com/mizchi/k1c/commit/f7e9ae409ef1f8fabce6883a7c4b4f3feefcfcc6))
+* **worker,plan:** real-account e2e bugs uncovered against a live token ([#23](https://github.com/mizchi/k1c/issues/23)) ([873a3d4](https://github.com/mizchi/k1c/commit/873a3d4398c4c9f7b3e22670f118f0e6dd393def))
+
 ## [0.10.0](https://github.com/mizchi/k1c/compare/v0.9.0...v0.10.0) (2026-05-09)
 
 
