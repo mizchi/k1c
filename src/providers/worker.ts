@@ -349,32 +349,46 @@ async function uploadVersionAndDeploy(
   const content = await readEntrypoint(ctx, props);
   const file = new File([content], MAIN_MODULE, { type: 'application/javascript+module' });
 
-  // 1. Upload a new immutable version (does not deploy to traffic).
-  const versionResult = await ctx.cloudflare.workers.scripts.versions.create(
+  // PUT /accounts/{id}/workers/scripts/{name} — the canonical "create
+  // or update + deploy to 100%" endpoint. The Versions/Deployments
+  // API on top of this exists for gradual rollouts; until k1c's
+  // canary state machine grows traffic-splitting, this simpler path
+  // is correct semantics for `kubectl apply`.
+  //
+  // The SDK's default multipart serializer recursively decomposes
+  // objects into `metadata[key]=value` form fields, which Cloudflare
+  // rejects with `10021 Could not read content for part 'metadata'.`
+  // Pre-serialize metadata as a single application/json Blob so it
+  // round-trips as one part with the right content type. (Using
+  // `__multipartSyntax: 'json'` instead also JSON-stringifies the
+  // script File, which fails with `module worker.mjs has unsupported
+  // Content-Type application/json`.)
+  // The SDK's `isUploadable` predicate requires File (with .name and
+  // .lastModified), not bare Blob — a Blob falls through to the
+  // recursive object branch and gets silently dropped because it has
+  // no enumerable own properties.
+  const metadataBlob = new File(
+    [JSON.stringify(buildMetadata(ctx, props))],
+    'metadata',
+    { type: 'application/json' },
+  );
+  await ctx.cloudflare.workers.scripts.update(
     props.scriptName,
     {
       account_id: ctx.accountId,
-      metadata: buildMetadata(ctx, props),
-      [MAIN_MODULE]: [file],
+      metadata: metadataBlob,
+      // Single Uploadable, not `[file]`. The SDK's default
+      // multipart serializer suffixes array values with `[]`,
+      // producing field name `worker.mjs[]` which Cloudflare
+      // rejects with `must contain a readable body_part, main_module`.
+      [MAIN_MODULE]: file,
     } as never,
   );
-  const versionId = (versionResult as { id?: string }).id;
-  if (!versionId) {
-    throw new Error('versions.create did not return a version id');
-  }
 
-  // 2. Cut over: route 100% of traffic to the new version (cutover semantics).
-  // canary.steps and blueGreen with manual promotion are not yet implemented (v0.1.2).
-  await ctx.cloudflare.workers.scripts.deployments.create(props.scriptName, {
-    account_id: ctx.accountId,
-    strategy: 'percentage',
-    versions: [{ version_id: versionId, percentage: 100 }],
-  } as never);
-
-  // 3. Sync cron triggers if the manifest declared any (CronJob path).
+  // Sync cron triggers if the manifest declared any (CronJob path).
   await syncCronSchedules(ctx, props);
 
-  return { scriptId: props.scriptName, versionId };
+  return { scriptId: props.scriptName, versionId: 'latest' };
 }
 
 async function syncCronSchedules(
@@ -399,12 +413,25 @@ async function uploadToDispatchNamespace(
   // Dispatch-namespace scripts do not currently flow through the Versions/Deployments API.
   // The dispatcher Worker invokes them by name on each request, so a single mutable script
   // per name is the right model.
+  // Same metadata-as-Blob trick as uploadVersionAndDeploy — see
+  // comment there. The dispatch path uses `files: { ... }` (object
+  // wrapper) instead of `[MAIN_MODULE]: [file]` (top-level key), but
+  // the multipart serialization issue is identical.
+  // The SDK's `isUploadable` predicate requires File (with .name and
+  // .lastModified), not bare Blob — a Blob falls through to the
+  // recursive object branch and gets silently dropped because it has
+  // no enumerable own properties.
+  const metadataBlob = new File(
+    [JSON.stringify(buildMetadata(ctx, props))],
+    'metadata',
+    { type: 'application/json' },
+  );
   await ctx.cloudflare.workersForPlatforms.dispatch.namespaces.scripts.update(
     dispatchNamespace,
     props.scriptName,
     {
       account_id: ctx.accountId,
-      metadata: buildMetadata(ctx, props),
+      metadata: metadataBlob,
       files: { [MAIN_MODULE]: file },
     } as never,
   );
