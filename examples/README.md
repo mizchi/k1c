@@ -98,6 +98,18 @@ wall p99 (ms): 41.20
 | [`helm-chart/`](helm-chart/) | minimal Helm chart you can `helm template ... | k1c apply -f -` |
 | [`kustomize/`](kustomize/) | base + prod overlay you can `kustomize build ... | k1c apply -f -` (also: `k1c apply -f ./examples/kustomize/base`) |
 
+## PKL (typed manifests)
+
+`k1c apply -f <file>.pkl` shells to `pkl eval --format yaml` automatically.
+Type errors land at edit time with line numbers instead of as zod failures
+at apply time.
+
+| Path | What it shows |
+|---|---|
+| [`pkl/hello-worker.pkl`](pkl/hello-worker.pkl) | single-file translation of `hello-worker.yaml` against [`pkl/k1c.pkl`](../pkl/k1c.pkl) |
+| [`pkl/saas/`](pkl/saas/) | multi-environment composition: shared `_stack-*.pkl` modules amended by env-specific `dev.pkl` / `prod.pkl` |
+| [`pkl/multi-tenant/`](pkl/multi-tenant/) | external `tenants.json` fanned out via `for (t in tenants) ...` into per-tenant R2 / KV / Worker resources |
+
 ## Runtime helpers
 
 `hello-worker.mjs` and `counter-do.mjs` are the JS entry points referenced

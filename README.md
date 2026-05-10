@@ -138,9 +138,8 @@ either ships to both at once. Production-grade plumbing:
 ## PKL: type-checked manifests
 
 [PKL](https://pkl-lang.org) is a configuration language with strong
-types and module imports. The same hello-worker manifest written in
-PKL catches typos / missing fields / out-of-range enums at *edit*
-time instead of at apply time:
+types and module imports. PKL manifests catch typos / missing fields /
+out-of-range enums at *edit* time instead of at apply time:
 
 ```pkl
 // examples/pkl/hello-worker.pkl
@@ -167,6 +166,24 @@ pkl eval --format yaml examples/pkl/hello-worker.pkl | k1c apply -f -
 # … or just hand the .pkl file directly. The CLI shells to
 # `pkl eval --format yaml` when it sees a `.pkl` extension.
 k1c apply -f examples/pkl/hello-worker.pkl
+```
+
+Three example layouts under [`examples/pkl/`](examples/pkl/) show how
+far the typed approach scales:
+
+| layout | what it shows |
+|--------|---------------|
+| [`hello-worker.pkl`](examples/pkl/hello-worker.pkl) | single file, 1:1 with `examples/hello-worker.yaml` |
+| [`saas/`](examples/pkl/saas/) | multi-env composition: `_stack-web.pkl` / `_stack-api.pkl` reused by `dev.pkl` and `prod.pkl` via `amends`, with `when (envName == "prod")` branching |
+| [`multi-tenant/`](examples/pkl/multi-tenant/) | external JSON list driving `for (t in tenants) ...` comprehension to fan out R2 + KV + per-tier Workers + a shared router |
+
+CI runs `k1c apply --validate-only` on every `.pkl` example
+([k8s-validate.yml](.github/workflows/k8s-validate.yml)) so a rename
+in the zod schemas, a CSI driver change, or a PKL syntax slip fails
+the build before it lands. Reproduce locally with:
+
+```sh
+just validate-pkl
 ```
 
 Hand-written modules ship under [`pkl/`](pkl/) and currently cover
