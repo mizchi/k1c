@@ -43,6 +43,13 @@ interface PerInstance {
   skipped: number;
   noop: number;
   firstError?: string;
+  /**
+   * Cloudflare native id from the most recent successful create or
+   * update result for this CR. Persisted into `.status.cloudflareNativeId`
+   * so the finalizer cleanup path knows which Cloudflare resource to
+   * delete after `kubectl delete` strips the spec from etcd.
+   */
+  nativeId?: string;
 }
 
 export interface WriteStatusOptions {
@@ -92,6 +99,10 @@ export async function writeStatus(options: WriteStatusOptions): Promise<void> {
       agg.failed += 1;
       if (!agg.firstError) agg.firstError = r.error?.message ?? 'unknown error';
     } else agg.skipped += 1;
+    // Persist the Cloudflare native id from the most recent successful
+    // op so the finalizer cleanup path can delete the resource even
+    // after the CR's spec is gone from etcd.
+    if (r.status === 'succeeded' && r.nativeId) agg.nativeId = r.nativeId;
   }
 
   for (const inst of byInstance.values()) {
@@ -120,6 +131,11 @@ async function patchOne(
           lastTransitionTime: new Date().toISOString(),
         },
       ],
+      // Surface the Cloudflare native id so the finalizer cleanup path
+      // (operator/reconcile.ts) can call provider.delete after the CR's
+      // spec is gone. Only stamped when we actually got a fresh id from
+      // a successful op this pass.
+      ...(inst.nativeId ? { cloudflareNativeId: inst.nativeId } : {}),
     },
   };
 
