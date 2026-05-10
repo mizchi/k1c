@@ -7,3 +7,4 @@ dependencies:
     - mizchi/skills/justfile#3fa3fe5aa12a5b050a3e222b3bd2a4875aad1156
     - mizchi/skills/apm-usage#3fa3fe5aa12a5b050a3e222b3bd2a4875aad1156
     - mizchi/skills/conventional-changelog#3fa3fe5aa12a5b050a3e222b3bd2a4875aad1156
+    - mizchi/skills/k8s-crd-from-typed-schema#548f9b7
