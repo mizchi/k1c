@@ -9,6 +9,9 @@ dist-wasm/
 .vitest/
 coverage/
 
+# direnv (nix-direnv flake cache)
+.direnv/
+
 # APM (skill manager)
 apm_modules/
 .claude/
