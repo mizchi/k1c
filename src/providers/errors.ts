@@ -7,6 +7,11 @@ export interface CloudflareLikeAPIError {
 }
 
 export function toProviderError(raw: unknown): ProviderError {
+  // Pass through if the value is already a ProviderError-shaped object.
+  // Without this, providers that wrap once (`_ruleset-shared.getPhaseRules`)
+  // and then re-wrap in their own catch silently lose the original
+  // message — `String([object Object])` clobbers it.
+  if (isProviderErrorShaped(raw)) return raw;
   if (isAPIError(raw)) {
     const status = raw.status ?? 0;
     const message = raw.message ?? 'Cloudflare API error';
@@ -33,6 +38,16 @@ export function toProviderError(raw: unknown): ProviderError {
     message: String(raw),
     cause: raw,
   };
+}
+
+function isProviderErrorShaped(raw: unknown): raw is ProviderError {
+  if (raw === null || typeof raw !== 'object') return false;
+  const o = raw as Record<string, unknown>;
+  return (
+    typeof o['code'] === 'string' &&
+    typeof o['recoverable'] === 'boolean' &&
+    typeof o['message'] === 'string'
+  );
 }
 
 function statusToCode(status: number): ProviderErrorCode {
