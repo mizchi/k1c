@@ -101,9 +101,46 @@ function resolveZoneId(props: PageRuleProperties, ctx: ProviderContext): string 
   return props.zoneId ?? ctx.zoneId;
 }
 
+/**
+ * CF returns `status: 'active'` (the default) on every page rule, and
+ * the actions array order isn't load-bearing — the rule applies all
+ * of them. Normalise both sides to default-active + sort actions by
+ * id so a re-apply of an unchanged manifest stays NOOP.
+ */
+function pageRuleEqualsNormalize(p: PageRuleProperties): unknown {
+  return {
+    ...(p.zoneId !== undefined ? { zoneId: p.zoneId } : {}),
+    url: p.url,
+    priority: p.priority ?? 1,
+    status: p.status ?? 'active',
+    actions: [...p.actions]
+      .map((a) => ({ id: a.id, ...(a.value !== undefined ? { value: a.value } : {}) }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+  };
+}
+
+function pageRuleStableStringify(value: unknown): string {
+  return JSON.stringify(value, (_k, v) => {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        sorted[k] = (v as Record<string, unknown>)[k];
+      }
+      return sorted;
+    }
+    return v;
+  });
+}
+
 export const pageRuleProvider: CloudflareResourceProvider<PageRuleProperties> = {
   resourceType: 'PageRule',
   schema: pageRulePropsSchema,
+  equals(prior, desired) {
+    return (
+      pageRuleStableStringify(pageRuleEqualsNormalize(prior)) ===
+      pageRuleStableStringify(pageRuleEqualsNormalize(desired))
+    );
+  },
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     if (ctx.zoneId === undefined) return;
