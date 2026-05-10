@@ -112,6 +112,34 @@ jobs:
           kustomize build ./examples/kustomize/overlays/prod \
             | kubectl apply --dry-run=server -f -
 
+      - name: Install pkl CLI
+        run: |
+          curl -fsSL -o /tmp/pkl \
+            https://github.com/apple/pkl/releases/download/0.31.1/pkl-linux-amd64
+          chmod +x /tmp/pkl
+          sudo mv /tmp/pkl /usr/local/bin/pkl
+          pkl --version
+
+      - name: k1c apply --validate-only on every .pkl example
+        run: |
+          set -e
+          shopt -s globstar nullglob
+          fail=0
+          for f in examples/**/*.pkl; do
+            base=$(basename "$f")
+            # Files starting with `_` are imported by other PKL files
+            # (PKL convention) and are not standalone entrypoints; eval
+            # would fail with "module has no output".
+            case "$base" in _*) continue ;; esac
+            echo "::group::validate $f"
+            if ! pnpm --silent k1c apply -f "$f" --validate-only; then
+              echo "::error file=$f::pkl eval or k1c lower validation failed"
+              fail=1
+            fi
+            echo "::endgroup::"
+          done
+          exit $fail
+
   # End-to-end smoke test: build the operator container, load it into a
   # fresh kind cluster, deploy it with a dummy Cloudflare token, apply
   # an R2Bucket CRD instance, and verify the operator (a) starts (b)
