@@ -27,5 +27,21 @@ build:
 k1c *args:
     pnpm k1c {{args}}
 
+# Validate every .pkl example by lowering it through k1c (zod).
+# Skips files starting with `_` (PKL convention for import-only modules).
+validate-pkl:
+    #!/usr/bin/env bash
+    set -e
+    fail=0
+    while IFS= read -r f; do
+        case "$(basename "$f")" in _*) continue ;; esac
+        echo "→ $f"
+        if ! pnpm --silent k1c apply -f "$f" --validate-only; then
+            echo "  ✗ failed"
+            fail=1
+        fi
+    done < <(find examples -name '*.pkl' -type f)
+    exit $fail
+
 clean:
     rm -rf dist node_modules
