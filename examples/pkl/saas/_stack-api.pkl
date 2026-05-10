@@ -1,0 +1,89 @@
+/// "API backend" stack: D1 database + Queue producer/consumer + the
+/// Worker that owns both. Demonstrates two non-trivial features:
+///
+///   - Cross-resource references via CSI volumeAttributes
+///     (the Worker's d1 binding points at the just-created database
+///     by name; Queue producer points at the queue name).
+///   - Per-environment branching: the dev variant skips the Queue
+///     entirely (cost-saving trade-off shown in code rather than
+///     buried in a comment).
+module stack_api
+
+import "../../../pkl/k1c.pkl"
+import "_conventions.pkl" as conventions
+
+class ApiStack {
+  envName: conventions.Env
+
+  fixed instanceName: String = conventions.nameFor(envName, "api")
+  fixed commonLabels: Mapping<String, String> = conventions.labelsFor(envName, "api")
+  fixed dbName: String = "\(instanceName)-db"
+  fixed queueName: String = "\(instanceName)-events"
+
+  /// Dev skips Queue to keep the bill small; staging/prod both wire it.
+  fixed wantsQueue: Boolean = envName != "dev"
+
+  resources: Listing = new {
+    new k1c.D1Database {
+      metadata { name = dbName }
+      spec { primaryLocationHint = conventions.regionFor(envName) }
+    }
+    when (wantsQueue) {
+      new k1c.Queue {
+        metadata { name = queueName }
+      }
+    }
+    new k1c.Deployment {
+      metadata {
+        name = instanceName
+        labels = commonLabels
+        annotations {
+          ["cloudflare.com/compatibility-date"] = "2025-09-01"
+          ["cloudflare.com/observability"] = "enabled"
+        }
+      }
+      spec {
+        replicas = if (envName == "prod") 5 else 1
+        selector { matchLabels = commonLabels }
+        template {
+          metadata { labels = commonLabels }
+          spec {
+            containers {
+              new k1c.Container {
+                name = "api"
+                image = "./examples/hello-worker.mjs"
+                env {
+                  new k1c.EnvVar { name = "ENV"; value = envName }
+                }
+                volumeMounts {
+                  new k1c.VolumeMount { name = "db"; mountPath = "/mnt/db" }
+                  when (wantsQueue) {
+                    new k1c.VolumeMount { name = "events"; mountPath = "/mnt/events" }
+                  }
+                }
+              }
+            }
+            volumes {
+              new k1c.Volume {
+                name = "db"
+                csi {
+                  driver = "d1.k1c.io"
+                  volumeAttributes { ["ref"] = dbName }
+                }
+              }
+              when (wantsQueue) {
+                new k1c.Volume {
+                  name = "events"
+                  csi {
+                    driver = "queue.k1c.io"
+                    volumeAttributes { ["ref"] = queueName }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

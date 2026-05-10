@@ -1,0 +1,29 @@
+/// Common rendering boilerplate for environment files. Each env
+/// (dev / staging / prod) `amends` this module and overrides the
+/// `web` and `api` stack instances.
+///
+/// Why a separate "abstract" base file: keeps the env-specific
+/// files focused on the *deltas* (replicas, hostname, presence of
+/// the queue) rather than restating the multi-doc YAML rendering
+/// boilerplate every time.
+open module environment
+
+import "_stack-web.pkl" as stackWeb
+import "_stack-api.pkl" as stackApi
+
+/// Each environment supplies its own web + api instance. The
+/// concrete env files override these.
+web: stackWeb.WebStack?
+api: stackApi.ApiStack?
+
+/// Materialised, concatenated resource list. Done as a `local` +
+/// `output { value = ... }` so the user-facing module export is
+/// always a clean Listing of k1c resources, regardless of env.
+local allResources =
+  (if (web != null) web.resources.toList() else List())
+  + (if (api != null) api.resources.toList() else List())
+
+output {
+  renderer = new YamlRenderer { isStream = true }
+  value = allResources
+}

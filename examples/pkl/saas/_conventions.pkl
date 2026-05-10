@@ -1,0 +1,29 @@
+/// Shared naming + labelling helpers for the SaaS example.
+///
+/// Centralises the "<env>-<component>" naming convention so every
+/// stack stays in lockstep, and produces the standard label set k1c
+/// pods need (selector / template-labels match) plus k1c's
+/// `app.kubernetes.io/managed-by` marker.
+module conventions
+
+/// Compose a resource name from environment + component.
+function nameFor(env: String, component: String): String = "\(env)-\(component)"
+
+/// Standard labels every stack pod / k8s resource carries.
+function labelsFor(env: String, component: String): Mapping<String, String> = new {
+  ["app"] = component
+  ["app.kubernetes.io/managed-by"] = "k1c"
+  ["env"] = env
+}
+
+/// Allowed environment names — the stacks branch on these for
+/// per-env overrides (replicas / region / etc.).
+typealias Env = "dev"|"staging"|"prod"
+
+/// Region preference per environment; weur for prod, enam for
+/// staging, wnam for dev — mostly to demonstrate per-env policy
+/// without dragging in real geo concerns.
+function regionFor(env: Env): "wnam"|"enam"|"weur"|"eeur"|"apac"|"oc" =
+  if (env == "prod") "weur"
+  else if (env == "staging") "enam"
+  else "wnam"

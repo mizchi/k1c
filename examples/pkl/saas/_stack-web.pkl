@@ -1,0 +1,94 @@
+/// "Web frontend" stack: an R2 bucket for static assets, a KV
+/// namespace for session storage, and a Worker that mounts both via
+/// CSI volumes. The whole stack is parameterised by `env` (dev /
+/// staging / prod) and `hostname`.
+///
+/// Usage from an environment file:
+///
+///   import "_stack-web.pkl" as webStack
+///   local web = new webStack.WebStack {
+///     env = "prod"
+///     hostname = "app.example.com"
+///   }
+///   // later: ...web.resources
+module stack_web
+
+import "../../../pkl/k1c.pkl"
+import "_conventions.pkl" as conventions
+
+/// One self-contained web stack instance. The `resources` listing
+/// is the materialised set of k1c manifest objects for this stack;
+/// the environment file concatenates these across all stacks before
+/// rendering.
+class WebStack {
+  envName: conventions.Env
+  hostname: String
+  /// Replicas only relevant for the operator path (Deployment-shaped);
+  /// k1c's lower step folds this into a single Worker per Deployment.
+  replicaCount: Int = if (envName == "prod") 3 else 1
+
+  fixed instanceName: String = conventions.nameFor(envName, "web")
+  fixed commonLabels: Mapping<String, String> = conventions.labelsFor(envName, "web")
+  fixed assetsBucket: String = "\(instanceName)-assets"
+  fixed sessionsKv: String = "\(instanceName)-sessions"
+
+  resources: Listing = new {
+    new k1c.R2Bucket {
+      metadata { name = assetsBucket }
+      spec { location = conventions.regionFor(envName) }
+    }
+    new k1c.KVNamespace {
+      metadata { name = sessionsKv }
+    }
+    new k1c.Deployment {
+      metadata {
+        name = instanceName
+        labels = commonLabels
+        annotations {
+          ["cloudflare.com/compatibility-date"] = "2025-09-01"
+          ["cloudflare.com/observability"] = "enabled"
+          ["cloudflare.com/web-hostname"] = hostname
+        }
+      }
+      spec {
+        replicas = replicaCount
+        selector { matchLabels = commonLabels }
+        template {
+          metadata { labels = commonLabels }
+          spec {
+            containers {
+              new k1c.Container {
+                name = "web"
+                image = "./examples/hello-worker.mjs"
+                env {
+                  new k1c.EnvVar { name = "ENV"; value = envName }
+                  new k1c.EnvVar { name = "HOSTNAME"; value = hostname }
+                }
+                volumeMounts {
+                  new k1c.VolumeMount { name = "assets"; mountPath = "/mnt/assets" }
+                  new k1c.VolumeMount { name = "sessions"; mountPath = "/mnt/sessions" }
+                }
+              }
+            }
+            volumes {
+              new k1c.Volume {
+                name = "assets"
+                csi {
+                  driver = "r2.k1c.io"
+                  volumeAttributes { ["bucketRef"] = assetsBucket }
+                }
+              }
+              new k1c.Volume {
+                name = "sessions"
+                csi {
+                  driver = "kv.k1c.io"
+                  volumeAttributes { ["namespaceRef"] = sessionsKv }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
