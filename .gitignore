@@ -3,7 +3,9 @@ dist/
 dist-wasm/
 .env
 .env.local
+.env.keys
 *.log
 .DS_Store
 .vitest/
 coverage/
+
