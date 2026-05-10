@@ -5,13 +5,14 @@ import { createDefaultRegistry } from '../providers/index.ts';
 import { lower } from '../manifest/lower.ts';
 import { plan } from '../reconciler/plan.ts';
 import { apply } from '../reconciler/apply.ts';
-import { listManagedResources, MANAGED_LABEL } from './source.ts';
+import { listManagedResources, MANAGED_LABEL, type ManagedResource } from './source.ts';
 import { writeStatus } from './status.ts';
 import { startWatches, type KindSpec } from './watch.ts';
 import { incCounter, observeSummary, setGauge } from './metrics.ts';
 import { startMetricsServer } from './server.ts';
 import { runLeaderElection } from './leader.ts';
 import { createLogger, type LogFormat } from './log.ts';
+import { ensureFinalizer, K1C_FINALIZER, removeFinalizer } from './finalizer.ts';
 
 export interface OperatorOptions {
   readonly accountId: string;
@@ -173,7 +174,7 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
     pending = (async () => {
       const start = Date.now();
       try {
-        const resources = await listManagedResources({
+        const enriched = await listManagedResources({
           kc,
           ...(options.namespace !== undefined ? { namespace: options.namespace } : {}),
           onWarning: (m) => err(`warning: ${m}`),
@@ -181,8 +182,82 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
         setGauge(
           'k1c_operator_managed_resources',
           'count of managed resources observed in the last list pass',
-          resources.length,
+          enriched.length,
         );
+
+        // Phase A: process CRs that the user has asked to delete (k8s
+        // sets `.metadata.deletionTimestamp` and our finalizer keeps
+        // them alive in etcd until we acknowledge). For each one,
+        // delete the Cloudflare resource via its persisted nativeId
+        // (status.cloudflareNativeId), then strip our finalizer so
+        // k8s can garbage-collect.
+        const customApi = kc.makeApiClient(k8s.CustomObjectsApi);
+        const deleting = enriched.filter(
+          (e) => e.meta.deletionTimestamp && e.meta.finalizers.includes(K1C_FINALIZER),
+        );
+        for (const d of deleting) {
+          if (!d.meta.crd) continue; // standard kinds don't get our finalizer
+          const ns = d.resource.metadata.namespace ?? 'default';
+          const name = d.resource.metadata.name;
+          const nativeId = d.meta.nativeIdFromStatus;
+          if (nativeId) {
+            try {
+              await registry.get(d.resource.kind).delete(ctx, nativeId);
+            } catch (e) {
+              err(
+                `finalizer: ${d.resource.kind}/${name} delete failed; leaving finalizer for retry: ${formatReconcileError(e)}`,
+              );
+              continue;
+            }
+          } else {
+            err(
+              `finalizer: ${d.resource.kind}/${name} has no status.cloudflareNativeId; removing finalizer (orphan possible)`,
+            );
+          }
+          try {
+            await removeFinalizer(
+              customApi,
+              {
+                group: d.meta.crd.group,
+                version: d.meta.crd.version,
+                plural: d.meta.crd.plural,
+                namespace: ns,
+                name,
+              },
+              d.meta.finalizers,
+            );
+          } catch (e) {
+            err(`finalizer: removeFinalizer ${d.resource.kind}/${name}: ${formatReconcileError(e)}`);
+          }
+        }
+
+        // Phase B: alive CRs — make sure each Cloudflare CRD carries
+        // our finalizer so the cascading delete in Phase A can run
+        // when the user eventually `kubectl delete`s.
+        const alive = enriched.filter((e) => !e.meta.deletionTimestamp);
+        for (const a of alive) {
+          if (!a.meta.crd) continue;
+          if (a.meta.finalizers.includes(K1C_FINALIZER)) continue;
+          try {
+            await ensureFinalizer(
+              customApi,
+              {
+                group: a.meta.crd.group,
+                version: a.meta.crd.version,
+                plural: a.meta.crd.plural,
+                namespace: a.resource.metadata.namespace ?? 'default',
+                name: a.resource.metadata.name,
+              },
+              a.meta.finalizers,
+            );
+          } catch (e) {
+            err(
+              `finalizer: ensureFinalizer ${a.resource.kind}/${a.resource.metadata.name}: ${formatReconcileError(e)}`,
+            );
+          }
+        }
+
+        const resources = alive.map((e) => e.resource);
         if (resources.length === 0) {
           out('reconcile: no managed resources found');
           incCounter(
