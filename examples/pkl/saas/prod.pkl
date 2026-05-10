@@ -1,0 +1,15 @@
+/// Production environment: 3-replica web, 5-replica api with Queue
+/// fanout. Larger region (weur) per `_conventions.regionFor`.
+amends "_environment.pkl"
+
+import "_stack-web.pkl" as stackWeb
+import "_stack-api.pkl" as stackApi
+
+web = new stackWeb.WebStack {
+  envName = "prod"
+  hostname = "app.example.com"
+}
+
+api = new stackApi.ApiStack {
+  envName = "prod"
+}

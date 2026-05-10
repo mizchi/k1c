@@ -1,0 +1,15 @@
+/// Dev environment: minimum-viable stack — single web replica, api
+/// skipping the Queue (Queue is a paid feature; dev avoids the cost).
+amends "_environment.pkl"
+
+import "_stack-web.pkl" as stackWeb
+import "_stack-api.pkl" as stackApi
+
+web = new stackWeb.WebStack {
+  envName = "dev"
+  hostname = "dev.example.com"
+}
+
+api = new stackApi.ApiStack {
+  envName = "dev"
+}
