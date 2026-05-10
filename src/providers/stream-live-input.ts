@@ -98,9 +98,63 @@ function buildBody(
   };
 }
 
+/**
+ * Cloudflare returns recording defaults (mode: 'off') and an empty
+ * `defaultCreator` even when the manifest omits them. Normalise both
+ * sides to the same defaults before comparison.
+ */
+function streamLiveInputEqualsNormalize(p: StreamLiveInputProperties): unknown {
+  const recording = p.recording ?? {};
+  return {
+    ...(p.defaultCreator !== undefined && p.defaultCreator !== ''
+      ? { defaultCreator: p.defaultCreator }
+      : {}),
+    ...(p.deleteRecordingAfterDays !== undefined
+      ? { deleteRecordingAfterDays: p.deleteRecordingAfterDays }
+      : {}),
+    recording: {
+      mode: recording.mode ?? 'off',
+      ...(recording.requireSignedURLs !== undefined
+        ? { requireSignedURLs: recording.requireSignedURLs }
+        : {}),
+      ...(Array.isArray(recording.allowedOrigins) && recording.allowedOrigins.length > 0
+        ? { allowedOrigins: [...recording.allowedOrigins].sort() }
+        : {}),
+      ...(recording.hideLiveViewerCount !== undefined
+        ? { hideLiveViewerCount: recording.hideLiveViewerCount }
+        : {}),
+      ...(recording.timeoutSeconds !== undefined
+        ? { timeoutSeconds: recording.timeoutSeconds }
+        : {}),
+    },
+    ...(p.meta !== undefined && Object.keys(p.meta).length > 0
+      ? { meta: p.meta }
+      : {}),
+  };
+}
+
+function streamLiveInputStableStringify(value: unknown): string {
+  return JSON.stringify(value, (_k, v) => {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        sorted[k] = (v as Record<string, unknown>)[k];
+      }
+      return sorted;
+    }
+    return v;
+  });
+}
+
 export const streamLiveInputProvider: CloudflareResourceProvider<StreamLiveInputProperties> = {
   resourceType: 'StreamLiveInput',
   schema: streamLiveInputPropsSchema,
+  equals(prior, desired) {
+    return (
+      streamLiveInputStableStringify(streamLiveInputEqualsNormalize(prior)) ===
+      streamLiveInputStableStringify(streamLiveInputEqualsNormalize(desired))
+    );
+  },
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     let resp;
