@@ -215,24 +215,79 @@ The bundle works in any wasi-cli host once wrapped. `apply` /
 
 ## Compatibility with real Kubernetes
 
-A k1c manifest is a *subset* of valid k8s YAML — the same file can be
-applied to either k1c or to a real `kubectl` cluster. Cloudflare-specific
-data sources ride on the standard k8s `volumes[].csi` shape with k1c
-driver names (`r2.k1c.io`, `kv.k1c.io`, `d1.k1c.io`, ...) and Cloudflare
-CRDs live under `cloudflare.k1c.io/v1alpha1`.
+A k1c manifest is a *subset* of valid k8s YAML — the same file applies
+to either k1c or to a real `kubectl` cluster. Cloudflare-specific data
+sources ride on the standard `volumes[].csi` shape with k1c driver
+names (`r2.k1c.io`, `kv.k1c.io`, `d1.k1c.io`, ...) and Cloudflare CRDs
+live under `cloudflare.k1c.io/v1alpha1`.
 
-To make `kubectl apply --dry-run=server` accept the Cloudflare CRDs,
-register them once on the target cluster:
+### Dual-path lowering
+
+Both entry points share one schema source (`src/manifest/schemas.ts`,
+zod):
+
+```
+                         src/manifest/schemas.ts (zod)
+                                     ↑
+              ┌──────────────────────┴──────────────────────┐
+              │                                             │
+    k1c apply -f m.yaml                          kubectl apply -f m.yaml
+    (CLI parses zod directly)            (apiserver validates against
+              │                            openAPIV3Schema, derived
+              │                            from the same zod by
+              │                            `k1c export-crds`)
+              │                                             │
+              │                                CR stored in etcd
+              │                                             │
+              │                            operator watches → reconciles
+              │                            (re-parses with the same zod
+              │                             at src/operator/source.ts)
+              │                                             │
+              └──────────►  Cloudflare API  ◄───────────────┘
+                            (same lower / plan / apply path)
+```
+
+To register the CRDs once on the target cluster:
 
 ```sh
 k1c export-crds | kubectl apply -f -
 kubectl apply -f my-manifest.yaml --dry-run=server   # validates schema
 ```
 
-The CSI drivers are not actually registered on the cluster, so a real
-Pod will stay pending — but the manifest is schema-valid and admission
-controllers accept it. k1c reads the same manifest and translates the
-CSI driver / volumeAttributes into Worker bindings on the Cloudflare side.
+The CSI drivers are not registered on the cluster, so a real Pod stays
+pending — but the manifest is schema-valid and admission controllers
+accept it. To make `kubectl apply` actually reach Cloudflare, install
+the operator (see [Operator section](#operator-real-time-reconciliation-inside-a-k8s-cluster)).
+
+### What CI gates which path
+
+| Path | What it verifies | Where |
+|------|------------------|-------|
+| CLI | every example lowers cleanly through zod | [`src/examples-smoke.test.ts`](src/examples-smoke.test.ts) |
+| apiserver schema | `kubectl apply --dry-run=server` against registered CRDs | [`k8s-validate.yml`](.github/workflows/k8s-validate.yml) (`k8s-validate` job) |
+| operator | apply a CR → operator reacts → finalizer attached → cascade delete | [`k8s-validate.yml`](.github/workflows/k8s-validate.yml) (`operator-e2e` job) |
+| HA | replicas=2, single-leader invariant, lease handover within ~15s | [`k8s-validate.yml`](.github/workflows/k8s-validate.yml) (`operator-ha-e2e` job) |
+| PKL → CLI | every `.pkl` example lowers cleanly via the same zod path | [`k8s-validate.yml`](.github/workflows/k8s-validate.yml) (PKL validation step) |
+
+So a schema-breaking change shows up on every PR through whichever
+path it affects, and a feature added to either entry point ships to
+both at once.
+
+### Asymmetry to know about
+
+The CLI accepts standard k8s kinds (`Deployment` / `Service` /
+`ConfigMap` / `Secret` / ...) and translates them into Worker /
+binding equivalents. A real cluster handles those as native k8s
+resources, not as Cloudflare ones. So:
+
+- For Cloudflare-only resources (R2Bucket, KVNamespace, D1Database, Queue, Vectorize, ...): apply either via `k1c apply` or via `kubectl apply` (with the operator installed). Both paths converge.
+- For `Deployment` etc.: `k1c apply` lowers it to a Cloudflare Worker; `kubectl apply` creates a real k8s Deployment. Pick the path that matches what you actually want.
+
+The operator only watches `cloudflare.k1c.io/v1alpha1` CRDs plus
+label-gated standard kinds — see
+[`src/operator/source.ts`](src/operator/source.ts) for the gate
+predicate. That keeps "I just wanted a regular k8s Deployment" cases
+out of the Cloudflare reconcile loop.
 
 ## Examples
 
