@@ -244,10 +244,16 @@ export const accessApplicationProvider: CloudflareResourceProvider<AccessApplica
         ...(app.session_duration !== undefined
           ? { sessionDuration: app.session_duration }
           : {}),
-        ...(app.auto_redirect_to_identity !== undefined
+        // CF returns auto_redirect_to_identity: false and
+        // allowed_idps: [] on every app, even when the manifest
+        // never sets them. Drop the defaults so re-apply doesn't
+        // flag every Access app as drifting.
+        ...(app.auto_redirect_to_identity === true
           ? { autoRedirectToIdentity: app.auto_redirect_to_identity }
           : {}),
-        ...(app.allowed_idps !== undefined ? { allowedIdps: [...app.allowed_idps] } : {}),
+        ...(Array.isArray(app.allowed_idps) && app.allowed_idps.length > 0
+          ? { allowedIdps: [...app.allowed_idps] }
+          : {}),
         policies,
       };
     } catch (raw) {
