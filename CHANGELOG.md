@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.12.0](https://github.com/mizchi/k1c/compare/v0.11.0...v0.12.0) (2026-05-10)
+
+
+### Features
+
+* drift-prevention for CustomHostname/StreamLiveInput + helm polish ([#37](https://github.com/mizchi/k1c/issues/37)) ([2e70d0c](https://github.com/mizchi/k1c/commit/2e70d0ced1d4ef16a9947ab79c695949dfdb3ec3))
+* extend idempotency e2e + preemptive LogpushJob equals fix ([#36](https://github.com/mizchi/k1c/issues/36)) ([6bbd754](https://github.com/mizchi/k1c/commit/6bbd7541e226375d138eca8d947e8534d188168c))
+* **pkl:** multi-environment SaaS example exercising composition ([#42](https://github.com/mizchi/k1c/issues/42)) ([ece86df](https://github.com/mizchi/k1c/commit/ece86df8cab331789af38725755be064b91c7ad1))
+* **pkl:** multi-tenant example using external JSON + for-loop ([#43](https://github.com/mizchi/k1c/issues/43)) ([68fb1be](https://github.com/mizchi/k1c/commit/68fb1be03ef2d5fa4d3b61f0b543e79397a213ea))
+* **pkl:** native .pkl manifest support + hand-written type modules ([#41](https://github.com/mizchi/k1c/issues/41)) ([d468757](https://github.com/mizchi/k1c/commit/d4687572e073dd73a8a0e2077aa6a01230ff4294))
+
+
+### Bug Fixes
+
+* **access-application:** re-apply NOOP for auto_redirect / allowed_idps defaults ([#29](https://github.com/mizchi/k1c/issues/29)) ([46787f3](https://github.com/mizchi/k1c/commit/46787f3066d19ec07e630716da16ca7f88d5bd64))
+* **hyperdrive:** exclude write-only password from equals() ([#35](https://github.com/mizchi/k1c/issues/35)) ([79ef147](https://github.com/mizchi/k1c/commit/79ef1479c26257f3957713bb475a6289fe947c60))
+* **page-rule:** preemptive equals normalize (status default + actions ordering) ([#38](https://github.com/mizchi/k1c/issues/38)) ([69cb4b0](https://github.com/mizchi/k1c/commit/69cb4b098c0e24ae2c16da870b2ef1ecabeff4cc))
+
 ## [0.11.0](https://github.com/mizchi/k1c/compare/v0.10.0...v0.11.0) (2026-05-10)
 
 
