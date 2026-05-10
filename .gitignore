@@ -9,3 +9,8 @@ dist-wasm/
 .vitest/
 coverage/
 
+# APM (skill manager)
+apm_modules/
+.claude/
+.agents/
+

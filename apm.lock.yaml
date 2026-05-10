@@ -1,0 +1,37 @@
+lockfile_version: '1'
+generated_at: '2026-05-10T12:14:24.559937+00:00'
+apm_version: 0.12.4
+dependencies:
+- repo_url: mizchi/skills
+  host: github.com
+  resolved_commit: 3fa3fe5aa12a5b050a3e222b3bd2a4875aad1156
+  resolved_ref: 3fa3fe5aa12a5b050a3e222b3bd2a4875aad1156
+  virtual_path: apm-usage
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/apm-usage
+  - .claude/skills/apm-usage
+  content_hash: sha256:5ca113f215eb4433e6420abbdfbcbbb05166ec9325c810e5cc27bc9acbf7a5d9
+- repo_url: mizchi/skills
+  host: github.com
+  resolved_commit: 3fa3fe5aa12a5b050a3e222b3bd2a4875aad1156
+  resolved_ref: 3fa3fe5aa12a5b050a3e222b3bd2a4875aad1156
+  virtual_path: conventional-changelog
+  is_virtual: true
+  package_type: claude_skill
+  deployed_files:
+  - .agents/skills/conventional-changelog
+  - .claude/skills/conventional-changelog
+  content_hash: sha256:075f08f20df46cd867360123825b748a2ab02ab145b252327e529c84d3ec2f74
+- repo_url: mizchi/skills
+  host: github.com
+  resolved_commit: 3fa3fe5aa12a5b050a3e222b3bd2a4875aad1156
+  resolved_ref: 3fa3fe5aa12a5b050a3e222b3bd2a4875aad1156
+  virtual_path: justfile
+  is_virtual: true
+  package_type: marketplace_plugin
+  deployed_files:
+  - .agents/skills/justfile
+  - .claude/skills/justfile
+  content_hash: sha256:6b4810982093db3b295c5970f3d88bba9e25e334a150d31aacc738f0e2fe3e9f
