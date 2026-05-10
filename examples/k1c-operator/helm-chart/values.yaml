@@ -67,6 +67,16 @@ resources:
     cpu: 500m
     memory: 256Mi
 
+# PodDisruptionBudget — only applied when replicaCount > 1, so
+# single-replica installs aren't blocked by node drains. Set
+# `minAvailable` for an absolute floor or leave it unset to use
+# `maxUnavailable: 1` (allow one pod to be evicted at a time, which
+# matches the leader+standby pattern).
+podDisruptionBudget:
+  enabled: true
+  minAvailable: ""
+  maxUnavailable: 1
+
 # Standard k8s scheduling knobs.
 nodeSelector: {}
 tolerations: []

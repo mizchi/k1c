@@ -106,9 +106,45 @@ const FAILURE_STATES = new Set([
  * description — Custom Hostnames have no description field, but they do
  * support arbitrary key/value metadata.
  */
+/**
+ * Cloudflare's Custom Hostname API populates `ssl` defaults
+ * (method: 'http', type: 'dv') when the manifest omits the block.
+ * Normalise both sides to the same defaults so a re-apply of an
+ * unchanged manifest doesn't flag every hostname as drifting.
+ */
+function customHostnameEqualsNormalize(p: CustomHostnameProperties): unknown {
+  return {
+    zoneId: p.zoneId,
+    hostname: p.hostname,
+    ssl: {
+      method: p.ssl?.method ?? 'http',
+      type: p.ssl?.type ?? 'dv',
+    },
+  };
+}
+
+function customHostnameStableStringify(value: unknown): string {
+  return JSON.stringify(value, (_k, v) => {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        sorted[k] = (v as Record<string, unknown>)[k];
+      }
+      return sorted;
+    }
+    return v;
+  });
+}
+
 export const customHostnameProvider: CloudflareResourceProvider<CustomHostnameProperties> = {
   resourceType: 'CustomHostname',
   schema: customHostnamePropertiesSchema,
+  equals(prior, desired) {
+    return (
+      customHostnameStableStringify(customHostnameEqualsNormalize(prior)) ===
+      customHostnameStableStringify(customHostnameEqualsNormalize(desired))
+    );
+  },
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     if (ctx.zoneId === undefined) return;

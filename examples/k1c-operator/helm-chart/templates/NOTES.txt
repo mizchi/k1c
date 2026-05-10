@@ -1,0 +1,45 @@
+k1c-operator {{ .Chart.AppVersion }} installed in namespace `{{ include "k1c-operator.namespace" . }}`.
+
+1. Verify the operator is running:
+
+     kubectl -n {{ include "k1c-operator.namespace" . }} rollout status deploy/k1c-operator
+
+   Expected first log lines:
+
+     (k1c operator starting; account=<id> ...)
+     (leader election enabled; lease={{ include "k1c-operator.leaseNamespace" . }}/{{ .Values.operator.leaseName }})
+     (acquired leadership)
+
+2. Apply a Cloudflare CRD instance to test reconcile:
+
+     kubectl apply -f - <<EOF
+     apiVersion: cloudflare.k1c.io/v1alpha1
+     kind: R2Bucket
+     metadata: { name: hello }
+     spec: { location: weur }
+     EOF
+
+   The operator should attach the `k1c.io/cleanup` finalizer, create
+   the bucket on Cloudflare, then patch `.status.cloudflareNativeId`
+   + `.status.conditions[Ready]=True`.
+
+3. Watch metrics (requires `metricsService.enabled=true`, which is the
+   default):
+
+     kubectl -n {{ include "k1c-operator.namespace" . }} port-forward svc/k1c-operator-metrics 9090:9090
+     curl -s http://127.0.0.1:9090/metrics
+
+{{- if .Values.serviceMonitor.enabled }}
+
+4. ServiceMonitor is enabled — kube-prometheus / prometheus-operator
+   will auto-discover this operator under the
+   `monitoring.coreos.com` group.
+{{- end }}
+
+5. Cascade delete is automatic via finalizers. `kubectl delete r2bucket
+   hello` strips the Cloudflare resource within ~5s and frees the CR.
+
+For the full metric reference table + Argo CD / Grafana dashboard
+examples, see:
+
+  https://github.com/mizchi/k1c/tree/main/examples/k1c-operator
