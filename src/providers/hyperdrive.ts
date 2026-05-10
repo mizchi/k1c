@@ -91,9 +91,55 @@ function buildBody(props: HyperdriveProperties) {
   };
 }
 
+/**
+ * Drop the password before comparison. Cloudflare's Hyperdrive API
+ * never returns it, so read() emits the `<write-only>` sentinel; if
+ * we left it in the diff, every apply would think the password
+ * changed and trigger an UPDATE. The provider's update() re-uploads
+ * the password unconditionally when other fields change, so we don't
+ * need to track its drift here.
+ */
+function hyperdriveEqualsNormalize(p: HyperdriveProperties): unknown {
+  return {
+    name: p.name,
+    origin: {
+      scheme: p.origin.scheme,
+      host: p.origin.host,
+      port: p.origin.port,
+      database: p.origin.database,
+      user: p.origin.user,
+      // password intentionally omitted
+    },
+    ...(p.caching !== undefined ? { caching: p.caching } : {}),
+    ...(p.originConnectionLimit !== undefined
+      ? { originConnectionLimit: p.originConnectionLimit }
+      : {}),
+  };
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_k, v) => {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        sorted[k] = (v as Record<string, unknown>)[k];
+      }
+      return sorted;
+    }
+    return v;
+  });
+}
+
 export const hyperdriveProvider: CloudflareResourceProvider<HyperdriveProperties> = {
   resourceType: 'Hyperdrive',
   schema: hyperdriveSchema,
+
+  equals(prior, desired) {
+    return (
+      stableStringify(hyperdriveEqualsNormalize(prior)) ===
+      stableStringify(hyperdriveEqualsNormalize(desired))
+    );
+  },
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     let iter;
