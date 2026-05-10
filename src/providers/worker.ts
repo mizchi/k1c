@@ -501,6 +501,19 @@ function fromCFBinding(b: CFBinding): unknown {
  *   reissue the secret. The presence/names round-trip via bindings; the
  *   user-visible drift signal lives elsewhere.
  */
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_k, v) => {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        sorted[k] = (v as Record<string, unknown>)[k];
+      }
+      return sorted;
+    }
+    return v;
+  });
+}
+
 function normalizeForEquality(props: WorkerProperties): unknown {
   const {
     entrypoint: _entrypoint,
@@ -508,7 +521,23 @@ function normalizeForEquality(props: WorkerProperties): unknown {
     secrets: _secrets,
     ...rest
   } = props;
-  return rest;
+  const out = { ...rest } as Record<string, unknown>;
+  // Bindings are a *set* — ordering depends on whatever the CF API
+  // returns on read versus whatever order the manifest declared. Sort
+  // by name so a re-apply of an unchanged manifest doesn't flag every
+  // binding as drifting.
+  if (Array.isArray(out['bindings'])) {
+    out['bindings'] = [...(out['bindings'] as Array<{ name?: string }>)].sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? ''),
+    );
+  }
+  // CF returns `compatibility_flags: []` even when nothing was set;
+  // the manifest typically omits it. Treat empty == absent.
+  if (Array.isArray(out['compatibilityFlags']) &&
+    (out['compatibilityFlags'] as ReadonlyArray<unknown>).length === 0) {
+    delete out['compatibilityFlags'];
+  }
+  return out;
 }
 
 export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
@@ -516,7 +545,9 @@ export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {
   schema: workerSchema,
 
   equals(prior, desired) {
-    return JSON.stringify(normalizeForEquality(prior)) === JSON.stringify(normalizeForEquality(desired));
+    // Stable key ordering at every level so `vars: {A,B}` vs
+    // `vars: {B,A}` compares equal.
+    return stableStringify(normalizeForEquality(prior)) === stableStringify(normalizeForEquality(desired));
   },
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
