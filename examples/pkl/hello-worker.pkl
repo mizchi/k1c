@@ -1,0 +1,88 @@
+/// Same shape as `examples/hello-worker.yaml`, written in PKL.
+///
+/// Eval to YAML:
+///
+///   pkl eval --format yaml examples/pkl/hello-worker.pkl | k1c apply -f - --dry-run
+///
+/// Or pass straight to k1c (the CLI detects `.pkl` and shells out to
+/// `pkl eval` for you):
+///
+///   k1c apply -f examples/pkl/hello-worker.pkl --dry-run
+///
+/// Why use PKL: k1c's zod schemas catch errors at apply time. PKL
+/// catches them at edit time — typos in `kind`, missing required
+/// fields, or an out-of-range `location` enum fail with line numbers
+/// before any API call.
+module hello_worker
+
+import "../../pkl/k1c.pkl"
+
+/// Multi-doc YAML: one top-level entry per resource. The module's
+/// renderer emits each entry as its own YAML document, separated by
+/// `---`, which is what `k1c apply -f -` expects.
+output {
+  renderer = new YamlRenderer { isStream = true }
+  value = resources
+}
+
+resources = new Listing {
+  new k1c.R2Bucket {
+    metadata { name = "media" }
+    spec { location = "weur" }
+  }
+  new k1c.KVNamespace {
+    metadata { name = "cache" }
+  }
+  new k1c.ConfigMap {
+    metadata { name = "hello-config" }
+    data {
+      ["GREETING"] = "hello, k1c"
+    }
+  }
+  new k1c.Deployment {
+    metadata {
+      name = "hello"
+      annotations {
+        ["cloudflare.com/compatibility-date"] = "2025-09-01"
+        ["cloudflare.com/observability"] = "enabled"
+      }
+    }
+    spec {
+      selector { matchLabels { ["app"] = "hello" } }
+      template {
+        metadata { labels { ["app"] = "hello" } }
+        spec {
+          containers {
+            new k1c.Container {
+              name = "hello"
+              image = "./examples/hello-worker.mjs"
+              env {
+                new k1c.EnvVar { name = "GREETING"; value = "hello, k1c" }
+              }
+              volumeMounts {
+                new k1c.VolumeMount { name = "media"; mountPath = "/mnt/media" }
+                new k1c.VolumeMount { name = "cache"; mountPath = "/mnt/cache" }
+              }
+            }
+          }
+          volumes {
+            new k1c.Volume {
+              name = "media"
+              csi {
+                driver = "r2.k1c.io"
+                volumeAttributes { ["bucketRef"] = "media" }
+              }
+            }
+            new k1c.Volume {
+              name = "cache"
+              csi {
+                driver = "kv.k1c.io"
+                volumeAttributes { ["namespaceRef"] = "cache" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

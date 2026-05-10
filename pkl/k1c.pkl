@@ -1,0 +1,184 @@
+/// k1c manifest types — first cut.
+///
+/// Hand-written subset of the most-used kinds (R2Bucket, KVNamespace,
+/// D1Database, Queue, Vectorize, ConfigMap, Secret, Deployment with
+/// CSI volumes). Mirrors the zod schemas under `src/manifest/`. The
+/// long tail of CRDs (rulesets, Access*, etc.) is intentionally left
+/// out for now — wrap them with `import` + a custom class until we
+/// generate this file from zod (`k1c export-pkl` is on the roadmap).
+///
+/// Usage:
+///
+///   import "../../pkl/k1c.pkl"
+///
+///   resources = new Listing {
+///     new k1c.R2Bucket { metadata { name = "media" }; spec { location = "weur" } }
+///     new k1c.Deployment { ... }
+///   }
+///
+/// Then evaluate to YAML:
+///
+///   pkl eval --format yaml my-manifests.pkl | k1c apply -f -
+///
+/// or just `k1c apply -f my-manifests.pkl` (the CLI shells to `pkl
+/// eval` when the input has a `.pkl` extension).
+@ModuleInfo { minPklVersion = "0.27.0" }
+module k1c
+
+const apiVersionCloudflare: String = "cloudflare.k1c.io/v1alpha1"
+
+typealias Region = "wnam"|"enam"|"weur"|"eeur"|"apac"|"oc"
+
+/// k8s ObjectMeta subset — only the four fields k1c reads.
+class ObjectMeta {
+  name: String
+  namespace: String?
+  labels: Mapping<String, String>?
+  annotations: Mapping<String, String>?
+}
+
+/// PodTemplateSpec.metadata: name is irrelevant for templates, so
+/// only labels / annotations matter here.
+class PodTemplateObjectMeta {
+  labels: Mapping<String, String>?
+  annotations: Mapping<String, String>?
+}
+
+// ============================================================
+// Cloudflare CRDs (cloudflare.k1c.io/v1alpha1)
+// ============================================================
+
+class R2BucketSpec {
+  location: Region?
+  storageClass: ("Standard"|"InfrequentAccess")?
+}
+
+class R2Bucket {
+  apiVersion: String = apiVersionCloudflare
+  kind: "R2Bucket" = "R2Bucket"
+  metadata: ObjectMeta
+  spec: R2BucketSpec
+}
+
+class KVNamespaceSpec {}
+
+class KVNamespace {
+  apiVersion: String = apiVersionCloudflare
+  kind: "KVNamespace" = "KVNamespace"
+  metadata: ObjectMeta
+  spec: KVNamespaceSpec = new {}
+}
+
+class D1Spec {
+  primaryLocationHint: Region?
+}
+
+class D1Database {
+  apiVersion: String = apiVersionCloudflare
+  kind: "D1Database" = "D1Database"
+  metadata: ObjectMeta
+  spec: D1Spec = new {}
+}
+
+class QueueSpec {}
+
+class Queue {
+  apiVersion: String = apiVersionCloudflare
+  kind: "Queue" = "Queue"
+  metadata: ObjectMeta
+  spec: QueueSpec = new {}
+}
+
+class VectorizeSpec {
+  dimensions: Int
+  metric: ("cosine"|"euclidean"|"dot-product")
+  description: String?
+}
+
+class Vectorize {
+  apiVersion: String = apiVersionCloudflare
+  kind: "Vectorize" = "Vectorize"
+  metadata: ObjectMeta
+  spec: VectorizeSpec
+}
+
+// ============================================================
+// k8s standard kinds (subset)
+// ============================================================
+
+class ConfigMap {
+  apiVersion: "v1" = "v1"
+  kind: "ConfigMap" = "ConfigMap"
+  metadata: ObjectMeta
+  data: Mapping<String, String>?
+}
+
+class Secret {
+  apiVersion: "v1" = "v1"
+  kind: "Secret" = "Secret"
+  metadata: ObjectMeta
+  type: String = "Opaque"
+  /// Plain k:v map; values are uploaded to Cloudflare as Worker secrets.
+  /// k1c does NOT base64-decode `data` since Workers secrets are
+  /// written as-is — prefer `stringData` for human-readable input.
+  stringData: Mapping<String, String>?
+  data: Mapping<String, String>?
+}
+
+/// CSI volume source matching k1c driver names.
+class CSIVolume {
+  driver: ("r2.k1c.io"|"kv.k1c.io"|"d1.k1c.io"|"queue.k1c.io"|"vectorize.k1c.io"|"hyperdrive.k1c.io"|"service.k1c.io"|"analytics-engine.k1c.io"|"mtls.k1c.io"|"pipelines.k1c.io")
+  volumeAttributes: Mapping<String, String>
+}
+
+class Volume {
+  name: String
+  csi: CSIVolume?
+}
+
+class VolumeMount {
+  name: String
+  mountPath: String
+}
+
+class EnvVar {
+  name: String
+  value: String?
+}
+
+class Container {
+  name: String
+  /// Path to the Worker entrypoint relative to the manifest, OR an
+  /// `<inline>` sentinel when paired with `cloudflare.com/source.<container>`
+  /// annotation (operator path).
+  image: String
+  env: Listing<EnvVar>?
+  volumeMounts: Listing<VolumeMount>?
+}
+
+class PodSpec {
+  containers: Listing<Container>
+  volumes: Listing<Volume>?
+}
+
+class PodTemplateSpec {
+  metadata: PodTemplateObjectMeta = new {}
+  spec: PodSpec
+}
+
+class LabelSelector {
+  matchLabels: Mapping<String, String>
+}
+
+class DeploymentSpec {
+  selector: LabelSelector
+  template: PodTemplateSpec
+  replicas: Int?
+}
+
+class Deployment {
+  apiVersion: "apps/v1" = "apps/v1"
+  kind: "Deployment" = "Deployment"
+  metadata: ObjectMeta
+  spec: DeploymentSpec
+}
