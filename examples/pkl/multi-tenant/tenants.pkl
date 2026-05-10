@@ -1,0 +1,171 @@
+/// Multi-tenant Cloudflare layout: one R2 bucket + one KV namespace
+/// per tenant, plus a single shared router Worker that fans out to
+/// every tenant by name. Tenant list comes from an external JSON
+/// file, so the SRE can edit `tenants.json` without touching PKL.
+///
+/// Demonstrates:
+///   - `read("file.json")` for external data, parsed into a typed
+///     listing via JsonParser.
+///   - `for (t in tenants)` comprehension to generate N resources
+///     in a single Listing.
+///   - Cross-resource fanout: the router Worker mounts every
+///     tenant's R2 bucket via a generated VolumeMount per tenant.
+///   - Per-tier branching: enterprise tenants get larger replicas,
+///     free tier skips the dedicated worker entirely.
+///
+/// Apply:
+///
+///   k1c apply -f examples/pkl/multi-tenant/tenants.pkl --dry-run
+module multi_tenant
+
+import "../../../pkl/k1c.pkl"
+import "pkl:json"
+
+output {
+  renderer = new YamlRenderer { isStream = true }
+  value = allResources
+}
+
+/// Inline schema for the JSON input. Parser produces dynamic objects;
+/// we narrow into this shape with `as Tenant` so subsequent code is
+/// fully typed.
+class Tenant {
+  name: String
+  tier: "free"|"pro"|"enterprise"
+  region: "wnam"|"enam"|"weur"|"eeur"|"apac"|"oc"
+}
+
+local tenantsJson = new json.Parser {}.parse(read("tenants.json").text)
+local tenants: List<Tenant> = tenantsJson.tenants.toList().map((t) -> new Tenant {
+  name = t.name
+  tier = t.tier
+  region = t.region
+})
+
+local function bucketName(t: Tenant): String = "tenant-\(t.name)-assets"
+local function kvName(t: Tenant): String = "tenant-\(t.name)-cache"
+local function workerName(t: Tenant): String = "tenant-\(t.name)"
+
+local function replicasFor(tier: String): Int =
+  if (tier == "enterprise") 5
+  else if (tier == "pro") 2
+  else 1
+
+/// Per-tenant resources: one R2 + one KV per tenant.
+local perTenantData = tenants.flatMap((t) -> List(
+  new k1c.R2Bucket {
+    metadata { name = bucketName(t) }
+    spec { location = t.region }
+  },
+  new k1c.KVNamespace {
+    metadata { name = kvName(t) }
+  }
+))
+
+/// Per-tenant Workers (skipped for free tier — they share the router).
+local perTenantWorkers = tenants
+  .filter((t) -> t.tier != "free")
+  .map((t) -> new k1c.Deployment {
+    metadata {
+      name = workerName(t)
+      labels {
+        ["app"] = "tenant-worker"
+        ["tenant"] = t.name
+        ["tier"] = t.tier
+      }
+    }
+    spec {
+      replicas = replicasFor(t.tier)
+      selector { matchLabels { ["app"] = "tenant-worker"; ["tenant"] = t.name } }
+      template {
+        metadata { labels { ["app"] = "tenant-worker"; ["tenant"] = t.name } }
+        spec {
+          containers {
+            new k1c.Container {
+              name = "worker"
+              image = "./examples/hello-worker.mjs"
+              env {
+                new k1c.EnvVar { name = "TENANT"; value = t.name }
+                new k1c.EnvVar { name = "TIER"; value = t.tier }
+              }
+              volumeMounts {
+                new k1c.VolumeMount { name = "assets"; mountPath = "/mnt/assets" }
+                new k1c.VolumeMount { name = "cache";  mountPath = "/mnt/cache"  }
+              }
+            }
+          }
+          volumes {
+            new k1c.Volume {
+              name = "assets"
+              csi {
+                driver = "r2.k1c.io"
+                volumeAttributes { ["bucketRef"] = bucketName(t) }
+              }
+            }
+            new k1c.Volume {
+              name = "cache"
+              csi {
+                driver = "kv.k1c.io"
+                volumeAttributes { ["namespaceRef"] = kvName(t) }
+              }
+            }
+          }
+        }
+      }
+    }
+  })
+
+/// Shared router Worker that fans out to every tenant's R2 bucket.
+/// Free-tier tenants ride the router exclusively (no dedicated
+/// worker), so this is the only edge-side compute they get.
+local routerWorker = new k1c.Deployment {
+  metadata {
+    name = "tenant-router"
+    labels { ["app"] = "tenant-router" }
+    annotations {
+      ["cloudflare.com/compatibility-date"] = "2025-09-01"
+    }
+  }
+  spec {
+    selector { matchLabels { ["app"] = "tenant-router" } }
+    template {
+      metadata { labels { ["app"] = "tenant-router" } }
+      spec {
+        containers {
+          new k1c.Container {
+            name = "router"
+            image = "./examples/hello-worker.mjs"
+            env {
+              new k1c.EnvVar {
+                name = "TENANT_NAMES"
+                value = tenants.map((t) -> t.name).join(",")
+              }
+            }
+            // Mount every tenant's R2 bucket — generated.
+            volumeMounts = new {
+              for (t in tenants) {
+                new k1c.VolumeMount {
+                  name = "tenant-\(t.name)"
+                  mountPath = "/mnt/tenants/\(t.name)"
+                }
+              }
+            }
+          }
+        }
+        volumes = new {
+          for (t in tenants) {
+            new k1c.Volume {
+              name = "tenant-\(t.name)"
+              csi {
+                driver = "r2.k1c.io"
+                volumeAttributes { ["bucketRef"] = bucketName(t) }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+local allResources = perTenantData + perTenantWorkers + List(routerWorker)
