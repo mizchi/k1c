@@ -45,34 +45,43 @@ manifest passes both. See commit "fix: every example passes kubectl apply
 
 ### Cloudflare API round-trips (env-gated, K1C_E2E=1 + real token)
 
-- [ ] R2Bucket — full CRUD via `tests/e2e/r2-bucket.e2e.test.ts`
-- [ ] KVNamespace — full CRUD via `tests/e2e/kv-namespace.e2e.test.ts`
-- [ ] D1Database — full CRUD via `tests/e2e/d1-database.e2e.test.ts`
-- [ ] AccessPolicy — full CRUD via `tests/e2e/access-policy.e2e.test.ts`
-- [ ] CacheRule — full CRUD via `tests/e2e/cache-rule.e2e.test.ts` (also needs K1C_ZONE_ID)
-- [ ] Worker + KV binding (placeholder resolution end-to-end) — `tests/e2e/worker-with-bindings.e2e.test.ts`
-- [ ] Hyperdrive — needs a reachable Postgres origin; e2e harness pending
-- [ ] Vectorize / Queue / Workflow / DispatchNamespace — e2e harness pending
-- [ ] LogpushJob / TelemetryStack / TelemetryAggregator — needs an R2 destination + zone
+- [x] R2Bucket — full CRUD via `tests/e2e/r2-bucket.e2e.test.ts`
+- [x] KVNamespace — full CRUD via `tests/e2e/kv-namespace.e2e.test.ts`
+- [x] D1Database — full CRUD via `tests/e2e/d1-database.e2e.test.ts`
+- [x] AccessPolicy — full CRUD via `tests/e2e/access-policy.e2e.test.ts`
+- [x] CacheRule — full CRUD via `tests/e2e/cache-rule.e2e.test.ts` (also needs K1C_ZONE_ID)
+- [x] Worker + KV binding (placeholder resolution end-to-end) — `tests/e2e/worker-with-bindings.e2e.test.ts`
+- [x] Vectorize / Queue — covered by `tests/e2e/idempotency.e2e.test.ts`
+- [x] WAFCustomRule / RateLimitRule / TransformRule / URIRewriteRule / ResponseHeaderRule — covered by `tests/e2e/idempotency.e2e.test.ts`
+- [x] DNSRecord — covered by `tests/e2e/idempotency.e2e.test.ts`
+- [x] EmailRoutingRule — verified manually (mizchi.net zone, Email Routing enabled)
+- [x] AccessApplication (self_hosted) — verified manually
+- [x] WorkerRoute — verified manually
+- [ ] Hyperdrive — token scope or feature not enabled on free account
+- [ ] DispatchNamespace / Workflow — needs Workers for Platforms (paid)
+- [ ] WAFManagedRuleset — needs Enterprise
+- [ ] StreamLiveInput — needs Stream subscription on the account
+- [ ] PageRule — Cloudflare account-owned tokens (cfat_*) reject the legacy Page Rules endpoint; needs a user-owned token
+- [ ] LogpushJob / TelemetryStack / TelemetryAggregator — `destination_conf` requires R2 access keys (separate API)
 - [ ] CustomDomain / CustomHostname — needs a real zone + DCV; one-shot test acceptable
-- [ ] WAF{Custom,Managed}Rule / RateLimitRule / TransformRule / URIRewriteRule / ResponseHeaderRule — single-zone, low-risk e2e
-- [ ] EmailRoutingRule — needs zone with Email Routing enabled
-- [ ] AccessApplication (self_hosted / ssh / vnc / biso / saas / infrastructure / bookmark) — at least one type per branch
-- [ ] WorkerRoute (Ingress wildcard host) — needs zone
 - [ ] DNSRecord auto-emission via Service `cloudflare.com/manage-dns` annotation
 - [ ] Canary Rollout state machine on a real DispatchNamespace (5% → 25% → 100%)
 
-### k1c CLI smoke (offline)
+### k1c CLI smoke (offline + real account)
 
 - [x] `k1c version` (npm install path)
 - [x] `k1c version` (docker pull path, image entry point)
 - [x] `k1c apply --validate-only` on a sample manifest
 - [x] `k1c explain R2Bucket` schema dump
-- [ ] `k1c diff -v` against a real Cloudflare account (color + per-field diff visible)
-- [ ] `k1c rollout status / promote / abort` against a real DispatchNamespace
+- [x] `k1c apply -f hello-worker.yaml --dry-run` (real account)
+- [x] `k1c apply -f hello-worker.yaml` — full create round-trip (R2 + KV + Worker)
+- [x] `k1c apply -f hello-worker.yaml` again — re-apply is 3 NOOP / 0 drift
+- [x] `k1c diff -f hello-worker.yaml -v` (per-field diff)
+- [x] `k1c get / describe / delete --cascade` against real account
+- [x] `k1c telemetry workers <kind> <name>` against the Analytics GraphQL API (text + json)
+- [ ] `k1c rollout status / promote / abort` against a real DispatchNamespace (needs WfP)
 - [ ] `k1c logs <kind> <name>` shells out to a real `wrangler tail`
 - [ ] `k1c port-forward` shells out to a real `wrangler dev --remote`
-- [ ] `k1c telemetry workers <kind> <name>` against the Analytics GraphQL API
 
 ### k8s side (use `nix develop` to get kind/kubectl/helm/kustomize)
 
@@ -101,8 +110,13 @@ manifest passes both. See commit "fix: every example passes kubectl apply
       cloudflare.com/source.api=...` flips the next reconcile's ENOENT
       message from the original image to the annotation source path,
       proving lower walked the new manifest)
-- [ ] Operator forwards changes to Cloudflare on a real account
-- [ ] Operator survives a kubectl-side delete and reverse-topo deletes the Cloudflare side
+- [x] Operator forwards changes to Cloudflare on a real account (verified
+      `kubectl apply r2bucket` → bucket appears at Cloudflare; `k1c get
+      R2Bucket` from the CLI confirms via the same token)
+- [x] Operator survives a `kubectl delete` and reverse-deletes the
+      Cloudflare side via the `k1c.io/cleanup` finalizer flow (PR #26).
+      `status.cloudflareNativeId` is persisted so the cleanup path
+      knows the native id even after the spec is gone.
 - [x] OCI image (`ghcr.io/mizchi/k1c-operator:0.9.0`) pulls + runs on linux/amd64 (`docker run --platform linux/amd64 ... version` → `k1c 0.9.0`)
 - [x] OCI image pulls + runs on linux/arm64 (same, `--platform linux/arm64`)
 - [x] Phase 2: watch streams (`src/operator/watch.ts`). Default-on; the

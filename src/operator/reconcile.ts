@@ -203,15 +203,30 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
           if (nativeId) {
             try {
               await registry.get(d.resource.kind).delete(ctx, nativeId);
+              incCounter(
+                'k1c_operator_finalizer_total',
+                'finalizer cleanup outcomes',
+                { outcome: 'deleted', kind: d.resource.kind },
+              );
             } catch (e) {
               err(
                 `finalizer: ${d.resource.kind}/${name} delete failed; leaving finalizer for retry: ${formatReconcileError(e)}`,
+              );
+              incCounter(
+                'k1c_operator_finalizer_total',
+                'finalizer cleanup outcomes',
+                { outcome: 'delete_failed', kind: d.resource.kind },
               );
               continue;
             }
           } else {
             err(
               `finalizer: ${d.resource.kind}/${name} has no status.cloudflareNativeId; removing finalizer (orphan possible)`,
+            );
+            incCounter(
+              'k1c_operator_finalizer_total',
+              'finalizer cleanup outcomes',
+              { outcome: 'orphan', kind: d.resource.kind },
             );
           }
           try {
@@ -249,6 +264,11 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
                 name: a.resource.metadata.name,
               },
               a.meta.finalizers,
+            );
+            incCounter(
+              'k1c_operator_finalizer_total',
+              'finalizer cleanup outcomes',
+              { outcome: 'attached', kind: a.resource.kind },
             );
           } catch (e) {
             err(
