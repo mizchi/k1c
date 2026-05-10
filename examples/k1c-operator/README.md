@@ -42,15 +42,51 @@ The operator is a thin facade — every reconcile pass:
 
   1. Lists Cloudflare CRD instances + label-matched standard kinds via
      the k8s API.
-  2. Feeds them through the same `parseManifest → lower → plan → apply`
-     pipeline `k1c apply -f` uses.
-  3. Reports per-op status on stdout.
-  4. Patches `.status.conditions` on every touched Cloudflare CRD so
+  2. **Phase A — cleanup**: for every CR with `deletionTimestamp` and
+     our `k1c.io/cleanup` finalizer, look up the persisted
+     `status.cloudflareNativeId`, call `provider.delete`, then strip
+     the finalizer. k8s GCs the CR once all finalizers are gone.
+  3. **Phase B — apply**: ensures every alive CR carries the
+     `k1c.io/cleanup` finalizer (so `kubectl delete` will trigger
+     Phase A on the next pass), then feeds them through the same
+     `parseManifest → lower → plan → apply` pipeline `k1c apply -f`
+     uses.
+  4. Reports per-op status on stdout.
+  5. Patches `.status.conditions` on every touched Cloudflare CRD so
      `kubectl get r2bucket` (etc.) reflects `Reconciled` /
-     `ReconcileFailed` plus the underlying error message.
+     `ReconcileFailed` plus the underlying error message, and
+     persists the Cloudflare native id at
+     `.status.cloudflareNativeId` for the cleanup path.
 
 So the operator and the CLI share 99% of the implementation. A change to
 the lower / plan / apply core ships to both at once.
+
+### Cascade delete
+
+```sh
+$ kubectl apply -f - <<EOF
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2Bucket
+metadata: { name: media }
+spec: { location: weur }
+EOF
+$ kubectl get r2bucket media -o jsonpath='{.metadata.finalizers}'
+["k1c.io/cleanup"]
+$ kubectl get r2bucket media -o jsonpath='{.status.cloudflareNativeId}'
+k1c-default-media
+
+$ kubectl delete r2bucket media
+# 5s later:
+$ kubectl get r2bucket media
+Error from server (NotFound): r2buckets ... "media" not found
+$ k1c get R2Bucket
+(no R2Bucket resources found)   # bucket gone from CF too — no orphan
+```
+
+If `provider.delete` fails (network blip, permission tweak), the
+finalizer stays put and the cleanup retries on the next tick. The CR
+sticks around (with a `deletionTimestamp`) until the operator
+acknowledges, so `kubectl get` will keep showing it.
 
 ### Reconcile triggers
 
