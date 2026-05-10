@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.10.0](https://github.com/mizchi/k1c/compare/v0.9.0...v0.10.0) (2026-05-09)
+
+
+### Features
+
+* **crd:** real OpenAPIV3 schemas via zod-to-json-schema ([#18](https://github.com/mizchi/k1c/issues/18)) ([6ee30aa](https://github.com/mizchi/k1c/commit/6ee30aa9c6ab468bbd9e515c44be4535c67bd1fe))
+* **helm:** ServiceMonitor template + Grafana starter dashboard ([#20](https://github.com/mizchi/k1c/issues/20)) ([d9572f1](https://github.com/mizchi/k1c/commit/d9572f1a9eb824915b241c5f8d316afcb4a4aa4c))
+* operator phase 2 (watch streams) + phase 3 (status writeback) + CI gate ([#10](https://github.com/mizchi/k1c/issues/10)) ([73a9c3d](https://github.com/mizchi/k1c/commit/73a9c3d94728fe46e9bde4f49cffd33bac206708))
+* **operator:** helm chart + graceful shutdown drain ([#16](https://github.com/mizchi/k1c/issues/16)) ([64b7de6](https://github.com/mizchi/k1c/commit/64b7de601474ad3dd31ad3a0822fb5a52ce34628))
+* **operator:** JSON logging + Argo CD GitOps install example ([#19](https://github.com/mizchi/k1c/issues/19)) ([155e2ce](https://github.com/mizchi/k1c/commit/155e2ce5c4ac2d32cf909305d0d50a93a42dce40))
+* **operator:** leader election via coordination.k8s.io/v1 Lease ([#14](https://github.com/mizchi/k1c/issues/14)) ([453da97](https://github.com/mizchi/k1c/commit/453da97b3e9e584eb6aca83845cc08f10a7eadf5))
+* **operator:** Prometheus /metrics + /healthz + /readyz endpoint ([#13](https://github.com/mizchi/k1c/issues/13)) ([9e70891](https://github.com/mizchi/k1c/commit/9e70891946f6409d4ee7602321633e9516219e40))
+* PageRule + StreamLiveInput CRDs; wasm-component build (CLI) ([#15](https://github.com/mizchi/k1c/issues/15)) ([e6528fb](https://github.com/mizchi/k1c/commit/e6528fbf46b5eab7fdf0338d159d8c91adf853bc))
+
+
+### Bug Fixes
+
+* every example passes kubectl apply --dry-run=server; operator verified on kind ([8f3228c](https://github.com/mizchi/k1c/commit/8f3228c96a5f63a1e094c2207d7da55f71bdeb45))
+
 ## [0.9.0](https://github.com/mizchi/k1c/compare/v0.8.0...v0.9.0) (2026-05-09)
 
 
