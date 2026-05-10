@@ -9,6 +9,7 @@ import type {
 } from './types.ts';
 import { NotFound } from './types.ts';
 import { toProviderError } from './errors.ts';
+import { makeEquals } from './_equality.ts';
 
 export type R2Location = 'wnam' | 'enam' | 'weur' | 'eeur' | 'apac' | 'oc';
 
@@ -55,10 +56,7 @@ function r2EqualsNormalize(p: R2BucketProperties): unknown {
 export const r2BucketProvider: CloudflareResourceProvider<R2BucketProperties> = {
   resourceType: 'R2Bucket',
   schema: r2BucketSchema,
-
-  equals(prior, desired) {
-    return JSON.stringify(r2EqualsNormalize(prior)) === JSON.stringify(r2EqualsNormalize(desired));
-  },
+  equals: makeEquals<R2BucketProperties>(r2EqualsNormalize),
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     let response;
