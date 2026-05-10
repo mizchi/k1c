@@ -59,9 +59,17 @@ export const r2BucketProvider: CloudflareResourceProvider<R2BucketProperties> = 
   async read(ctx, nativeId) {
     try {
       const bucket = await ctx.cloudflare.r2.buckets.get(nativeId, { account_id: ctx.accountId });
+      // Cloudflare returns location codes uppercase (`WEUR`); the
+      // manifest schema uses lowercase (`weur`). Normalize on read so
+      // diff doesn't flag every existing bucket as drifting and try
+      // an UPDATE that the API would reject as immutable.
+      const location =
+        typeof bucket.location === 'string'
+          ? (bucket.location.toLowerCase() as R2Location)
+          : undefined;
       const props: R2BucketProperties = {
         bucketName: bucket.name ?? nativeId,
-        ...(bucket.location ? { location: bucket.location } : {}),
+        ...(location ? { location } : {}),
         ...(bucket.storage_class ? { storageClass: bucket.storage_class } : {}),
       };
       return props;
