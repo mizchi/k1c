@@ -2,8 +2,8 @@ apiVersion: v2
 name: k1c-operator
 description: Kubernetes operator that reconciles Cloudflare resources via the k1c manifest schema
 type: application
-version: 0.1.0
-appVersion: "0.10.0"
+version: 0.2.0
+appVersion: "0.11.0"
 home: https://github.com/mizchi/k1c
 sources:
   - https://github.com/mizchi/k1c
