@@ -36,9 +36,29 @@ function parseLabel(name: string): string | null {
   return `${namespace}/${objectName}`;
 }
 
+/**
+ * R2 returns `storage_class: 'Standard'` even when the user never set
+ * it (Standard is the default). The manifest typically omits it, so
+ * a deep-equals comparison flags every existing bucket as drifting
+ * and tries to UPDATE — which the API rejects since storage class is
+ * immutable. Treat absent == 'Standard' as the same value for diff
+ * purposes.
+ */
+function r2EqualsNormalize(p: R2BucketProperties): unknown {
+  return {
+    bucketName: p.bucketName,
+    location: p.location,
+    storageClass: p.storageClass ?? 'Standard',
+  };
+}
+
 export const r2BucketProvider: CloudflareResourceProvider<R2BucketProperties> = {
   resourceType: 'R2Bucket',
   schema: r2BucketSchema,
+
+  equals(prior, desired) {
+    return JSON.stringify(r2EqualsNormalize(prior)) === JSON.stringify(r2EqualsNormalize(desired));
+  },
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     let response;
