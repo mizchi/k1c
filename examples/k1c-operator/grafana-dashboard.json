@@ -138,6 +138,21 @@
       "fieldConfig": {
         "defaults": { "unit": "s" }
       }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Finalizer ops (1m rate, by outcome)",
+      "datasource": { "uid": "$ds", "type": "prometheus" },
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(k1c_operator_finalizer_total[1m]))",
+          "legendFormat": "{{outcome}}",
+          "refId": "A"
+        }
+      ],
+      "gridPos": { "x": 0, "y": 20, "w": 12, "h": 8 },
+      "description": "attached: ensureFinalizer succeeded on a fresh CR. deleted: cleanup ran provider.delete and stripped the finalizer. delete_failed: provider.delete threw (will retry). orphan: CR went into deletion before status.cloudflareNativeId was set, so the operator removed the finalizer without a CF call."
     }
   ]
 }
