@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, extname } from 'node:path';
 import process from 'node:process';
@@ -12,11 +13,17 @@ import process from 'node:process';
  *                 Files starting with `_` or `.` are skipped (helm chart
  *                 partials use `_` prefix; hidden files are skipped by
  *                 convention).
+ *   `<file.pkl>`  a [PKL](https://pkl-lang.org) module — `pkl eval --format
+ *                 yaml` is invoked transparently. The module is expected to
+ *                 emit a multi-doc YAML stream (`output.renderer = new
+ *                 YamlRenderer { isStream = true }`) so each k1c resource
+ *                 lands as its own document.
  *   `<file>`      a single file, treated as YAML even without an extension.
  *
  * The point is to let users hand k1c whatever the rest of the k8s ecosystem
- * spits out — `helm template`, `kustomize build`, a directory of static
- * manifests — without needing per-tool integration in k1c itself.
+ * spits out — `helm template`, `kustomize build`, a `.pkl` module, a
+ * directory of static manifests — without needing per-tool integration in
+ * k1c itself.
  */
 export async function readManifestSource(source: string): Promise<string> {
   if (source === '-') {
@@ -31,8 +38,41 @@ export async function readManifestSource(source: string): Promise<string> {
   if (s.isDirectory()) {
     return readDirectory(source);
   }
+  if (extname(source).toLowerCase() === '.pkl') {
+    return evalPkl(source);
+  }
   const buf = await readFile(source);
   return buf.toString('utf-8');
+}
+
+/**
+ * Shell out to `pkl eval --format yaml <file>` and return the stdout.
+ * Errors from pkl (parse failures, missing imports, type mismatches)
+ * are surfaced verbatim so the user sees pkl's line/column diagnostics.
+ */
+function evalPkl(source: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('pkl', ['eval', '--format', 'yaml', source]);
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+    child.on('error', (err) => {
+      reject(
+        new Error(
+          `failed to invoke pkl: ${err.message}. Install pkl from https://pkl-lang.org/main/current/pkl-cli/index.html or use \`pkl eval --format yaml <file> | k1c apply -f -\` instead.`,
+        ),
+      );
+    });
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(Buffer.concat(stdoutChunks).toString('utf-8'));
+      } else {
+        const stderr = Buffer.concat(stderrChunks).toString('utf-8');
+        reject(new Error(`pkl eval ${source} failed (exit ${code}):\n${stderr}`));
+      }
+    });
+  });
 }
 
 async function readStdin(): Promise<string> {

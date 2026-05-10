@@ -135,6 +135,46 @@ either ships to both at once. Production-grade plumbing:
 - **Structured JSON logging** via `--log-format json` for log aggregators.
 - **Graceful shutdown**: SIGTERM waits up to 30s for the in-flight reconcile to finish before exiting.
 
+## PKL: type-checked manifests
+
+[PKL](https://pkl-lang.org) is a configuration language with strong
+types and module imports. The same hello-worker manifest written in
+PKL catches typos / missing fields / out-of-range enums at *edit*
+time instead of at apply time:
+
+```pkl
+// examples/pkl/hello-worker.pkl
+import "../../pkl/k1c.pkl"
+
+output {
+  renderer = new YamlRenderer { isStream = true }
+  value = resources
+}
+
+resources = new Listing {
+  new k1c.R2Bucket {
+    metadata { name = "media" }
+    spec { location = "weur" }   // ← `"antarctica"` fails with line+col
+  }
+  new k1c.Deployment { ... }
+}
+```
+
+```sh
+# Either pipe pkl yourself …
+pkl eval --format yaml examples/pkl/hello-worker.pkl | k1c apply -f -
+
+# … or just hand the .pkl file directly. The CLI shells to
+# `pkl eval --format yaml` when it sees a `.pkl` extension.
+k1c apply -f examples/pkl/hello-worker.pkl
+```
+
+Hand-written modules ship under [`pkl/`](pkl/) and currently cover
+the most-used kinds (R2Bucket / KVNamespace / D1Database / Queue /
+Vectorize / ConfigMap / Secret / Deployment with CSI volumes). The
+long tail of CRDs (rulesets, Access*, etc.) stays YAML-only until
+`k1c export-pkl` can generate the full set from the zod schemas.
+
 ## Wasm component build (preview)
 
 The CLI compiles to a [WebAssembly Component](https://component-model.bytecodealliance.org/)
