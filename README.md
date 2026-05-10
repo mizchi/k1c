@@ -2,16 +2,26 @@
 
 Experimental `kubectl apply`-style tool for Cloudflare. Pronounced **"kick"**.
 
-This is a learning / proof-of-concept project. It is **not production-ready**, and its public surface is subject to breaking changes without notice.
+This is a learning / proof-of-concept project. The CLI + operator are
+both published (`@mizchi/k1c` on npm, `ghcr.io/mizchi/k1c-operator`
+on GHCR), but the public surface is subject to breaking changes
+without notice.
 
 ## What it does
 
-`k1c` parses a defined subset of Kubernetes manifests and applies them to a Cloudflare account via the official SDK. The motivation is to reuse `kubectl`-style declarative manifests for personal-scale Cloudflare projects without paying for a real Kubernetes control plane.
+`k1c` parses a defined subset of Kubernetes manifests and applies them
+to a Cloudflare account via the official SDK. The motivation is to
+reuse `kubectl`-style declarative manifests for personal-scale
+Cloudflare projects without paying for a real Kubernetes control
+plane. Same manifest can be applied either via the CLI (one-shot) or
+via the operator running inside any k8s cluster (continuous
+reconciliation, finalizer-driven cascade delete).
 
 ```yaml
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: R2Bucket
 metadata: { name: media }
+spec: { location: weur }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -19,14 +29,18 @@ metadata: { name: api }
 spec:
   selector: { matchLabels: { app: api } }
   template:
+    metadata: { labels: { app: api } }
     spec:
       containers:
         - name: api
           image: ./dist/worker.js
           volumeMounts:
-            - { name: bucket, mountPath: R2_MEDIA }
+            - { name: bucket, mountPath: /mnt/media }
       volumes:
-        - { name: bucket, r2BucketRef: { name: media } }
+        - name: bucket
+          csi:
+            driver: r2.k1c.io
+            volumeAttributes: { bucketRef: media }
 ```
 
 ```sh
@@ -44,37 +58,57 @@ kustomize build ./examples/kustomize/overlays/prod | k1c apply -f -
 
 ## Status
 
+22 Cloudflare CRD kinds + 9 standard k8s kinds are wired today.
+"e2e" means the row is exercised by `tests/e2e/idempotency.e2e.test.ts`
+against a real Cloudflare account — round-trip create → read →
+equals → delete. "verified" rows were checked manually but aren't in
+the suite (they need a customer domain / paid feature).
+
 | Manifest kind | Backed by | State |
 |---|---|---|
-| `Deployment` (single- or multi-container Pods) | Worker(s) wired by service bindings | working |
-| `ConfigMap` / `Secret` | folded into Worker `vars` / `secrets` | working |
-| `Service` (`ClusterIP` / `LoadBalancer`) | service binding / Custom Domain | working |
-| `R2Bucket`, `KVNamespace`, `D1Database`, `Vectorize`, `Hyperdrive` (CRDs) | matching CF data services | working |
-| `Queue` (CRD) + producer / consumer wiring | Cloudflare Queues + consumer | working |
-| `DispatchNamespace` (CRD) | Workers for Platforms namespace | working |
+| `Deployment` (single- or multi-container Pods) | Worker(s) wired by service bindings | verified |
+| `ConfigMap` / `Secret` | folded into Worker `vars` / `secrets` | derived |
+| `Service` (`ClusterIP` / `LoadBalancer`) | service binding / Custom Domain | derived |
+| `R2Bucket` (CRD) | R2 buckets | **e2e** |
+| `KVNamespace` (CRD) | KV namespaces | **e2e** |
+| `D1Database` (CRD) | D1 databases | **e2e** |
+| `Vectorize` (CRD) | Vectorize indexes | **e2e** |
+| `Hyperdrive` (CRD) | Hyperdrive configs | drift-fixed |
+| `Queue` (CRD) + producer / consumer wiring | Cloudflare Queues + consumer | **e2e** |
+| `DispatchNamespace` (CRD) | Workers for Platforms namespace | working (paid) |
 | `Rollout` (Argo Rollouts subset, `blueGreen` / `canary.steps`) | Worker Versions, or WfP dispatcher with KV-stored canary state | working |
 | `StatefulSet` → `DurableObject` class | Workers Durable Objects + migrations | working (greenfield only) |
 | `CronJob` / `Job` | Worker + Cron Trigger / Workflow registration | working |
-| `DNSRecord` (CRD) | DNS records | working |
-| `LogpushJob` (CRD) | Logpush (zone- or account-scoped) | working |
-| `ai` / `browser` / `version_metadata` / `analytics_engine` Worker bindings | annotation- / volume-driven | working |
-| `Ingress` (`networking.k8s.io/v1`) | generated router Worker + Custom Domain per literal host (Workers Route per wildcard host) | working |
-| `AccessApplication` (CRD; `self_hosted` / `ssh` / `vnc` / `biso` / `saas` / `infrastructure` / `bookmark`) | Cloudflare Access app with inline or referenced policies | working |
-| `AccessPolicy` (CRD) | reusable account-level Access policy (referenced by `policies[].ref`) | working |
-| `CacheRule` (CRD) | Cache Rule inside the zone's cache_settings phase ruleset | working |
-| `TransformRule` (CRD) | request header rewrite inside the late_transform phase ruleset | working |
-| `URIRewriteRule` (CRD) | URI path / query rewrite inside the http_request_transform phase | working |
-| `ResponseHeaderRule` (CRD) | response header rewrite inside the http_response_headers_transform phase | working |
-| `WAFCustomRule` (CRD) | block / challenge / log inside the firewall_custom phase ruleset | working |
-| `WAFManagedRuleset` (CRD) | opt-in to a Cloudflare-managed WAF rule group (OWASP Core / Managed / etc.) | working |
-| `RateLimitRule` (CRD) | request-rate threshold inside the http_ratelimit phase ruleset | working |
-| `CustomHostname` (CRD) | Cloudflare for SaaS hostname with async SSL provisioning (polled) | working |
-| `EmailRoutingRule` (CRD) | per-zone email routing (forward / drop / dispatch to Worker) | working |
+| `DNSRecord` (CRD) | DNS records | **e2e** |
+| `LogpushJob` (CRD) | Logpush (zone- or account-scoped) | drift-fixed |
 | `TelemetryStack` (CRD) | bundle Logpush streams (workers / http / firewall / dns / audit) in one manifest | working |
-| `CustomHostname` | — | not implemented (see [`TODO.md`](TODO.md)) |
+| `ai` / `browser` / `version_metadata` / `analytics_engine` / `mtls` / `pipelines` Worker bindings | annotation- / volume-driven | working |
+| `Ingress` (`networking.k8s.io/v1`) | generated router Worker + Custom Domain per literal host (Workers Route per wildcard host) | working |
+| `WorkerRoute` (Ingress wildcard host) | Workers Route binding | verified |
+| `CustomDomain` (CRD) | per-Worker Custom Domain | working |
+| `CustomHostname` (CRD) | Cloudflare for SaaS hostname with async SSL provisioning (polled) | drift-fixed |
+| `AccessApplication` (CRD; `self_hosted` / `ssh` / `vnc` / `biso` / `saas` / `infrastructure` / `bookmark`) | Cloudflare Access app with inline or referenced policies | **e2e** |
+| `AccessPolicy` (CRD) | reusable account-level Access policy (referenced by `policies[].ref`) | **e2e** |
+| `CacheRule` (CRD) | Cache Rule inside the zone's cache_settings phase ruleset | **e2e** |
+| `TransformRule` (CRD) | request header rewrite inside the late_transform phase ruleset | **e2e** |
+| `URIRewriteRule` (CRD) | URI path / query rewrite inside the http_request_transform phase | **e2e** |
+| `ResponseHeaderRule` (CRD) | response header rewrite inside the http_response_headers_transform phase | **e2e** |
+| `WAFCustomRule` (CRD) | block / challenge / log inside the firewall_custom phase ruleset | **e2e** |
+| `WAFManagedRuleset` (CRD) | opt-in to a Cloudflare-managed WAF rule group (OWASP Core / Managed / etc.) | working |
+| `RateLimitRule` (CRD) | request-rate threshold inside the http_ratelimit phase ruleset | **e2e** |
+| `EmailRoutingRule` (CRD) | per-zone email routing (forward / drop / dispatch to Worker) | **e2e** |
+| `PageRule` (CRD) | legacy zone-level page rules | drift-fixed |
+| `StreamLiveInput` (CRD) | RTMPS / SRT ingest endpoint with recording policy | drift-fixed |
 
 See [`docs/resources.md`](docs/resources.md) for the full mapping and limitations,
 and [`TODO.md`](TODO.md) for what's queued.
+
+**drift-fixed** = provider has a custom `equals` that strips
+Cloudflare-side defaults (e.g. `proxied: false`, `storage_class:
+'Standard'`, `recording.mode: 'off'`) so re-applying an unchanged
+manifest stays NOOP. The pattern was uncovered while running the e2e
+suite against a real account — see PRs #25 / #27 / #29 / #35 / #36 /
+#37 / #38.
 
 ## Operator: real-time reconciliation inside a k8s cluster
 
@@ -82,21 +116,24 @@ For users who want `kubectl apply` to actually reach Cloudflare (not just
 sit in etcd), `k1c operator run` watches CRD instances + label-gated
 standard resources and reconciles them via the same lower / plan / apply
 pipeline the CLI uses. See [`examples/k1c-operator/`](examples/k1c-operator/)
-for the install bundle (ServiceAccount + ClusterRole + Deployment) and a
-sample Dockerfile.
+for the install bundle (ServiceAccount + ClusterRole + Deployment), the
+[helm chart](examples/k1c-operator/helm-chart/), and an
+[Argo CD GitOps install example](examples/argocd/).
 
 ```
 GitOps (Argo CD / Flux) ──► etcd ──watch──► k1c operator ──► Cloudflare API
 ```
 
 The operator runs the same code path as the CLI, so a feature added to
-either ships to both at once. It opens k8s watch streams on every
-Cloudflare CRD plural + label-gated standard kind (debounced 500ms;
-`--interval` doubles as a resync safety net; `--no-watch` falls back
-to pure polling), and after each reconcile pass patches
-`.status.conditions` on every touched Cloudflare CRD so
-`kubectl get r2bucket` reflects `Reconciled` / `ReconcileFailed` plus
-the underlying error message.
+either ships to both at once. Production-grade plumbing:
+
+- **Watch streams**: subscribes to every Cloudflare CRD plural + label-gated standard kind, debounced 500ms; `--interval` doubles as a resync safety net; `--no-watch` falls back to pure polling.
+- **Status writeback**: after each reconcile pass, patches `.status.conditions` on every touched Cloudflare CRD so `kubectl get r2bucket` reflects `Reconciled` / `ReconcileFailed` plus the underlying error message; `.status.cloudflareNativeId` is persisted for the cleanup path.
+- **Finalizer cascade delete**: every CR carries a `k1c.io/cleanup` finalizer. `kubectl delete` flips `deletionTimestamp`; the operator deletes the corresponding Cloudflare resource and strips the finalizer; k8s GCs the CR. Failures retry on the next tick.
+- **Leader election** (`coordination.k8s.io/v1` Lease): scale `replicas` to 2+ for HA, leader/standby spread by `topologySpreadConstraints`. Failover within ~15s.
+- **Prometheus `/metrics`** + `/healthz` + `/readyz` on `:9090`. ServiceMonitor template + Grafana dashboard included. Metrics: `k1c_operator_{up, is_leader, reconcile_total, reconcile_passes_total, reconcile_duration_seconds, watch_events_total, managed_resources, finalizer_total}`.
+- **Structured JSON logging** via `--log-format json` for log aggregators.
+- **Graceful shutdown**: SIGTERM waits up to 30s for the in-flight reconcile to finish before exiting.
 
 ## Wasm component build (preview)
 
@@ -159,13 +196,40 @@ The architecture is documented as [Architecture Decision Records](docs/adr/) (AD
 
 ## Install
 
-Once published:
+CLI (one-shot apply):
 
 ```sh
 npm install -g @mizchi/k1c
 # or:
 pnpm dlx @mizchi/k1c apply -f manifest.yaml
 ```
+
+Operator (continuous reconciliation inside a k8s cluster):
+
+```sh
+# Register CRDs once (kept out of the helm release lifecycle so
+# `helm uninstall` doesn't orphan every CR you ever applied).
+k1c export-crds | kubectl apply -f -
+
+# API token Secret.
+kubectl create namespace k1c-system
+kubectl -n k1c-system create secret generic cloudflare-api-token \
+  --from-literal=K1C_ACCOUNT_ID=<your-account-id> \
+  --from-literal=CLOUDFLARE_API_TOKEN=<your-token>
+
+# Either: flat install bundle.
+kubectl apply -f https://raw.githubusercontent.com/mizchi/k1c/main/examples/k1c-operator/install.yaml
+
+# Or: helm chart.
+helm install k1c examples/k1c-operator/helm-chart \
+  --namespace k1c-system --create-namespace=false
+
+# Or: Argo CD Application — see examples/argocd/.
+```
+
+The operator image is published as a multi-arch (`linux/amd64` +
+`linux/arm64`) OCI v1.1 image with SLSA provenance + SBOM
+attestations: `ghcr.io/mizchi/k1c-operator:<version>`.
 
 From source (this repo):
 
@@ -187,7 +251,7 @@ K1C_E2E=1 K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm test:e2e
 
 ```sh
 k1c apply    -f <file|dir|-> [--dry-run | --watch | --validate-only] [--quiet | -q]
-k1c diff     -f <manifest.yaml> [-o text|json]
+k1c diff     -f <manifest.yaml> [-o text|json] [-v|--verbose] [--color always|never]
 k1c delete   -f <manifest.yaml> [--cascade]
 k1c get      <kind> [name] [-n <namespace>] [-o text|json]
 k1c describe <kind> <name> [-n <namespace>] [-o text|json]
@@ -196,9 +260,15 @@ k1c logs     <kind> <name> [-n <namespace>] [--format pretty|json] [--status <s>
 k1c port-forward <kind> <name> [-n <namespace>] [--port 8787]
 k1c telemetry workers <kind> <name> [-n <ns>] [--since 1h] [-o text|json]
 k1c explain  <kind | list> [--recursive | -r]
+k1c export-crds [--include-standard]
 k1c config   list | current-context | use-context <name>
              | set-context <name> --account <id> [--zone <id>] [--token-env <env>]
              | delete-context <name>
+k1c operator run [-n <namespace>] [--interval 30] [--no-watch]
+                 [--leader-election] [--lease-name k1c-operator]
+                 [--lease-namespace k1c-system]
+                 [--metrics-addr 0.0.0.0:9090 | --no-metrics]
+                 [--log-format text|json]
 k1c version
 ```
 
