@@ -147,6 +147,30 @@ const rows: Row[] = [
       enabled: false,
     }),
   },
+  {
+    name: 'EmailRoutingRule',
+    requiresZone: true,
+    props: () => ({
+      zoneId: process.env['K1C_ZONE_ID']!,
+      ruleName: `k1c-default-er-${RUN}`,
+      enabled: false,
+      priority: 1000,
+      matchers: [
+        { type: 'literal', field: 'to', value: `k1c-debug-${RUN}@mizchi.net` },
+      ],
+      actions: [{ type: 'drop' }],
+    }),
+  },
+  {
+    name: 'AccessApplication',
+    props: () => ({
+      appName: `k1c-default-aa-${RUN}`,
+      domain: `k1c-debug-${RUN}.mizchi.net`,
+      appType: 'self_hosted',
+      sessionDuration: '24h',
+      policies: [],
+    }),
+  },
 ];
 
 describe.skipIf(!RUN_E2E)('e2e: idempotency across providers', () => {

@@ -47,8 +47,43 @@ function scopeParams(scope: LogpushJobProperties['scope']): { account_id?: strin
     : { account_id: scope.accountId };
 }
 
+/**
+ * Cloudflare returns `enabled: true` by default and `filter: ''`
+ * when no filter was set. Both can differ from a manifest that
+ * omits them, so normalise both sides before comparison.
+ */
+function logpushEqualsNormalize(p: LogpushJobProperties): unknown {
+  return {
+    jobName: p.jobName,
+    scope: p.scope,
+    dataset: p.dataset,
+    destinationConf: p.destinationConf,
+    enabled: p.enabled ?? true,
+    ...(p.filter !== undefined && p.filter !== '' ? { filter: p.filter } : {}),
+  };
+}
+
+function logpushStableStringify(value: unknown): string {
+  return JSON.stringify(value, (_k, v) => {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      const sorted: Record<string, unknown> = {};
+      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
+        sorted[k] = (v as Record<string, unknown>)[k];
+      }
+      return sorted;
+    }
+    return v;
+  });
+}
+
 export const logpushJobProvider: CloudflareResourceProvider<LogpushJobProperties> = {
   resourceType: 'LogpushJob',
+  equals(prior, desired) {
+    return (
+      logpushStableStringify(logpushEqualsNormalize(prior)) ===
+      logpushStableStringify(logpushEqualsNormalize(desired))
+    );
+  },
   schema: logpushJobPropsSchema,
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
