@@ -201,17 +201,63 @@ jobs:
           # The mere presence of any "reconcile error" or "failed:"
           # line proves listManagedResources picked up the new CRD
           # instance (it wasn't there at startup).
+          ok=
           for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
             if kubectl -n k1c-system logs deploy/k1c-operator \
               | grep -E "reconcile error|failed: R2Bucket" > /dev/null; then
               echo "operator reacted to R2Bucket within ${i} polls"
-              kubectl -n k1c-system logs deploy/k1c-operator | tail -30
+              ok=1
+              break
+            fi
+            sleep 2
+          done
+          if [ -z "$ok" ]; then
+            echo "::error::operator did not react to R2Bucket apply within 30s"
+            kubectl -n k1c-system logs deploy/k1c-operator
+            exit 1
+          fi
+
+      - name: Finalizer attached to the CR
+        run: |
+          # Phase B in the reconcile loop ensures every alive Cloudflare
+          # CRD carries the `k1c.io/cleanup` finalizer. Once the operator
+          # has noticed the CR (verified above), the finalizer should be
+          # patched onto metadata within ~one reconcile pass.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            f=$(kubectl get r2bucket e2e-test-bucket \
+              -o jsonpath='{.metadata.finalizers}' 2>/dev/null || true)
+            case "$f" in
+              *k1c.io/cleanup*)
+                echo "finalizer attached: $f"
+                exit 0
+                ;;
+            esac
+            sleep 2
+          done
+          echo "::error::operator did not attach the k1c.io/cleanup finalizer within 20s"
+          kubectl get r2bucket e2e-test-bucket -o yaml | head -20
+          exit 1
+
+      - name: Cascade delete via finalizer
+        run: |
+          # `kubectl delete --wait=false` returns immediately; the CR
+          # actually goes away once the operator processes the finalizer
+          # (Phase A: no nativeId because create failed against the
+          # dummy token, so the operator logs "orphan possible" and
+          # removes the finalizer anyway — the right behaviour given a
+          # missing CF id, just covered by the "delete_failed / orphan"
+          # outcome on the metric).
+          kubectl delete r2bucket e2e-test-bucket --wait=false
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+            if ! kubectl get r2bucket e2e-test-bucket >/dev/null 2>&1; then
+              echo "CR garbage-collected within ${i} polls"
               exit 0
             fi
             sleep 2
           done
-          echo "::error::operator did not react to R2Bucket apply within 30s"
-          kubectl -n k1c-system logs deploy/k1c-operator
+          echo "::error::CR still present 30s after delete; finalizer flow stuck"
+          kubectl get r2bucket e2e-test-bucket -o yaml | head -25
+          kubectl -n k1c-system logs deploy/k1c-operator | tail -30
           exit 1
 
       - name: Operator pod still healthy
