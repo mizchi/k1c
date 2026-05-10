@@ -75,7 +75,11 @@ export const vectorizeProvider: CloudflareResourceProvider<VectorizeProperties> 
         indexName: i.name,
         dimensions: i.config.dimensions,
         metric: i.config.metric,
-        ...(i.description !== undefined ? { description: i.description } : {}),
+        // CF returns description: "" even when the user never set one.
+        // Treat empty == absent so re-apply doesn't flag drift.
+        ...(i.description !== undefined && i.description !== ''
+          ? { description: i.description }
+          : {}),
       };
     } catch (raw) {
       const err = toProviderError(raw);

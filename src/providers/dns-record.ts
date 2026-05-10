@@ -98,7 +98,10 @@ export const dnsRecordProvider: CloudflareResourceProvider<DNSRecordProperties> 
         name: r.name,
         content: r.content,
         ...(r.ttl !== undefined ? { ttl: r.ttl } : {}),
-        ...(r.proxied !== undefined ? { proxied: r.proxied } : {}),
+        // CF returns proxied: false on every record even when the
+        // user never set the field. Drop the default so re-apply
+        // doesn't flag every TXT/MX record as drifting.
+        ...(r.proxied === true ? { proxied: r.proxied } : {}),
         ...(r.priority !== undefined ? { priority: r.priority } : {}),
       };
     } catch (raw) {
