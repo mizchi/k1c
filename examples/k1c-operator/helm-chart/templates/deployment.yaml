@@ -97,3 +97,12 @@ spec:
       affinity:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      {{- if and (gt (int .Values.replicaCount) 1) .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- range .Values.topologySpreadConstraints }}
+        - {{ toYaml . | nindent 10 | trim }}
+          labelSelector:
+            matchLabels:
+              {{- include "k1c-operator.selectorLabels" $ | nindent 14 }}
+        {{- end }}
+      {{- end }}

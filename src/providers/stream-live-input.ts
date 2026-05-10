@@ -9,6 +9,7 @@ import type {
 } from './types.ts';
 import { NotFound } from './types.ts';
 import { toProviderError } from './errors.ts';
+import { makeEquals } from './_equality.ts';
 
 /**
  * Cloudflare Stream Live Input.
@@ -133,28 +134,10 @@ function streamLiveInputEqualsNormalize(p: StreamLiveInputProperties): unknown {
   };
 }
 
-function streamLiveInputStableStringify(value: unknown): string {
-  return JSON.stringify(value, (_k, v) => {
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      const sorted: Record<string, unknown> = {};
-      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
-        sorted[k] = (v as Record<string, unknown>)[k];
-      }
-      return sorted;
-    }
-    return v;
-  });
-}
-
 export const streamLiveInputProvider: CloudflareResourceProvider<StreamLiveInputProperties> = {
   resourceType: 'StreamLiveInput',
   schema: streamLiveInputPropsSchema,
-  equals(prior, desired) {
-    return (
-      streamLiveInputStableStringify(streamLiveInputEqualsNormalize(prior)) ===
-      streamLiveInputStableStringify(streamLiveInputEqualsNormalize(desired))
-    );
-  },
+  equals: makeEquals<StreamLiveInputProperties>(streamLiveInputEqualsNormalize),
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     let resp;

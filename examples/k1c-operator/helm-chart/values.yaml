@@ -81,6 +81,14 @@ podDisruptionBudget:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+# Spread constraints — only meaningful when replicaCount > 1. The
+# default (skew=1 across hostnames) keeps the leader and standby on
+# different nodes so a single node failure can't take both down.
+# Set to [] to disable.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
 podAnnotations: {}
 podLabels: {}
 

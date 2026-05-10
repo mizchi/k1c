@@ -9,6 +9,7 @@ import type {
 } from './types.ts';
 import { NotFound } from './types.ts';
 import { toProviderError } from './errors.ts';
+import { makeEquals } from './_equality.ts';
 
 /**
  * Cloudflare Page Rules CRD.
@@ -119,28 +120,10 @@ function pageRuleEqualsNormalize(p: PageRuleProperties): unknown {
   };
 }
 
-function pageRuleStableStringify(value: unknown): string {
-  return JSON.stringify(value, (_k, v) => {
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      const sorted: Record<string, unknown> = {};
-      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
-        sorted[k] = (v as Record<string, unknown>)[k];
-      }
-      return sorted;
-    }
-    return v;
-  });
-}
-
 export const pageRuleProvider: CloudflareResourceProvider<PageRuleProperties> = {
   resourceType: 'PageRule',
   schema: pageRulePropsSchema,
-  equals(prior, desired) {
-    return (
-      pageRuleStableStringify(pageRuleEqualsNormalize(prior)) ===
-      pageRuleStableStringify(pageRuleEqualsNormalize(desired))
-    );
-  },
+  equals: makeEquals<PageRuleProperties>(pageRuleEqualsNormalize),
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     if (ctx.zoneId === undefined) return;

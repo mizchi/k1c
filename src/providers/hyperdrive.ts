@@ -9,6 +9,7 @@ import type {
 } from './types.ts';
 import { NotFound } from './types.ts';
 import { toProviderError } from './errors.ts';
+import { makeEquals } from './_equality.ts';
 
 export interface HyperdriveProperties {
   readonly name: string;
@@ -117,29 +118,10 @@ function hyperdriveEqualsNormalize(p: HyperdriveProperties): unknown {
   };
 }
 
-function stableStringify(value: unknown): string {
-  return JSON.stringify(value, (_k, v) => {
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      const sorted: Record<string, unknown> = {};
-      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
-        sorted[k] = (v as Record<string, unknown>)[k];
-      }
-      return sorted;
-    }
-    return v;
-  });
-}
-
 export const hyperdriveProvider: CloudflareResourceProvider<HyperdriveProperties> = {
   resourceType: 'Hyperdrive',
   schema: hyperdriveSchema,
-
-  equals(prior, desired) {
-    return (
-      stableStringify(hyperdriveEqualsNormalize(prior)) ===
-      stableStringify(hyperdriveEqualsNormalize(desired))
-    );
-  },
+  equals: makeEquals<HyperdriveProperties>(hyperdriveEqualsNormalize),
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     let iter;

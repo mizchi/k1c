@@ -10,6 +10,7 @@ import type {
 } from './types.ts';
 import { NotFound } from './types.ts';
 import { toProviderError } from './errors.ts';
+import { makeEquals } from './_equality.ts';
 
 export type CustomHostnameSslMethod = 'http' | 'cname' | 'txt' | 'email';
 export type CustomHostnameSslType = 'dv';
@@ -123,28 +124,10 @@ function customHostnameEqualsNormalize(p: CustomHostnameProperties): unknown {
   };
 }
 
-function customHostnameStableStringify(value: unknown): string {
-  return JSON.stringify(value, (_k, v) => {
-    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
-      const sorted: Record<string, unknown> = {};
-      for (const k of Object.keys(v as Record<string, unknown>).sort()) {
-        sorted[k] = (v as Record<string, unknown>)[k];
-      }
-      return sorted;
-    }
-    return v;
-  });
-}
-
 export const customHostnameProvider: CloudflareResourceProvider<CustomHostnameProperties> = {
   resourceType: 'CustomHostname',
   schema: customHostnamePropertiesSchema,
-  equals(prior, desired) {
-    return (
-      customHostnameStableStringify(customHostnameEqualsNormalize(prior)) ===
-      customHostnameStableStringify(customHostnameEqualsNormalize(desired))
-    );
-  },
+  equals: makeEquals<CustomHostnameProperties>(customHostnameEqualsNormalize),
 
   async *list(ctx: ProviderContext): AsyncIterable<ListedResource> {
     if (ctx.zoneId === undefined) return;
