@@ -135,6 +135,20 @@ Grafana dashboard sits at
   * Per-op result (1m rate, by `result`)
   * Watch events (1m rate, by `kind`)
   * Reconcile duration (avg over 1m)
+  * Finalizer ops (1m rate, by `outcome`)
+
+The full metric set:
+
+| metric | type | labels | what |
+|---|---|---|---|
+| `k1c_operator_up` | gauge | — | 1 while the operator process is alive |
+| `k1c_operator_is_leader` | gauge | — | 1 on the leader, 0 on followers |
+| `k1c_operator_managed_resources` | gauge | — | size of the last list pass |
+| `k1c_operator_reconcile_passes_total` | counter | `outcome=ok\|partial\|noop\|error` | one increment per reconcile pass |
+| `k1c_operator_reconcile_total` | counter | `result=ok\|failed\|skipped\|error` | per-op result |
+| `k1c_operator_reconcile_duration_seconds` | summary | — | wall-clock per reconcile pass (count + sum) |
+| `k1c_operator_watch_events_total` | counter | `kind`, `phase` | apiserver watch events delivered |
+| `k1c_operator_finalizer_total` | counter | `outcome=attached\|deleted\|delete_failed\|orphan`, `kind` | finalizer cleanup outcomes |
 
 ## Install
 
