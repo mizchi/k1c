@@ -29,14 +29,33 @@ export async function plan(
   // before they are compared to prior state, so an unchanged manifest does
   // not look "drifted" just because lower emits placeholders that the
   // provider already serialized as concrete IDs.
+  //
+  // If a provider's list() throws (typically a 403 because the account
+  // lacks the relevant Cloudflare feature, or the token lacks scope),
+  // we treat that resource type as having no actuals and continue. The
+  // alternative — failing the entire plan — would mean a user without
+  // Workers for Platforms / Hyperdrive / Vectorize / etc. couldn't
+  // apply ANY manifest, even ones that don't touch those resources.
+  // Operations that DO try to write a missing-feature resource will
+  // surface the error during apply, which is the right place for it.
   const actualsByType = new Map<string, Map<string, { nativeId: string; label: string }>>();
   const resolutionCache: ResolutionCache = new Map();
   for (const resourceType of registry.types()) {
     const provider = registry.get(resourceType);
     const actualByLabel = new Map<string, { nativeId: string; label: string }>();
-    for await (const item of provider.list(ctx)) {
-      actualByLabel.set(item.label, item);
-      resolutionCache.set(cacheKey(resourceType, item.label), item.nativeId);
+    const hasDesired = desiredByType.has(resourceType);
+    try {
+      for await (const item of provider.list(ctx)) {
+        actualByLabel.set(item.label, item);
+        resolutionCache.set(cacheKey(resourceType, item.label), item.nativeId);
+      }
+    } catch (e) {
+      if (hasDesired) {
+        // The user explicitly asked for this resource type, so a list
+        // failure is fatal — they need to know.
+        throw e;
+      }
+      // Otherwise swallow + leave actuals empty for orphan-detection.
     }
     actualsByType.set(resourceType, actualByLabel);
   }

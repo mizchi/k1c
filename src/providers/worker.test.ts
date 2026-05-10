@@ -8,10 +8,9 @@ interface ScriptsMock {
   readonly list: ReturnType<typeof vi.fn>;
   readonly get: ReturnType<typeof vi.fn>;
   readonly delete: ReturnType<typeof vi.fn>;
+  readonly update: ReturnType<typeof vi.fn>;
   readonly settings: { readonly get: ReturnType<typeof vi.fn> };
   readonly scriptAndVersionSettings: { readonly get: ReturnType<typeof vi.fn> };
-  readonly versions: { readonly create: ReturnType<typeof vi.fn> };
-  readonly deployments: { readonly create: ReturnType<typeof vi.fn> };
   readonly schedules: {
     readonly update: ReturnType<typeof vi.fn>;
     readonly get: ReturnType<typeof vi.fn>;
@@ -27,10 +26,9 @@ function buildScriptsMock(): ScriptsMock {
     list: vi.fn(),
     get: vi.fn(),
     delete: vi.fn(),
+    update: vi.fn().mockResolvedValue({}),
     settings: { get: vi.fn() },
     scriptAndVersionSettings: { get: vi.fn() },
-    versions: { create: vi.fn() },
-    deployments: { create: vi.fn() },
     schedules: {
       update: vi.fn().mockResolvedValue({}),
       get: vi.fn().mockRejectedValue({ status: 404 }),
@@ -61,6 +59,18 @@ function buildCtx(
     readFile: async () =>
       options?.content ?? new TextEncoder().encode('export default { fetch() {} }'),
   };
+}
+
+/**
+ * The provider passes metadata as a `Blob` (application/json) so the
+ * Cloudflare SDK's multipart serializer keeps it as a single part
+ * instead of decomposing the object into `metadata[key]=value` form
+ * fields. Tests that want to inspect the metadata should call this
+ * helper rather than reading `.metadata` directly.
+ */
+async function readMetadata(spy: { mock: { calls: unknown[][] } }): Promise<Record<string, unknown>> {
+  const params = spy.mock.calls[0]![1] as { metadata: Blob };
+  return JSON.parse(await params.metadata.text());
 }
 
 function pageOf<T>(items: T[]) {
@@ -121,41 +131,36 @@ describe('workerProvider', () => {
   describe('create', () => {
     function setup() {
       const scripts = buildScriptsMock();
-      scripts.versions.create.mockResolvedValue({ id: 'ver-1', number: 1 });
-      scripts.deployments.create.mockResolvedValue({ id: 'dep-1' });
+      scripts.update.mockResolvedValue({});
       return scripts;
     }
 
-    it('uploads a new version with main_module + compatibility_date', async () => {
-      const scripts = setup();
-      const ctx = buildCtx(scripts);
-      await workerProvider.create(ctx, 'default/api', baseProps);
-      expect(scripts.versions.create).toHaveBeenCalledWith(
-        'k1c--default--api',
-        expect.objectContaining({
-          account_id: 'acc-123',
-          metadata: expect.objectContaining({
-            main_module: 'worker.mjs',
-            compatibility_date: '2025-06-01',
-          }),
-        }),
-      );
-    });
-
-    it('routes 100% traffic to the new version via deployments.create', async () => {
+    it('uploads main_module + compatibility_date in metadata', async () => {
       const scripts = setup();
       await workerProvider.create(buildCtx(scripts), 'default/api', baseProps);
-      expect(scripts.deployments.create).toHaveBeenCalledWith('k1c--default--api', {
-        account_id: 'acc-123',
-        strategy: 'percentage',
-        versions: [{ version_id: 'ver-1', percentage: 100 }],
+      const meta = await readMetadata(scripts.update);
+      expect(scripts.update).toHaveBeenCalledWith(
+        'k1c--default--api',
+        expect.objectContaining({ account_id: 'acc-123' }),
+      );
+      expect(meta).toMatchObject({
+        main_module: 'worker.mjs',
+        compatibility_date: '2025-06-01',
       });
+    });
+
+    it('serialises metadata as a single application/json Blob', async () => {
+      const scripts = setup();
+      await workerProvider.create(buildCtx(scripts), 'default/api', baseProps);
+      const blob = scripts.update.mock.calls[0]![1].metadata as Blob;
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe('application/json');
     });
 
     it('passes the entrypoint file as a multipart part keyed by main_module name', async () => {
       const scripts = setup();
       await workerProvider.create(buildCtx(scripts), 'default/api', baseProps);
-      const params = scripts.versions.create.mock.calls[0]![1] as Record<string, unknown>;
+      const params = scripts.update.mock.calls[0]![1] as Record<string, unknown>;
       expect(params['worker.mjs']).toBeDefined();
     });
 
@@ -165,9 +170,7 @@ describe('workerProvider', () => {
         ...baseProps,
         vars: { LOG_LEVEL: 'info', REGION: 'weur' },
       });
-      const bindings = scripts.versions.create.mock.calls[0]![1].metadata.bindings as Array<
-        Record<string, string>
-      >;
+      const bindings = (await readMetadata(scripts.update)).bindings as Array<Record<string, string>>;
       expect(bindings).toContainEqual({ type: 'plain_text', name: 'LOG_LEVEL', text: 'info' });
       expect(bindings).toContainEqual({ type: 'plain_text', name: 'REGION', text: 'weur' });
     });
@@ -178,9 +181,7 @@ describe('workerProvider', () => {
         ...baseProps,
         secrets: { TOKEN: 'shh' },
       });
-      const bindings = scripts.versions.create.mock.calls[0]![1].metadata.bindings as Array<
-        Record<string, string>
-      >;
+      const bindings = (await readMetadata(scripts.update)).bindings as Array<Record<string, string>>;
       expect(bindings).toContainEqual({ type: 'secret_text', name: 'TOKEN', text: 'shh' });
     });
 
@@ -194,9 +195,7 @@ describe('workerProvider', () => {
           { type: 'service', name: 'API', service: 'k1c--default--auth' },
         ],
       });
-      const bindings = scripts.versions.create.mock.calls[0]![1].metadata.bindings as Array<
-        Record<string, string>
-      >;
+      const bindings = (await readMetadata(scripts.update)).bindings as Array<Record<string, string>>;
       expect(bindings).toContainEqual({
         type: 'r2_bucket',
         name: 'R2_MEDIA',
@@ -217,7 +216,7 @@ describe('workerProvider', () => {
     it('attaches managed-by tag', async () => {
       const scripts = setup();
       await workerProvider.create(buildCtx(scripts), 'default/api', baseProps);
-      const tags = scripts.versions.create.mock.calls[0]![1].metadata.tags as string[];
+      const tags = (await readMetadata(scripts.update)).tags as string[];
       expect(tags).toContain('k1c.io/managed-by=k1c');
     });
 
@@ -227,7 +226,7 @@ describe('workerProvider', () => {
         ...baseProps,
         entrypointHash: 'abcdef0123',
       });
-      const tags = scripts.versions.create.mock.calls[0]![1].metadata.tags as string[];
+      const tags = (await readMetadata(scripts.update)).tags as string[];
       expect(tags).toContain('k1c.io/content-hash=abcdef0123');
     });
 
@@ -250,7 +249,7 @@ describe('workerProvider', () => {
         scriptName: 'k1c--default--chatroom',
         durableObjectClasses: ['Chatroom'],
       });
-      const meta = scripts.versions.create.mock.calls[0]![1].metadata;
+      const meta = await readMetadata(scripts.update);
       const bindings = meta.bindings as Array<Record<string, string>>;
       expect(bindings).toContainEqual({
         type: 'durable_object_namespace',
@@ -295,7 +294,7 @@ describe('workerProvider', () => {
         observability: { enabled: true },
         placement: { mode: 'smart' },
       });
-      const meta = scripts.versions.create.mock.calls[0]![1].metadata;
+      const meta = await readMetadata(scripts.update);
       expect(meta.observability).toEqual({ enabled: true });
       expect(meta.placement).toEqual({ mode: 'smart' });
     });
@@ -306,7 +305,7 @@ describe('workerProvider', () => {
         ...baseProps,
         compatibilityFlags: ['nodejs_compat', 'streams_enable_constructors'],
       });
-      const meta = scripts.versions.create.mock.calls[0]![1].metadata;
+      const meta = await readMetadata(scripts.update);
       expect(meta.compatibility_flags).toEqual([
         'nodejs_compat',
         'streams_enable_constructors',
@@ -330,7 +329,7 @@ describe('workerProvider', () => {
         entrypointContent: '// inline source',
       });
       expect(readFile).not.toHaveBeenCalled();
-      expect(scripts.versions.create).toHaveBeenCalled();
+      expect(scripts.update).toHaveBeenCalled();
     });
 
     it('translates dispatch_namespace bindings', async () => {
@@ -341,7 +340,7 @@ describe('workerProvider', () => {
           { type: 'dispatch_namespace', name: 'NAMESPACE', dispatchNamespace: 'k1c-default-prod' },
         ],
       });
-      const bindings = scripts.versions.create.mock.calls[0]![1].metadata.bindings as Array<
+      const bindings = (await readMetadata(scripts.update)).bindings as Array<
         Record<string, string>
       >;
       expect(bindings).toContainEqual({
@@ -361,66 +360,47 @@ describe('workerProvider', () => {
         scriptName: 'k1c--default--api--canary',
         dispatchNamespace: 'k1c-default-production',
       });
+      const meta = JSON.parse(
+        await (dispatch.update.mock.calls[0]![2] as { metadata: Blob }).metadata.text(),
+      );
+      expect(meta).toMatchObject({
+        main_module: 'worker.mjs',
+        compatibility_date: '2025-06-01',
+      });
       expect(dispatch.update).toHaveBeenCalledWith(
         'k1c-default-production',
         'k1c--default--api--canary',
         expect.objectContaining({
           account_id: 'acc-123',
-          metadata: expect.objectContaining({
-            main_module: 'worker.mjs',
-            compatibility_date: '2025-06-01',
-          }),
           files: expect.objectContaining({ 'worker.mjs': expect.anything() }),
         }),
       );
-      // versions/deployments path must not be used for dispatch-namespace scripts.
-      expect(scripts.versions.create).not.toHaveBeenCalled();
-      expect(scripts.deployments.create).not.toHaveBeenCalled();
+      // The dispatch-namespace path uses workersForPlatforms.dispatch.scripts.update,
+      // not the regular workers.scripts.update endpoint.
+      expect(scripts.update).not.toHaveBeenCalled();
     });
 
-    it('translates 403 from versions.create to AccessDenied ProviderError', async () => {
+    it('translates 403 from scripts.update to AccessDenied ProviderError', async () => {
       const scripts = buildScriptsMock();
-      scripts.versions.create.mockRejectedValueOnce({ status: 403, message: 'forbidden' });
+      scripts.update.mockRejectedValueOnce({ status: 403, message: 'forbidden' });
       await expect(
         workerProvider.create(buildCtx(scripts), 'default/api', baseProps),
       ).rejects.toMatchObject({ code: 'AccessDenied' });
     });
-
-    it('rolls forward and surfaces deployments.create errors', async () => {
-      const scripts = buildScriptsMock();
-      scripts.versions.create.mockResolvedValueOnce({ id: 'ver-1' });
-      scripts.deployments.create.mockRejectedValueOnce({ status: 503, message: 'svc' });
-      await expect(
-        workerProvider.create(buildCtx(scripts), 'default/api', baseProps),
-      ).rejects.toMatchObject({ code: 'ServiceInternalError', recoverable: true });
-    });
-
-    it('throws if versions.create response has no id', async () => {
-      const scripts = buildScriptsMock();
-      scripts.versions.create.mockResolvedValueOnce({ number: 1 });
-      scripts.deployments.create.mockResolvedValue({});
-      await expect(
-        workerProvider.create(buildCtx(scripts), 'default/api', baseProps),
-      ).rejects.toBeDefined();
-    });
   });
 
   describe('update', () => {
-    it('uploads a new version and creates a new 100% deployment (cutover semantics)', async () => {
+    it('PUTs the latest content + metadata via scripts.update (cutover semantics)', async () => {
       const scripts = buildScriptsMock();
-      scripts.versions.create.mockResolvedValueOnce({ id: 'ver-2' });
-      scripts.deployments.create.mockResolvedValueOnce({ id: 'dep-2' });
+      scripts.update.mockResolvedValueOnce({});
       await workerProvider.update(
         buildCtx(scripts),
         'k1c--default--api',
         baseProps,
         { ...baseProps, compatibilityDate: '2025-09-01' },
       );
-      const meta = scripts.versions.create.mock.calls[0]![1].metadata;
+      const meta = await readMetadata(scripts.update);
       expect(meta.compatibility_date).toBe('2025-09-01');
-      expect(scripts.deployments.create.mock.calls[0]![1].versions).toEqual([
-        { version_id: 'ver-2', percentage: 100 },
-      ]);
     });
   });
 
