@@ -59,6 +59,12 @@ jobs:
       - name: Install kustomize + helm
         uses: yokawasa/action-setup-kube-tools@v0.11.2
         with:
+          # kubectl 1.24.10 (the action's default) skews against kind's
+          # k8s 1.35 server and silently mangles newer JSONSchemaProps
+          # features when converting YAML → JSON, surfacing as
+          # "cannot unmarshal string into JSONSchemaProps" on CRD apply.
+          # Pin to a version within +/- 1 of the kind node image.
+          kubectl: "1.35.0"
           kustomize: "5.4.3"
           helm: "3.16.4"
 
