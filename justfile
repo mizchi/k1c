@@ -18,6 +18,11 @@ test-watch:
 test-e2e:
     pnpm test:e2e
 
+# Run envtest-backed tests against a local etcd + kube-apiserver pair.
+# First invocation downloads ~50 MB of binaries to node_modules/.cache.
+test-envtest:
+    pnpm test:envtest
+
 secretlint:
     pnpm secretlint
 
