@@ -1,0 +1,15 @@
+# Cloudflare RUM (Web Analytics) site registration.
+#
+# For orange-clouded zones, set zoneTag + autoInstall:true and Cloudflare
+# will inject the JS snippet automatically. For gray-clouded sites set
+# `host` and embed the snippet (read it back via `k1c describe
+# webanalyticssite www`).
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WebAnalyticsSite
+metadata:
+  name: marketing
+  namespace: prod
+spec:
+  zoneTag: "<resolved-at-apply:Context:zoneId>"
+  autoInstall: true

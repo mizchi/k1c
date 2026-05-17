@@ -40,6 +40,14 @@ const CLOUDFLARE_PLURAL_BY_KIND: Readonly<Record<string, string>> = {
   Snippet: 'snippets',
   StreamKey: 'streamkeys',
   StreamWatermark: 'streamwatermarks',
+  Zone: 'zones',
+  ZoneSetting: 'zonesettings',
+  LoadBalancerMonitor: 'loadbalancermonitors',
+  LoadBalancerPool: 'loadbalancerpools',
+  LoadBalancer: 'loadbalancers',
+  NotificationPolicy: 'notificationpolicies',
+  CertificatePack: 'certificatepacks',
+  WebAnalyticsSite: 'webanalyticssites',
 };
 
 const CLOUDFLARE_GROUP = 'cloudflare.k1c.io';

@@ -39,6 +39,14 @@ import { turnstileWidgetProvider } from './turnstile-widget.ts';
 import { snippetProvider } from './snippet.ts';
 import { streamKeyProvider } from './stream-key.ts';
 import { streamWatermarkProvider } from './stream-watermark.ts';
+import { zoneProvider } from './zone.ts';
+import { zoneSettingProvider } from './zone-setting.ts';
+import { loadBalancerMonitorProvider } from './load-balancer-monitor.ts';
+import { loadBalancerPoolProvider } from './load-balancer-pool.ts';
+import { loadBalancerProvider } from './load-balancer.ts';
+import { notificationPolicyProvider } from './notification-policy.ts';
+import { certificatePackProvider } from './certificate-pack.ts';
+import { webAnalyticsSiteProvider } from './web-analytics-site.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -82,6 +90,14 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(snippetProvider);
   r.register(streamKeyProvider);
   r.register(streamWatermarkProvider);
+  r.register(zoneProvider);
+  r.register(zoneSettingProvider);
+  r.register(loadBalancerMonitorProvider);
+  r.register(loadBalancerPoolProvider);
+  r.register(loadBalancerProvider);
+  r.register(notificationPolicyProvider);
+  r.register(certificatePackProvider);
+  r.register(webAnalyticsSiteProvider);
   return r;
 }
 

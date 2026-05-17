@@ -1,0 +1,45 @@
+# Cloudflare Zone + ZoneSetting example.
+#
+# Creates a zone (example.com) and pins three settings on it. Once apply
+# finishes, the zone id is visible via `k1c get zone example -o json` →
+# .status.cloudflareNativeId; copy that into other zone-scoped CRs
+# (DnsRecord, CacheRule, ...) as `zoneId`.
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Zone
+metadata:
+  name: example
+  namespace: prod
+spec:
+  name: example.com
+  type: full
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: ZoneSetting
+metadata:
+  name: min-tls
+  namespace: prod
+spec:
+  zoneId: "<resolved-at-apply:Zone:prod/example>"
+  settingId: min_tls_version
+  value: "1.2"
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: ZoneSetting
+metadata:
+  name: always-https
+  namespace: prod
+spec:
+  zoneId: "<resolved-at-apply:Zone:prod/example>"
+  settingId: always_use_https
+  value: true
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: ZoneSetting
+metadata:
+  name: brotli
+  namespace: prod
+spec:
+  zoneId: "<resolved-at-apply:Zone:prod/example>"
+  settingId: brotli
+  value: true

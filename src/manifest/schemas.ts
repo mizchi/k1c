@@ -680,6 +680,153 @@ export const streamWatermarkSchema = z.object({
   }),
 });
 
+export const zoneSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('Zone'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    name: z.string().min(1),
+    type: z.enum(['full', 'partial', 'secondary', 'internal']).optional(),
+    paused: z.boolean().optional(),
+    vanityNameServers: z.array(z.string()).optional(),
+  }),
+});
+
+export const zoneSettingSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('ZoneSetting'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    settingId: z.string().min(1),
+    value: z.unknown(),
+  }),
+});
+
+export const loadBalancerMonitorSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('LoadBalancerMonitor'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    type: z.enum(['http', 'https', 'tcp', 'udp_icmp', 'icmp_ping', 'smtp']),
+    description: z.string().optional(),
+    method: z.string().optional(),
+    path: z.string().optional(),
+    port: z.number().int().min(0).max(65535).optional(),
+    expectedCodes: z.string().optional(),
+    expectedBody: z.string().optional(),
+    interval: z.number().int().positive().optional(),
+    timeout: z.number().int().positive().optional(),
+    retries: z.number().int().min(0).optional(),
+    followRedirects: z.boolean().optional(),
+    allowInsecure: z.boolean().optional(),
+    header: z.record(z.array(z.string())).optional(),
+  }),
+});
+
+export const loadBalancerPoolSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('LoadBalancerPool'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    poolName: z
+      .string()
+      .regex(/^[A-Za-z0-9_-]+$/, 'poolName must be alphanumeric + - + _')
+      .optional(),
+    origins: z
+      .array(
+        z.object({
+          address: z.string().min(1),
+          name: z.string().optional(),
+          enabled: z.boolean().optional(),
+          weight: z.number().min(0).max(1).optional(),
+          port: z.number().int().min(0).max(65535).optional(),
+        }),
+      )
+      .min(1),
+    monitor: z.string().optional(),
+    enabled: z.boolean().optional(),
+    minimumOrigins: z.number().int().min(0).optional(),
+    description: z.string().optional(),
+    notificationEmail: z.string().optional(),
+  }),
+});
+
+export const loadBalancerSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('LoadBalancer'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    name: z.string().min(1),
+    defaultPools: z.array(z.string()).min(1),
+    fallbackPool: z.string().min(1),
+    description: z.string().optional(),
+    proxied: z.boolean().optional(),
+    enabled: z.boolean().optional(),
+    ttl: z.number().int().positive().optional(),
+    steeringPolicy: z
+      .enum([
+        'off',
+        'geo',
+        'random',
+        'dynamic_latency',
+        'proximity',
+        'least_outstanding_requests',
+        'least_connections',
+      ])
+      .optional(),
+  }),
+});
+
+export const notificationPolicySchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('NotificationPolicy'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    policyName: z.string().optional(),
+    alertType: z.string().min(1),
+    enabled: z.boolean().optional(),
+    mechanisms: z.object({
+      email: z.array(z.object({ id: z.string() })).optional(),
+      pagerduty: z.array(z.object({ id: z.string() })).optional(),
+      webhooks: z.array(z.object({ id: z.string() })).optional(),
+    }),
+    description: z.string().optional(),
+    alertInterval: z.string().optional(),
+    filters: z.record(z.array(z.string())).optional(),
+  }),
+});
+
+export const webAnalyticsSiteSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('WebAnalyticsSite'),
+  metadata: objectMetaSchema,
+  // host / zoneTag mutual requirement is enforced in lower (using `.refine`
+  // here would change the inferred schema type and break the surrounding
+  // discriminatedUnion).
+  spec: z.object({
+    host: z.string().optional(),
+    zoneTag: z.string().optional(),
+    autoInstall: z.boolean().optional(),
+  }),
+});
+
+export const certificatePackSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('CertificatePack'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    certificateAuthority: z.enum(['google', 'lets_encrypt', 'ssl_com']),
+    hosts: z.array(z.string()).min(1).max(50),
+    type: z.literal('advanced').optional(),
+    validationMethod: z.enum(['txt', 'http', 'email']),
+    validityDays: z.union([z.literal(14), z.literal(30), z.literal(90), z.literal(365)]),
+    cloudflareBranding: z.boolean().optional(),
+  }),
+});
+
 const transformHeaderActionSchema = z.object({
   operation: z.enum(['set', 'add', 'remove']),
   value: z.string().optional(),
@@ -1061,6 +1208,14 @@ export const SCHEMAS_BY_KIND = {
   Snippet: snippetSchema,
   StreamKey: streamKeySchema,
   StreamWatermark: streamWatermarkSchema,
+  Zone: zoneSchema,
+  ZoneSetting: zoneSettingSchema,
+  LoadBalancerMonitor: loadBalancerMonitorSchema,
+  LoadBalancerPool: loadBalancerPoolSchema,
+  LoadBalancer: loadBalancerSchema,
+  NotificationPolicy: notificationPolicySchema,
+  CertificatePack: certificatePackSchema,
+  WebAnalyticsSite: webAnalyticsSiteSchema,
 } as const;
 
 export type K1cKind = keyof typeof SCHEMAS_BY_KIND;
@@ -1119,4 +1274,12 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   snippetSchema,
   streamKeySchema,
   streamWatermarkSchema,
+  zoneSchema,
+  zoneSettingSchema,
+  loadBalancerMonitorSchema,
+  loadBalancerPoolSchema,
+  loadBalancerSchema,
+  notificationPolicySchema,
+  certificatePackSchema,
+  webAnalyticsSiteSchema,
 ]);

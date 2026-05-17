@@ -48,6 +48,14 @@ const CLOUDFLARE_KINDS_BY_PLURAL: Readonly<Record<string, string>> = {
   snippets: 'Snippet',
   streamkeys: 'StreamKey',
   streamwatermarks: 'StreamWatermark',
+  zones: 'Zone',
+  zonesettings: 'ZoneSetting',
+  loadbalancermonitors: 'LoadBalancerMonitor',
+  loadbalancerpools: 'LoadBalancerPool',
+  loadbalancers: 'LoadBalancer',
+  notificationpolicies: 'NotificationPolicy',
+  certificatepacks: 'CertificatePack',
+  webanalyticssites: 'WebAnalyticsSite',
 };
 
 /** Opt-in label that gates Deployment / Service / ConfigMap / etc. for k1c. */
