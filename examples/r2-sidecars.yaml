@@ -35,7 +35,7 @@ metadata:
   name: uploads-to-queue
 spec:
   bucketName: uploads
-  queueId: 00000000000000000000000000000000   # replace with real queue id
+  queueId: "00000000-0000-0000-0000-000000000000"   # replace with real queue id
   rules:
     - actions: [PutObject, CompleteMultipartUpload]
       prefix: "incoming/"
@@ -47,6 +47,6 @@ metadata:
 spec:
   bucketName: assets
   domain: cdn.example.com
-  zoneId: 00000000000000000000000000000000   # replace with real zone id
+  zoneId: "00000000000000000000000000000000"   # replace with real zone id
   enabled: true
   minTLS: "1.2"
