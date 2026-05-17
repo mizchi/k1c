@@ -28,6 +28,11 @@ import { uriRewriteRuleProvider } from './uri-rewrite-rule.ts';
 import { responseHeaderRuleProvider } from './response-header-rule.ts';
 import { pageRuleProvider } from './page-rule.ts';
 import { streamLiveInputProvider } from './stream-live-input.ts';
+import { workerCronTriggerProvider } from './worker-cron-trigger.ts';
+import { r2BucketCorsProvider } from './r2-bucket-cors.ts';
+import { r2BucketLifecycleProvider } from './r2-bucket-lifecycle.ts';
+import { r2BucketEventNotificationProvider } from './r2-bucket-event-notification.ts';
+import { r2CustomDomainProvider } from './r2-custom-domain.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -60,6 +65,11 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(responseHeaderRuleProvider);
   r.register(pageRuleProvider);
   r.register(streamLiveInputProvider);
+  r.register(workerCronTriggerProvider);
+  r.register(r2BucketCorsProvider);
+  r.register(r2BucketLifecycleProvider);
+  r.register(r2BucketEventNotificationProvider);
+  r.register(r2CustomDomainProvider);
   return r;
 }
 

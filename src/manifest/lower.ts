@@ -17,6 +17,11 @@ import type {
   ResponseHeaderRule,
   PageRule,
   StreamLiveInput,
+  WorkerCronTrigger,
+  R2BucketCors,
+  R2BucketLifecycle,
+  R2BucketEventNotification,
+  R2CustomDomain,
   ConfigMapResource,
   CronJob,
   AIGateway,
@@ -74,6 +79,11 @@ import type { URIRewriteRuleProperties } from '../providers/uri-rewrite-rule.ts'
 import type { ResponseHeaderRuleProperties } from '../providers/response-header-rule.ts';
 import type { PageRuleProperties } from '../providers/page-rule.ts';
 import type { StreamLiveInputProperties } from '../providers/stream-live-input.ts';
+import type { WorkerCronTriggerProperties } from '../providers/worker-cron-trigger.ts';
+import type { R2BucketCorsProperties } from '../providers/r2-bucket-cors.ts';
+import type { R2BucketLifecycleProperties } from '../providers/r2-bucket-lifecycle.ts';
+import type { R2BucketEventNotificationProperties } from '../providers/r2-bucket-event-notification.ts';
+import type { R2CustomDomainProperties } from '../providers/r2-custom-domain.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -164,6 +174,11 @@ export async function lower(
   const responseHeaderRules: ResponseHeaderRule[] = [];
   const pageRules: PageRule[] = [];
   const streamLiveInputs: StreamLiveInput[] = [];
+  const workerCronTriggers: WorkerCronTrigger[] = [];
+  const r2BucketCorses: R2BucketCors[] = [];
+  const r2BucketLifecycles: R2BucketLifecycle[] = [];
+  const r2BucketEventNotifications: R2BucketEventNotification[] = [];
+  const r2CustomDomains: R2CustomDomain[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -269,6 +284,21 @@ export async function lower(
         break;
       case 'StreamLiveInput':
         streamLiveInputs.push(r);
+        break;
+      case 'WorkerCronTrigger':
+        workerCronTriggers.push(r);
+        break;
+      case 'R2BucketCors':
+        r2BucketCorses.push(r);
+        break;
+      case 'R2BucketLifecycle':
+        r2BucketLifecycles.push(r);
+        break;
+      case 'R2BucketEventNotification':
+        r2BucketEventNotifications.push(r);
+        break;
+      case 'R2CustomDomain':
+        r2CustomDomains.push(r);
         break;
     }
   }
@@ -430,7 +460,94 @@ export async function lower(
     desired.push(lowerStreamLiveInput(sli));
   }
 
+  for (const wct of workerCronTriggers) {
+    desired.push(lowerWorkerCronTrigger(wct));
+  }
+
+  for (const c of r2BucketCorses) {
+    desired.push(lowerR2BucketCors(c));
+  }
+  for (const l of r2BucketLifecycles) {
+    desired.push(lowerR2BucketLifecycle(l));
+  }
+  for (const en of r2BucketEventNotifications) {
+    desired.push(lowerR2BucketEventNotification(en));
+  }
+  for (const cd of r2CustomDomains) {
+    desired.push(lowerR2CustomDomain(cd));
+  }
+
   return { desired, warnings };
+}
+
+function lowerWorkerCronTrigger(
+  wct: WorkerCronTrigger,
+): DesiredResource<WorkerCronTriggerProperties> {
+  const ns = wct.metadata.namespace ?? 'default';
+  const name = wct.metadata.name;
+  return {
+    resourceType: 'WorkerCronTrigger',
+    ref: refOf(wct),
+    label: `${ns}/${name}`,
+    properties: {
+      scriptName: wct.spec.scriptName,
+      schedules: wct.spec.schedules,
+    },
+  };
+}
+
+function lowerR2BucketCors(c: R2BucketCors): DesiredResource<R2BucketCorsProperties> {
+  const ns = c.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'R2BucketCors',
+    ref: refOf(c),
+    label: `${ns}/${c.metadata.name}`,
+    properties: { bucketName: c.spec.bucketName, rules: c.spec.rules },
+  };
+}
+
+function lowerR2BucketLifecycle(
+  l: R2BucketLifecycle,
+): DesiredResource<R2BucketLifecycleProperties> {
+  const ns = l.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'R2BucketLifecycle',
+    ref: refOf(l),
+    label: `${ns}/${l.metadata.name}`,
+    properties: { bucketName: l.spec.bucketName, rules: l.spec.rules },
+  };
+}
+
+function lowerR2BucketEventNotification(
+  en: R2BucketEventNotification,
+): DesiredResource<R2BucketEventNotificationProperties> {
+  const ns = en.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'R2BucketEventNotification',
+    ref: refOf(en),
+    label: `${ns}/${en.metadata.name}`,
+    properties: {
+      bucketName: en.spec.bucketName,
+      queueId: en.spec.queueId,
+      rules: en.spec.rules,
+    },
+  };
+}
+
+function lowerR2CustomDomain(cd: R2CustomDomain): DesiredResource<R2CustomDomainProperties> {
+  const ns = cd.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'R2CustomDomain',
+    ref: refOf(cd),
+    label: `${ns}/${cd.metadata.name}`,
+    properties: {
+      bucketName: cd.spec.bucketName,
+      domain: cd.spec.domain,
+      zoneId: cd.spec.zoneId,
+      enabled: cd.spec.enabled,
+      ...(cd.spec.minTLS ? { minTLS: cd.spec.minTLS } : {}),
+    },
+  };
 }
 
 function lowerStreamLiveInput(

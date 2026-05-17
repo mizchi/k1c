@@ -1,0 +1,15 @@
+# Attach (or update / clear) Cloudflare Cron Triggers on a Worker script that
+# was deployed outside k1c. Cron strings are standard 5-field UTC.
+#
+# If the same script is also lowered from a k8s CronJob inside k1c, the two
+# paths fight on every reconcile — pick one or the other per script.
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WorkerCronTrigger
+metadata:
+  name: hourly-cleanup
+spec:
+  scriptName: my-existing-worker
+  schedules:
+    - "0 * * * *"   # every hour on the hour
+    - "*/15 * * * *" # every 15 minutes

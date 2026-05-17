@@ -29,6 +29,11 @@ const CLOUDFLARE_PLURAL_BY_KIND: Readonly<Record<string, string>> = {
   RateLimitRule: 'ratelimitrules',
   CustomHostname: 'customhostnames',
   EmailRoutingRule: 'emailroutingrules',
+  WorkerCronTrigger: 'workercrontriggers',
+  R2BucketCors: 'r2bucketcorses',
+  R2BucketLifecycle: 'r2bucketlifecycles',
+  R2BucketEventNotification: 'r2bucketeventnotifications',
+  R2CustomDomain: 'r2customdomains',
 };
 
 const CLOUDFLARE_GROUP = 'cloudflare.k1c.io';
