@@ -9,7 +9,7 @@ apiVersion: cloudflare.k1c.io/v1alpha1
 kind: WebAnalyticsSite
 metadata:
   name: marketing
-  namespace: prod
+  namespace: default
 spec:
   zoneTag: "<resolved-at-apply:Context:zoneId>"
   autoInstall: true

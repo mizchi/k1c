@@ -9,7 +9,7 @@ apiVersion: cloudflare.k1c.io/v1alpha1
 kind: LoadBalancerMonitor
 metadata:
   name: api-https
-  namespace: prod
+  namespace: default
 spec:
   type: https
   path: /healthz
@@ -23,7 +23,7 @@ apiVersion: cloudflare.k1c.io/v1alpha1
 kind: LoadBalancerPool
 metadata:
   name: api-primary
-  namespace: prod
+  namespace: default
 spec:
   origins:
     - address: edge-1.example.com
@@ -32,30 +32,30 @@ spec:
     - address: edge-2.example.com
       name: edge-2
       weight: 1
-  monitor: "<resolved-at-apply:LoadBalancerMonitor:prod/api-https>"
+  monitor: "<resolved-at-apply:LoadBalancerMonitor:default/api-https>"
   minimumOrigins: 1
 ---
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: LoadBalancerPool
 metadata:
   name: api-backup
-  namespace: prod
+  namespace: default
 spec:
   origins:
     - address: backup.example.com
-  monitor: "<resolved-at-apply:LoadBalancerMonitor:prod/api-https>"
+  monitor: "<resolved-at-apply:LoadBalancerMonitor:default/api-https>"
 ---
 apiVersion: cloudflare.k1c.io/v1alpha1
 kind: LoadBalancer
 metadata:
   name: api
-  namespace: prod
+  namespace: default
 spec:
   zoneId: "<resolved-at-apply:Context:zoneId>"
   name: api.example.com
   defaultPools:
-    - "<resolved-at-apply:LoadBalancerPool:prod/api-primary>"
-  fallbackPool: "<resolved-at-apply:LoadBalancerPool:prod/api-backup>"
+    - "<resolved-at-apply:LoadBalancerPool:default/api-primary>"
+  fallbackPool: "<resolved-at-apply:LoadBalancerPool:default/api-backup>"
   proxied: true
   steeringPolicy: dynamic_latency
   description: production API steering

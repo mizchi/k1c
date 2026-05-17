@@ -8,7 +8,7 @@ apiVersion: cloudflare.k1c.io/v1alpha1
 kind: NotificationPolicy
 metadata:
   name: origin-errors
-  namespace: prod
+  namespace: default
 spec:
   alertType: http_alert_origin_error
   enabled: true
@@ -25,7 +25,7 @@ apiVersion: cloudflare.k1c.io/v1alpha1
 kind: CertificatePack
 metadata:
   name: acm-example
-  namespace: prod
+  namespace: default
 spec:
   zoneId: "<resolved-at-apply:Context:zoneId>"
   certificateAuthority: lets_encrypt
