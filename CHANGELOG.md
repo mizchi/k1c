@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/mizchi/k1c/compare/v0.15.0...v0.16.0) (2026-05-17)
+
+
+### Features
+
+* **providers:** Pulumi T2 coverage — Zone, LoadBalancer, NotificationPolicy, CertificatePack, WebAnalyticsSite ([#58](https://github.com/mizchi/k1c/issues/58)) ([b7b829b](https://github.com/mizchi/k1c/commit/b7b829b1dba882904cb0b3963494b697b3acc4af))
+
 ## [0.15.0](https://github.com/mizchi/k1c/compare/v0.14.0...v0.15.0) (2026-05-17)
 
 
