@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.15.0](https://github.com/mizchi/k1c/compare/v0.14.0...v0.15.0) (2026-05-17)
+
+
+### Features
+
+* **providers:** add TurnstileWidget, Snippet, StreamKey, StreamWatermark ([#56](https://github.com/mizchi/k1c/issues/56)) ([d9ab07c](https://github.com/mizchi/k1c/commit/d9ab07c45d7787c81c715566a3466f0faa514fc8))
+
 ## [0.14.0](https://github.com/mizchi/k1c/compare/v0.13.0...v0.14.0) (2026-05-17)
 
 
