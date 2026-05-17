@@ -21,6 +21,9 @@ spec:
     matchLabels:
       app: dynamic-platform
   template:
+    metadata:
+      labels:
+        app: dynamic-platform
     spec:
       containers:
         - name: platform
