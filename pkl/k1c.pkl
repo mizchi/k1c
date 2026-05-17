@@ -102,6 +102,40 @@ class Vectorize {
   spec: VectorizeSpec
 }
 
+class AIGatewayRateLimiting {
+  interval: Int?
+  limit: Int?
+  technique: ("fixed"|"sliding")?
+}
+
+class AIGatewayLogManagement {
+  retention: Int?
+  strategy: ("STOP_INSERTING"|"DELETE_OLDEST")?
+}
+
+class AIGatewayLogpush {
+  enabled: Boolean?
+  publicKey: String?
+}
+
+class AIGatewaySpec {
+  id: String?
+  cacheInvalidateOnUpdate: Boolean?
+  cacheTtl: Int?
+  collectLogs: Boolean?
+  rateLimiting: AIGatewayRateLimiting?
+  authentication: Boolean?
+  logManagement: AIGatewayLogManagement?
+  logpush: AIGatewayLogpush?
+}
+
+class AIGateway {
+  apiVersion: String = apiVersionCloudflare
+  kind: "AIGateway" = "AIGateway"
+  metadata: ObjectMeta
+  spec: AIGatewaySpec = new {}
+}
+
 // ============================================================
 // k8s standard kinds (subset)
 // ============================================================
@@ -127,7 +161,11 @@ class Secret {
 
 /// CSI volume source matching k1c driver names.
 class CSIVolume {
-  driver: ("r2.k1c.io"|"kv.k1c.io"|"d1.k1c.io"|"queue.k1c.io"|"vectorize.k1c.io"|"hyperdrive.k1c.io"|"service.k1c.io"|"analytics-engine.k1c.io"|"mtls.k1c.io"|"pipelines.k1c.io")
+  driver: ("r2.k1c.io"|"kv.k1c.io"|"d1.k1c.io"|"queue.k1c.io"|"vectorize.k1c.io"|"hyperdrive.k1c.io"|"service.k1c.io"|"dispatch-namespace.k1c.io"|"analytics-engine.k1c.io"|"mtls.k1c.io"|"pipelines.k1c.io")
+  /// Driver-specific refs plus optional Worker binding override:
+  /// `binding`, legacy `bindingName`, then volume name derivation.
+  /// `dispatch-namespace.k1c.io` also accepts `remote = "true"` as a local
+  /// wrangler-config hint.
   volumeAttributes: Mapping<String, String>
 }
 

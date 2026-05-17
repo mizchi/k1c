@@ -12,7 +12,7 @@
 //                       requires a preopened directory at link time,
 //                       cleaner to skip
 //
-// What stays: apply, diff, get, describe, delete, telemetry, explain,
+// What stays: apply, diff, get, describe, delete, wrangler-config, telemetry, explain,
 // export-crds, version. These need only fetch + argv + env + read +
 // stdio, all available in WASI 0.2 with StarlingMonkey.
 
@@ -21,6 +21,7 @@ import process from 'node:process';
 import Cloudflare from 'cloudflare';
 import { parseArgs, USAGE, extractContext } from './args.ts';
 import { runApply, runDelete, runDescribe, runDiff, runGet, type RunDeps } from './run.ts';
+import { runWranglerConfig } from './wrangler-config.ts';
 import { runTelemetry } from './telemetry.ts';
 import { runExplain } from './explain.ts';
 import { runExportCrds } from './export-crds.ts';
@@ -54,6 +55,14 @@ async function main(): Promise<number> {
   }
   if (parsed.kind === 'export-crds') {
     return runExportCrds(parsed);
+  }
+  if (parsed.kind === 'wrangler-config') {
+    return runWranglerConfig(parsed, {
+      readManifest: readManifestSource,
+      readFile: async (path: string) => readFile(path),
+      out: (msg: string) => process.stdout.write(`${msg}\n`),
+      err: (msg: string) => process.stderr.write(`${msg}\n`),
+    });
   }
   const validateOnly = parsed.kind === 'apply' && parsed.validateOnly;
 

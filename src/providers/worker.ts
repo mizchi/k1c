@@ -68,6 +68,11 @@ export type WorkerBinding =
       readonly type: 'dispatch_namespace';
       readonly name: string;
       readonly dispatchNamespace: string;
+      /**
+       * Wrangler-local hint for Workers for Platforms development. The Workers
+       * upload API stores only the namespace binding itself, so equality ignores it.
+       */
+      readonly remote?: boolean;
     }
   | { readonly type: 'hyperdrive'; readonly name: string; readonly hyperdriveId: string }
   | { readonly type: 'd1'; readonly name: string; readonly databaseId: string }
@@ -82,6 +87,8 @@ export type WorkerBinding =
   | { readonly type: 'vectorize'; readonly name: string; readonly indexName: string }
   | { readonly type: 'ai'; readonly name: string }
   | { readonly type: 'browser'; readonly name: string }
+  | { readonly type: 'images'; readonly name: string }
+  | { readonly type: 'worker_loader'; readonly name: string }
   | { readonly type: 'version_metadata'; readonly name: string }
   | { readonly type: 'analytics_engine'; readonly name: string; readonly dataset: string }
   | { readonly type: 'mtls_certificate'; readonly name: string; readonly certificateId: string }
@@ -116,6 +123,7 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
           type: z.literal('dispatch_namespace'),
           name: z.string(),
           dispatchNamespace: z.string(),
+          remote: z.boolean().optional(),
         }),
         z.object({
           type: z.literal('hyperdrive'),
@@ -145,6 +153,8 @@ export const workerSchema: z.ZodType<WorkerProperties> = z.object({
         }),
         z.object({ type: z.literal('ai'), name: z.string() }),
         z.object({ type: z.literal('browser'), name: z.string() }),
+        z.object({ type: z.literal('images'), name: z.string() }),
+        z.object({ type: z.literal('worker_loader'), name: z.string() }),
         z.object({ type: z.literal('version_metadata'), name: z.string() }),
         z.object({
           type: z.literal('analytics_engine'),
@@ -238,7 +248,13 @@ function buildBindings(props: WorkerProperties): CFBinding[] {
       });
     } else if (b.type === 'vectorize') {
       out.push({ type: 'vectorize', name: b.name, index_name: b.indexName });
-    } else if (b.type === 'ai' || b.type === 'browser' || b.type === 'version_metadata') {
+    } else if (
+      b.type === 'ai' ||
+      b.type === 'browser' ||
+      b.type === 'images' ||
+      b.type === 'worker_loader' ||
+      b.type === 'version_metadata'
+    ) {
       out.push({ type: b.type, name: b.name });
     } else if (b.type === 'analytics_engine') {
       out.push({ type: 'analytics_engine', name: b.name, dataset: b.dataset });
@@ -473,7 +489,13 @@ function fromCFBinding(b: CFBinding): unknown {
   if (b.type === 'vectorize' && b.index_name !== undefined) {
     return { type: 'vectorize', name: b.name, indexName: b.index_name };
   }
-  if (b.type === 'ai' || b.type === 'browser' || b.type === 'version_metadata') {
+  if (
+    b.type === 'ai' ||
+    b.type === 'browser' ||
+    b.type === 'images' ||
+    b.type === 'worker_loader' ||
+    b.type === 'version_metadata'
+  ) {
     return { type: b.type, name: b.name };
   }
   if (b.type === 'analytics_engine' && b.dataset !== undefined) {
@@ -515,9 +537,9 @@ function normalizeForEquality(props: WorkerProperties): unknown {
   // by name so a re-apply of an unchanged manifest doesn't flag every
   // binding as drifting.
   if (Array.isArray(out['bindings'])) {
-    out['bindings'] = [...(out['bindings'] as Array<{ name?: string }>)].sort((a, b) =>
-      (a.name ?? '').localeCompare(b.name ?? ''),
-    );
+    out['bindings'] = [...(out['bindings'] as Array<Record<string, unknown>>)]
+      .map(normalizeBindingForEquality)
+      .sort((a, b) => (String(a.name ?? '')).localeCompare(String(b.name ?? '')));
   }
   // CF returns `compatibility_flags: []` even when nothing was set;
   // the manifest typically omits it. Treat empty == absent.
@@ -526,6 +548,14 @@ function normalizeForEquality(props: WorkerProperties): unknown {
     delete out['compatibilityFlags'];
   }
   return out;
+}
+
+function normalizeBindingForEquality(binding: Record<string, unknown>): Record<string, unknown> {
+  if (binding['type'] === 'dispatch_namespace') {
+    const { remote: _remote, ...rest } = binding;
+    return rest;
+  }
+  return binding;
 }
 
 export const workerProvider: CloudflareResourceProvider<WorkerProperties> = {

@@ -80,6 +80,13 @@ export interface PortForwardArgs {
   readonly localPort: number;
 }
 
+export interface WranglerConfigArgs {
+  readonly kind: 'wrangler-config';
+  readonly file: string;
+  /** Worker label to render when the manifest lowers to multiple Workers. */
+  readonly worker?: string;
+}
+
 export interface TelemetryArgs {
   readonly kind: 'telemetry';
   /** Currently only `workers` is supported. */
@@ -162,6 +169,7 @@ export type ParsedArgs =
   | DeleteArgs
   | LogsArgs
   | PortForwardArgs
+  | WranglerConfigArgs
   | TelemetryArgs
   | ExplainArgs
   | ConfigArgs
@@ -186,6 +194,7 @@ export function parseArgs(argv: ReadonlyArray<string>): ParsedArgs {
   if (first === 'delete') return parseDelete(argv.slice(1));
   if (first === 'logs') return parseLogs(argv.slice(1));
   if (first === 'port-forward') return parsePortForward(argv.slice(1));
+  if (first === 'wrangler-config') return parseWranglerConfig(argv.slice(1));
   if (first === 'telemetry') return parseTelemetry(argv.slice(1));
   if (first === 'explain') return parseExplain(argv.slice(1));
   if (first === 'config') return parseConfig(argv.slice(1));
@@ -752,6 +761,37 @@ function parseApply(rest: ReadonlyArray<string>): ParsedArgs {
   return { kind: 'apply', file, dryRun, watch, quiet, validateOnly };
 }
 
+function parseWranglerConfig(rest: ReadonlyArray<string>): ParsedArgs {
+  let file: string | undefined;
+  let worker: string | undefined;
+  for (let i = 0; i < rest.length; i += 1) {
+    const arg = rest[i]!;
+    if (arg === '-f' || arg === '--file') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: `${arg} requires a value` };
+      file = value;
+      i += 1;
+      continue;
+    }
+    if (arg === '--worker') {
+      const value = rest[i + 1];
+      if (value === undefined) return { kind: 'error', message: '--worker requires a value' };
+      worker = value;
+      i += 1;
+      continue;
+    }
+    return { kind: 'error', message: `unknown flag for wrangler-config: ${arg}` };
+  }
+  if (file === undefined) {
+    return { kind: 'error', message: 'wrangler-config requires -f / --file' };
+  }
+  return {
+    kind: 'wrangler-config',
+    file,
+    ...(worker !== undefined ? { worker } : {}),
+  };
+}
+
 function parseDiff(rest: ReadonlyArray<string>): ParsedArgs {
   let file: string | undefined;
   let output: OutputFormat = 'text';
@@ -811,6 +851,7 @@ usage:
   k1c rollout  {status|promote|abort} <ns>/<name> --dispatch <name>
   k1c logs     <kind> <name> [-n <namespace>] [--format pretty|json] [--status <s>] [--limit N]
   k1c port-forward <kind> <name> [-n <namespace>] [--port 8787]
+  k1c wrangler-config -f <file|dir|-> [--worker <namespace/name>]
   k1c telemetry workers <kind> <name> [-n <ns>] [--since 1h] [-o text|json]
   k1c explain  <kind> [--recursive | -r]
   k1c config   list | current-context

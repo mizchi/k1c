@@ -44,6 +44,20 @@ describe('parseArgs', () => {
     });
   });
 
+  it('parses wrangler-config arguments', () => {
+    expect(parseArgs(['wrangler-config', '-f', 'manifest.yaml'])).toEqual({
+      kind: 'wrangler-config',
+      file: 'manifest.yaml',
+    });
+    expect(
+      parseArgs(['wrangler-config', '--file', 'manifest.yaml', '--worker', 'prod/api']),
+    ).toEqual({
+      kind: 'wrangler-config',
+      file: 'manifest.yaml',
+      worker: 'prod/api',
+    });
+  });
+
   it('parses --watch flag', () => {
     expect(parseArgs(['apply', '-f', 'm.yaml', '--watch'])).toEqual({
       kind: 'apply',

@@ -5,6 +5,7 @@ import { kvNamespaceProvider } from './kv-namespace.ts';
 import { configMapProvider } from './configmap.ts';
 import { secretProvider } from './secret.ts';
 import { dispatchNamespaceProvider } from './dispatch-namespace.ts';
+import { aiGatewayProvider } from './ai-gateway.ts';
 import { customDomainProvider } from './custom-domain.ts';
 import { hyperdriveProvider } from './hyperdrive.ts';
 import { d1DatabaseProvider } from './d1-database.ts';
@@ -36,6 +37,7 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(configMapProvider);
   r.register(secretProvider);
   r.register(dispatchNamespaceProvider);
+  r.register(aiGatewayProvider);
   r.register(customDomainProvider);
   r.register(hyperdriveProvider);
   r.register(d1DatabaseProvider);

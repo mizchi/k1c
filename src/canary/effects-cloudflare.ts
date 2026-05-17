@@ -12,6 +12,14 @@ interface CFBinding {
   namespace_id?: string;
   service?: string;
   namespace?: string;
+  id?: string;
+  queue_name?: string;
+  class_name?: string;
+  script_name?: string;
+  index_name?: string;
+  dataset?: string;
+  certificate_id?: string;
+  pipeline?: string;
 }
 
 function buildBindings(props: WorkerProperties): CFBinding[] {
@@ -31,6 +39,35 @@ function buildBindings(props: WorkerProperties): CFBinding[] {
       out.push({ type: 'service', name: b.name, service: b.service });
     } else if (b.type === 'dispatch_namespace') {
       out.push({ type: 'dispatch_namespace', name: b.name, namespace: b.dispatchNamespace });
+    } else if (b.type === 'hyperdrive') {
+      out.push({ type: 'hyperdrive', name: b.name, id: b.hyperdriveId });
+    } else if (b.type === 'd1') {
+      out.push({ type: 'd1', name: b.name, id: b.databaseId });
+    } else if (b.type === 'queue') {
+      out.push({ type: 'queue', name: b.name, queue_name: b.queueName });
+    } else if (b.type === 'durable_object_namespace') {
+      out.push({
+        type: 'durable_object_namespace',
+        name: b.name,
+        class_name: b.className,
+        ...(b.scriptName !== undefined ? { script_name: b.scriptName } : {}),
+      });
+    } else if (b.type === 'vectorize') {
+      out.push({ type: 'vectorize', name: b.name, index_name: b.indexName });
+    } else if (
+      b.type === 'ai' ||
+      b.type === 'browser' ||
+      b.type === 'images' ||
+      b.type === 'worker_loader' ||
+      b.type === 'version_metadata'
+    ) {
+      out.push({ type: b.type, name: b.name });
+    } else if (b.type === 'analytics_engine') {
+      out.push({ type: 'analytics_engine', name: b.name, dataset: b.dataset });
+    } else if (b.type === 'mtls_certificate') {
+      out.push({ type: 'mtls_certificate', name: b.name, certificate_id: b.certificateId });
+    } else if (b.type === 'pipelines') {
+      out.push({ type: 'pipelines', name: b.name, pipeline: b.pipeline });
     }
   }
   return out;

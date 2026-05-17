@@ -1,0 +1,49 @@
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: DispatchNamespace
+metadata:
+  name: production
+spec: {}
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: KVNamespace
+metadata:
+  name: code-cache
+spec: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamic-platform
+  annotations:
+    cloudflare.com/worker-loader: enabled
+spec:
+  selector:
+    matchLabels:
+      app: dynamic-platform
+  template:
+    metadata:
+      labels:
+        app: dynamic-platform
+    spec:
+      containers:
+        - name: platform
+          image: ./examples/dynamic-platform.mjs
+          volumeMounts:
+            - name: code-cache
+              mountPath: /mnt/code-cache
+            - name: users
+              mountPath: /mnt/users
+      volumes:
+        - name: code-cache
+          csi:
+            driver: kv.k1c.io
+            volumeAttributes:
+              namespaceRef: code-cache
+              binding: CODE_CACHE
+        - name: users
+          csi:
+            driver: dispatch-namespace.k1c.io
+            volumeAttributes:
+              ref: production
+              binding: DISPATCHER
+              remote: "true"

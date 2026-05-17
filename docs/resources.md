@@ -9,11 +9,13 @@ Goal: a single Worker app with config, secrets, and persistent state can be appl
 | Manifest kind | API group | Cloudflare resource | Provider | Notes |
 |---|---|---|---|---|
 | `Namespace` | `v1` | logical scope | (no provider) | Resource ownership label `k1c.io/namespace=<name>`. No Cloudflare object. |
-| `Deployment` | `apps/v1` | Worker script(s) | `worker` | `replicas` ignored. `template.spec.containers[*].image` is each Worker's JS bundle. Single-container Pods become one Worker; multi-container Pods become N Workers (primary unsuffixed, sidecars suffixed `--<container-name>`) with auto-wired `service` bindings between siblings — see "multi-container Pods" below. |
+| `Deployment` | `apps/v1` | Worker script(s) | `worker` | `replicas` ignored. `template.spec.containers[*].image` is each Worker's JS bundle. `cloudflare.com/source.<container>` can override the source path. Single-container Pods become one Worker; multi-container Pods become N Workers (primary unsuffixed, sidecars suffixed `--<container-name>`) with auto-wired `service` bindings between siblings — see "multi-container Pods" below. |
 | `ConfigMap` | `v1` | Worker `[vars]` (plain bindings) | `configmap` | Mount style: env-var only. `data` keys become `vars` on the binding worker. |
 | `Secret` | `v1` | Worker secret | `secret` | `stringData`/`data` (base64) decoded and uploaded via `PUT /accounts/.../workers/scripts/.../secrets`. Sensitive at rest in CF only. |
-| `R2Bucket` (CRD) | `cloudflare.k1c.io/v1alpha1` | R2 bucket | `r2-bucket` | Bound to a Worker via `Deployment.spec.template.spec.volumes[].r2BucketRef`. |
-| `KVNamespace` (CRD) | `cloudflare.k1c.io/v1alpha1` | KV namespace | `kv-namespace` | Bound via `volumes[].kvNamespaceRef`. |
+| `R2Bucket` (CRD) | `cloudflare.k1c.io/v1alpha1` | R2 bucket | `r2-bucket` | Bound to a Worker via `volumes[].csi.driver: r2.k1c.io` and `volumeAttributes.bucketRef`. |
+| `KVNamespace` (CRD) | `cloudflare.k1c.io/v1alpha1` | KV namespace | `kv-namespace` | Bound via `volumes[].csi.driver: kv.k1c.io` and `volumeAttributes.namespaceRef`. |
+| `DispatchNamespace` (CRD) | `cloudflare.k1c.io/v1alpha1` | Workers for Platforms dispatch namespace | `dispatch-namespace` | Bound to a dispatcher Worker via `volumes[].csi.driver: dispatch-namespace.k1c.io` and `volumeAttributes.ref`. |
+| `AIGateway` (CRD) | `cloudflare.k1c.io/v1alpha1` | Cloudflare AI Gateway | `ai-gateway` | Creates an account-scoped AI Gateway. Workers use it through `env.AI.run(..., { gateway: { id } })`; `cloudflare.com/ai-gateway-ref` exposes the managed gateway id as an env var. |
 
 ### Multi-container Pods (v0.1.6)
 
@@ -57,21 +59,88 @@ spec:
           image: ./dist/worker.js
           volumeMounts:
             - name: cache
-              mountPath: KV_CACHE       # becomes binding name
+              mountPath: /mnt/cache
             - name: media
-              mountPath: R2_MEDIA
+              mountPath: /mnt/media
       volumes:
         - name: cache
-          kvNamespaceRef:
-            name: cache-kv              # references KVNamespace.metadata.name
+          csi:
+            driver: kv.k1c.io
+            volumeAttributes:
+              namespaceRef: cache-kv    # references KVNamespace.metadata.name
+              binding: IMAGE_CACHE      # optional explicit env binding
         - name: media
-          r2BucketRef:
-            name: media-bucket
+          csi:
+            driver: r2.k1c.io
+            volumeAttributes:
+              bucketRef: media-bucket
 ```
 
-`mountPath` is repurposed as the **binding identifier** the Worker code sees on `env`. The reconciler resolves `*Ref` to the resource's NativeID before uploading the Worker.
+The Worker binding name is resolved as `volumeAttributes.binding`, then legacy
+`volumeAttributes.bindingName`, then an upper-snake derivation from the volume
+name (`media-assets` -> `MEDIA_ASSETS`). `mountPath` is not repurposed; it
+remains a normal Kubernetes mount path for schema compatibility. The reconciler
+resolves refs to the resource's NativeID before uploading the Worker.
 
-Volume reference types currently supported: `r2BucketRef`, `kvNamespaceRef`, `serviceRef` (cross-Pod via ClusterIP `Service`), `hyperdriveRef` (private DB via Hyperdrive).
+CSI drivers currently supported: `r2.k1c.io`, `kv.k1c.io`, `d1.k1c.io`,
+`hyperdrive.k1c.io`, `queue.k1c.io`, `vectorize.k1c.io`, `service.k1c.io`,
+`dispatch-namespace.k1c.io`, `analytics-engine.k1c.io`, `mtls.k1c.io`, and
+`pipelines.k1c.io`.
+
+### Dynamic Workers and Workers for Platforms bindings
+
+Dynamic Workers are enabled with the Worker Loader binding. Add
+`cloudflare.com/worker-loader: enabled` to a `Deployment` or `Rollout` to emit
+`{ type: "worker_loader", name: "LOADER" }`; set the annotation to another
+string to choose a different binding name.
+
+Workers for Platforms dispatch namespace bindings can be attached to regular
+`Deployment` / `Rollout` Workers with a CSI volume:
+
+```yaml
+volumes:
+  - name: users
+    csi:
+      driver: dispatch-namespace.k1c.io
+      volumeAttributes:
+        ref: production
+        binding: DISPATCHER
+        remote: "true"
+```
+
+`ref` (or legacy `namespaceRef`) resolves a `DispatchNamespace` in the same
+namespace. `remote` is a Wrangler local-development hint and is emitted only by
+`k1c wrangler-config`; the Cloudflare Worker upload metadata stores the binding
+as `dispatch_namespace` without that local-only flag.
+
+### Workers AI, AI Gateway, and Cloudflare Agents
+
+Workers AI is enabled with `cloudflare.com/ai`. Value `enabled` uses binding
+`AI`; any other value is used as the binding name. AI Gateway does not add a
+separate Worker binding; it is selected at call time through the Workers AI
+binding:
+
+```js
+await env.AI.run(model, input, { gateway: { id: env.AI_GATEWAY_ID } });
+```
+
+Create a managed gateway with `kind: AIGateway`, then add
+`cloudflare.com/ai-gateway-ref: <metadata.name>` on a `Deployment` / `Rollout`.
+k1c sets `AI_GATEWAY_ID` (or the name from `cloudflare.com/ai-gateway-var`) to
+the Cloudflare gateway id and adds a dependency on the `AIGateway` resource.
+Use `cloudflare.com/ai-gateway-id: default` when you want Cloudflare's
+auto-created default gateway instead of a k1c-managed gateway.
+
+Cloudflare Agents are Durable Objects. Add
+`cloudflare.com/agent-classes: ChatAgent, ToolAgent` to a Worker-backed
+manifest to emit:
+
+- `durable_objects.bindings` for each class
+- a SQLite `migrations.new_sqlite_classes` entry
+- the required `nodejs_compat` compatibility flag
+
+This handles the platform wiring. The Worker code still needs to export the
+matching Agent classes and be bundled if it imports the `agents` npm package.
 
 ### v0 deletion behavior
 
@@ -120,6 +189,14 @@ All optional unless marked.
 | `cloudflare.com/compatibility-flags` | as above | Comma-separated. |
 | `cloudflare.com/observability` | `Deployment`, `Rollout` | `enabled` / `disabled`. |
 | `cloudflare.com/smart-placement` | `Deployment`, `Rollout` | `smart` / `default`. |
+| `cloudflare.com/source.<container>` | `Deployment`, `Rollout` | Worker entrypoint path override for the named container. |
+| `cloudflare.com/ai` | `Deployment`, `Rollout` | Adds a Workers AI binding. Value `enabled` uses `AI`; any other value is the binding name. |
+| `cloudflare.com/ai-gateway-ref` | `Deployment`, `Rollout` | Resolves an `AIGateway` in the same namespace, adds an AI binding if needed, sets `AI_GATEWAY_ID`, and depends on that gateway. |
+| `cloudflare.com/ai-gateway-id` | `Deployment`, `Rollout` | Literal AI Gateway id, e.g. `default`. Mutually exclusive with `cloudflare.com/ai-gateway-ref`. |
+| `cloudflare.com/ai-gateway-var` | `Deployment`, `Rollout` | Env var name for the gateway id. Default `AI_GATEWAY_ID`. |
+| `cloudflare.com/agent-classes` | `Deployment`, `Rollout` | Comma-separated Cloudflare Agents / Durable Object class names. Adds DO bindings, SQLite migrations, and `nodejs_compat`. |
+| `cloudflare.com/images` | `Deployment`, `Rollout` | Adds a Cloudflare Images binding. Value `enabled` uses `IMAGES`; any other value is the binding name. |
+| `cloudflare.com/worker-loader` | `Deployment`, `Rollout` | Adds a Dynamic Workers Worker Loader binding. Value `enabled` uses `LOADER`; any other value is the binding name. |
 | `cloudflare.com/limits-cpu-ms` | `Deployment`, `Rollout` | Worker CPU time limit. |
 | `k1c.io/managed-by` | (set by k1c, not user) | Always `k1c` on resources we own. |
 | `k1c.io/last-applied` | (set by k1c) | Hash of last applied manifest for diff. |

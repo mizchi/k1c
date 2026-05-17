@@ -199,6 +199,41 @@ export const dispatchNamespaceSchema = z.object({
   spec: z.object({}).strict().optional().default({}),
 });
 
+export const aiGatewaySchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('AIGateway'),
+  metadata: objectMetaSchema,
+  spec: z
+    .object({
+      id: z.string().min(1).optional(),
+      cacheInvalidateOnUpdate: z.boolean().optional(),
+      cacheTtl: z.number().int().nonnegative().nullable().optional(),
+      collectLogs: z.boolean().optional(),
+      rateLimiting: z
+        .object({
+          interval: z.number().int().nonnegative().nullable().optional(),
+          limit: z.number().int().nonnegative().nullable().optional(),
+          technique: z.enum(['fixed', 'sliding']).optional(),
+        })
+        .optional(),
+      authentication: z.boolean().optional(),
+      logManagement: z
+        .object({
+          retention: z.number().int().nonnegative().nullable().optional(),
+          strategy: z.enum(['STOP_INSERTING', 'DELETE_OLDEST']).nullable().optional(),
+        })
+        .optional(),
+      logpush: z
+        .object({
+          enabled: z.boolean().optional(),
+          publicKey: z.string().nullable().optional(),
+        })
+        .optional(),
+    })
+    .optional()
+    .default({}),
+});
+
 export const hyperdriveSchema = z.object({
   apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
   kind: z.literal('Hyperdrive'),
@@ -790,6 +825,7 @@ export const SCHEMAS_BY_KIND = {
   R2Bucket: r2BucketSchema,
   KVNamespace: kvNamespaceSchema,
   DispatchNamespace: dispatchNamespaceSchema,
+  AIGateway: aiGatewaySchema,
   Hyperdrive: hyperdriveSchema,
   D1Database: d1DatabaseSchema,
   Queue: queueSchema,
@@ -836,6 +872,7 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   r2BucketSchema,
   kvNamespaceSchema,
   dispatchNamespaceSchema,
+  aiGatewaySchema,
   hyperdriveSchema,
   d1DatabaseSchema,
   queueSchema,

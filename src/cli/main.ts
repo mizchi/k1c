@@ -13,6 +13,7 @@ import {
 } from './args.ts';
 import { runApply, runDelete, runDescribe, runDiff, runGet, type RunDeps } from './run.ts';
 import { runLogs, runPortForward } from './wrangler.ts';
+import { runWranglerConfig } from './wrangler-config.ts';
 import { runTelemetry } from './telemetry.ts';
 import { runExplain } from './explain.ts';
 import { runExportCrds } from './export-crds.ts';
@@ -50,6 +51,16 @@ async function main(): Promise<number> {
   // `export-crds` is also offline.
   if (parsed.kind === 'export-crds') {
     return runExportCrds(parsed);
+  }
+  // `wrangler-config` is offline: it lowers the manifest and prints a
+  // wrangler.jsonc-compatible local-dev config for one Worker.
+  if (parsed.kind === 'wrangler-config') {
+    return runWranglerConfig(parsed, {
+      readManifest: readManifestSource,
+      readFile: async (path: string) => readFile(path),
+      out: (msg: string) => process.stdout.write(`${msg}\n`),
+      err: (msg: string) => process.stderr.write(`${msg}\n`),
+    });
   }
   // `apply --validate-only` is also offline (parse + lower only).
   const validateOnly = parsed.kind === 'apply' && parsed.validateOnly;

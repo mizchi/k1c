@@ -40,7 +40,7 @@ spec:
         - name: bucket
           csi:
             driver: r2.k1c.io
-            volumeAttributes: { bucketRef: media }
+            volumeAttributes: { bucketRef: media, binding: R2_MEDIA }
 ```
 
 ```sh
@@ -58,7 +58,7 @@ kustomize build ./examples/kustomize/overlays/prod | k1c apply -f -
 
 ## Status
 
-22 Cloudflare CRD kinds + 9 standard k8s kinds are wired today.
+23 Cloudflare CRD kinds + 9 standard k8s kinds are wired today.
 "e2e" means the row is exercised by `tests/e2e/idempotency.e2e.test.ts`
 against a real Cloudflare account — round-trip create → read →
 equals → delete. "verified" rows were checked manually but aren't in
@@ -76,13 +76,14 @@ the suite (they need a customer domain / paid feature).
 | `Hyperdrive` (CRD) | Hyperdrive configs | drift-fixed |
 | `Queue` (CRD) + producer / consumer wiring | Cloudflare Queues + consumer | **e2e** |
 | `DispatchNamespace` (CRD) | Workers for Platforms namespace | working (paid) |
+| `AIGateway` (CRD) | Cloudflare AI Gateway | working |
 | `Rollout` (Argo Rollouts subset, `blueGreen` / `canary.steps`) | Worker Versions, or WfP dispatcher with KV-stored canary state | working |
-| `StatefulSet` → `DurableObject` class | Workers Durable Objects + migrations | working (greenfield only) |
+| `StatefulSet` → `DurableObject` class / `cloudflare.com/agent-classes` | Workers Durable Objects + Cloudflare Agents migrations | working (greenfield only) |
 | `CronJob` / `Job` | Worker + Cron Trigger / Workflow registration | working |
 | `DNSRecord` (CRD) | DNS records | **e2e** |
 | `LogpushJob` (CRD) | Logpush (zone- or account-scoped) | drift-fixed |
 | `TelemetryStack` (CRD) | bundle Logpush streams (workers / http / firewall / dns / audit) in one manifest | working |
-| `ai` / `browser` / `version_metadata` / `analytics_engine` / `mtls` / `pipelines` Worker bindings | annotation- / volume-driven | working |
+| `dispatch_namespace` / `worker_loader` / `ai` / AI Gateway vars / `browser` / `images` / `version_metadata` / `analytics_engine` / `mtls` / `pipelines` Worker bindings | annotation- / volume-driven | working |
 | `Ingress` (`networking.k8s.io/v1`) | generated router Worker + Custom Domain per literal host (Workers Route per wildcard host) | working |
 | `WorkerRoute` (Ingress wildcard host) | Workers Route binding | verified |
 | `CustomDomain` (CRD) | per-Worker Custom Domain | working |
@@ -218,8 +219,16 @@ The bundle works in any wasi-cli host once wrapped. `apply` /
 A k1c manifest is a *subset* of valid k8s YAML — the same file applies
 to either k1c or to a real `kubectl` cluster. Cloudflare-specific data
 sources ride on the standard `volumes[].csi` shape with k1c driver
-names (`r2.k1c.io`, `kv.k1c.io`, `d1.k1c.io`, ...) and Cloudflare CRDs
+names (`r2.k1c.io`, `kv.k1c.io`, `dispatch-namespace.k1c.io`, ...)
+and Cloudflare CRDs
 live under `cloudflare.k1c.io/v1alpha1`.
+
+Worker binding names are resolved from CSI `volumeAttributes` in this order:
+`binding`, legacy `bindingName`, then an upper-snake derivation from the volume
+name (`r2-media` -> `R2_MEDIA`). `mountPath` stays a Kubernetes mount path and is
+not used as the Worker binding name. A container's `image` is the Worker script
+entrypoint path; for manifests that need a Kubernetes-looking placeholder,
+`cloudflare.com/source.<container-name>` can override it.
 
 ### Dual-path lowering
 
@@ -356,6 +365,7 @@ pnpm k1c apply   -f examples/hello-worker.yaml [--dry-run]
 
 # Optional: end-to-end tests against a real Cloudflare account (creates and
 # deletes resources). Requires K1C_E2E=1 plus the same env vars used by the CLI.
+# The full suite needs the permissions listed in the Authentication section.
 K1C_E2E=1 K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm test:e2e
 ```
 
@@ -370,6 +380,7 @@ k1c describe <kind> <name> [-n <namespace>] [-o text|json]
 k1c rollout  {status|promote|abort} <ns>/<name> --dispatch <name>
 k1c logs     <kind> <name> [-n <namespace>] [--format pretty|json] [--status <s>] [--limit N]
 k1c port-forward <kind> <name> [-n <namespace>] [--port 8787]
+k1c wrangler-config -f <manifest.yaml> [--worker <namespace/name>]
 k1c telemetry workers <kind> <name> [-n <ns>] [--since 1h] [-o text|json]
 k1c explain  <kind | list> [--recursive | -r]
 k1c export-crds [--include-standard]
@@ -389,13 +400,24 @@ k1c version
 must lower to a Worker (`Deployment`, `Rollout`, `CronJob`, `Job`,
 `StatefulSet`, or `Worker` itself).
 
+`wrangler-config` is an offline bridge for local Worker dev. It parses and
+lowers the same manifest as `apply`, selects one lowered Worker, and prints a
+`wrangler.jsonc`-compatible JSON config with `main`, compatibility settings,
+and Worker bindings, including Workers AI `ai`, Dynamic Workers `worker_loaders`,
+Workers for Platforms `dispatch_namespaces`, and Agents Durable Object
+bindings/migrations. If the manifest lowers to multiple Workers, pass
+`--worker default/api` (or another `<namespace>/<name>` label). JSON is valid
+JSONC, so the output can be used directly as a Wrangler config. Resource IDs
+that k1c resolves only at apply time are omitted from the generated config,
+leaving binding names explicit while keeping local dev usable.
+
 Authentication is via two environment variables:
 
 | Variable | Purpose |
 |---|---|
 | `K1C_ACCOUNT_ID` | Cloudflare account id (legacy fallback when no context is selected) |
 | `K1C_ZONE_ID` | optional default zone id; lets `<resolved-at-apply:Context:zoneId>` placeholders resolve and `get/describe` enumerate zone-scoped resources |
-| `CLOUDFLARE_API_TOKEN` | API token with Workers Edit + R2 + KV + Analytics Read (legacy fallback) |
+| `CLOUDFLARE_API_TOKEN` | API token for the Cloudflare resources in the manifest (legacy fallback). For the broad examples/e2e suite, use account permissions: Workers Scripts Edit, Workers KV Storage Edit, Workers R2 Storage Edit, D1 Edit, Queues Edit, Vectorize Edit, AI Gateway Edit, Workers AI Read, Access Apps and Policies Edit, plus zone permissions needed by zone resources such as DNS Edit, Zone WAF Edit, Transform Rules Edit, Cache Rules Edit, Email Routing Edit, and Page Rules Edit. |
 | `K1C_CONTEXT` | name of a context defined in `~/.k1c/config.yaml` to use; `--context <name>` flag overrides this |
 | `K1C_CONFIG` | path to the context file (default: `~/.k1c/config.yaml`) |
 

@@ -59,8 +59,10 @@ spec:
             driver: r2.k1c.io
             volumeAttributes:
               bucketRef: media
+              binding: R2_MEDIA
         - name: kv-cache
           csi:
             driver: kv.k1c.io
             volumeAttributes:
               namespaceRef: cache
+              binding: IMAGE_CACHE

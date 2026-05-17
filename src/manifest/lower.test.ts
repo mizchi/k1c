@@ -54,6 +54,39 @@ spec: {}
     expect(d.properties).toEqual({ namespaceName: 'k1c-prod-production' });
   });
 
+  it('lowers AIGateway to a DesiredResource with Cloudflare settings', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AIGateway
+metadata: { name: chat, namespace: prod }
+spec:
+  cacheTtl: 60
+  cacheInvalidateOnUpdate: true
+  collectLogs: true
+  rateLimiting:
+    interval: 60
+    limit: 120
+    technique: sliding
+  authentication: true
+  logManagement:
+    retention: 1000
+    strategy: DELETE_OLDEST
+`);
+    expect(result.desired).toHaveLength(1);
+    const d = result.desired[0]!;
+    expect(d.resourceType).toBe('AIGateway');
+    expect(d.label).toBe('prod/chat');
+    expect(d.properties).toEqual({
+      id: 'k1c-prod-chat',
+      cacheTtl: 60,
+      cacheInvalidateOnUpdate: true,
+      collectLogs: true,
+      rateLimiting: { interval: 60, limit: 120, technique: 'sliding' },
+      authentication: true,
+      logManagement: { retention: 1000, strategy: 'DELETE_OLDEST' },
+    });
+  });
+
   it('lowers KVNamespace to a DesiredResource with prefixed title', async () => {
     const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
@@ -258,6 +291,40 @@ spec:
     );
   });
 
+  it('honors explicit volumeAttributes.binding before deriving from the volume name', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2Bucket
+metadata: { name: media }
+spec: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: api }
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - name: api
+          image: ./dist/worker.js
+          volumeMounts:
+            - { name: r2-media, mountPath: /mnt/media }
+      volumes:
+        - name: r2-media
+          csi:
+            driver: r2.k1c.io
+            volumeAttributes:
+              bucketRef: media
+              binding: MEDIA
+`);
+    const worker = result.desired.find((d) => d.resourceType === 'Worker')!;
+    const props = worker.properties as Record<string, unknown>;
+    expect(props.bindings).toEqual([
+      { type: 'r2_bucket', name: 'MEDIA', bucketName: 'k1c-default-media' },
+    ]);
+  });
+
   it('emits kv_namespace binding with placeholder namespaceId', async () => {
     const result = await lowerYaml(`
 apiVersion: cloudflare.k1c.io/v1alpha1
@@ -446,6 +513,122 @@ spec:
     expect(bindings).toContainEqual({ type: 'ai', name: 'AI' });
     expect(bindings).toContainEqual({ type: 'browser', name: 'HEADLESS' });
     expect(bindings).toContainEqual({ type: 'version_metadata', name: 'CF_VERSION' });
+  });
+
+  it('emits images binding from a Pod annotation', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  annotations:
+    cloudflare.com/images: enabled
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - { name: api, image: ./dist/worker.js }
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    const bindings = props.bindings as ReadonlyArray<Record<string, string>>;
+    expect(bindings).toContainEqual({ type: 'images', name: 'IMAGES' });
+  });
+
+  it('emits worker_loader binding from a Pod annotation for Dynamic Workers', async () => {
+    const result = await lowerYaml(`
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  annotations:
+    cloudflare.com/worker-loader: enabled
+spec:
+  selector: { matchLabels: { app: api } }
+  template:
+    spec:
+      containers:
+        - { name: api, image: ./dist/worker.js }
+`);
+    const props = result.desired[0]!.properties as Record<string, unknown>;
+    const bindings = props.bindings as ReadonlyArray<Record<string, string>>;
+    expect(bindings).toContainEqual({ type: 'worker_loader', name: 'LOADER' });
+  });
+
+  it('wires Cloudflare Agents and AI Gateway annotations into a Worker', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AIGateway
+metadata: { name: chat }
+spec: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: assistant
+  annotations:
+    cloudflare.com/ai: enabled
+    cloudflare.com/ai-gateway-ref: chat
+    cloudflare.com/ai-gateway-var: AI_GATEWAY_ID
+    cloudflare.com/agent-classes: ChatAgent, ToolAgent
+spec:
+  selector: { matchLabels: { app: assistant } }
+  template:
+    spec:
+      containers:
+        - { name: assistant, image: ./dist/assistant.js }
+`);
+    const worker = result.desired.find((d) => d.resourceType === 'Worker')!;
+    const props = worker.properties as Record<string, unknown>;
+    expect(props.bindings).toContainEqual({ type: 'ai', name: 'AI' });
+    expect(props.vars).toMatchObject({ AI_GATEWAY_ID: 'k1c-default-chat' });
+    expect(props.compatibilityFlags).toEqual(['nodejs_compat']);
+    expect(props.durableObjectClasses).toEqual(['ChatAgent', 'ToolAgent']);
+    expect(worker.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'AIGateway', name: 'chat' }),
+    );
+  });
+
+  it('binds a DispatchNamespace to a regular Deployment for Workers for Platforms', async () => {
+    const result = await lowerYaml(`
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: DispatchNamespace
+metadata: { name: production }
+spec: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: dispatcher }
+spec:
+  selector: { matchLabels: { app: dispatcher } }
+  template:
+    spec:
+      containers:
+        - name: dispatcher
+          image: ./dist/dispatcher.js
+          volumeMounts:
+            - { name: users, mountPath: /mnt/users }
+      volumes:
+        - name: users
+          csi:
+            driver: dispatch-namespace.k1c.io
+            volumeAttributes:
+              ref: production
+              binding: DISPATCHER
+              remote: "true"
+`);
+    const worker = result.desired.find((d) => d.resourceType === 'Worker')!;
+    const props = worker.properties as Record<string, unknown>;
+    const bindings = props.bindings as ReadonlyArray<Record<string, unknown>>;
+    expect(bindings).toContainEqual({
+      type: 'dispatch_namespace',
+      name: 'DISPATCHER',
+      dispatchNamespace: 'k1c-default-production',
+      remote: true,
+    });
+    expect(worker.dependsOn).toContainEqual(
+      expect.objectContaining({ kind: 'DispatchNamespace', name: 'production' }),
+    );
   });
 
   it('emits mtls_certificate binding from volume.mtlsCertificateRef', async () => {
