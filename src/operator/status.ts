@@ -34,6 +34,8 @@ const CLOUDFLARE_PLURAL_BY_KIND: Readonly<Record<string, string>> = {
   R2BucketLifecycle: 'r2bucketlifecycles',
   R2BucketEventNotification: 'r2bucketeventnotifications',
   R2CustomDomain: 'r2customdomains',
+  WorkerVersion: 'workerversions',
+  WorkerDeployment: 'workerdeployments',
 };
 
 const CLOUDFLARE_GROUP = 'cloudflare.k1c.io';

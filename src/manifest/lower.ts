@@ -22,6 +22,8 @@ import type {
   R2BucketLifecycle,
   R2BucketEventNotification,
   R2CustomDomain,
+  WorkerVersion,
+  WorkerDeployment,
   ConfigMapResource,
   CronJob,
   AIGateway,
@@ -84,6 +86,8 @@ import type { R2BucketCorsProperties } from '../providers/r2-bucket-cors.ts';
 import type { R2BucketLifecycleProperties } from '../providers/r2-bucket-lifecycle.ts';
 import type { R2BucketEventNotificationProperties } from '../providers/r2-bucket-event-notification.ts';
 import type { R2CustomDomainProperties } from '../providers/r2-custom-domain.ts';
+import type { WorkerVersionProperties } from '../providers/worker-version.ts';
+import type { WorkerDeploymentProperties } from '../providers/worker-deployment.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -179,6 +183,8 @@ export async function lower(
   const r2BucketLifecycles: R2BucketLifecycle[] = [];
   const r2BucketEventNotifications: R2BucketEventNotification[] = [];
   const r2CustomDomains: R2CustomDomain[] = [];
+  const workerVersions: WorkerVersion[] = [];
+  const workerDeployments: WorkerDeployment[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -299,6 +305,12 @@ export async function lower(
         break;
       case 'R2CustomDomain':
         r2CustomDomains.push(r);
+        break;
+      case 'WorkerVersion':
+        workerVersions.push(r);
+        break;
+      case 'WorkerDeployment':
+        workerDeployments.push(r);
         break;
     }
   }
@@ -477,7 +489,60 @@ export async function lower(
     desired.push(lowerR2CustomDomain(cd));
   }
 
+  for (const wv of workerVersions) {
+    desired.push(lowerWorkerVersion(wv));
+  }
+  for (const wd of workerDeployments) {
+    desired.push(lowerWorkerDeployment(wd));
+  }
+
   return { desired, warnings };
+}
+
+function lowerWorkerVersion(wv: WorkerVersion): DesiredResource<WorkerVersionProperties> {
+  const ns = wv.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'WorkerVersion',
+    ref: refOf(wv),
+    label: `${ns}/${wv.metadata.name}`,
+    properties: {
+      scriptName: wv.spec.scriptName,
+      versionTag: wv.spec.versionTag,
+      ...(wv.spec.message !== undefined ? { message: wv.spec.message } : {}),
+      script: {
+        scriptName: wv.spec.scriptName,
+        entrypoint: wv.spec.entrypoint ?? '',
+        compatibilityDate: wv.spec.compatibilityDate,
+        ...(wv.spec.entrypointContent !== undefined
+          ? { entrypointContent: wv.spec.entrypointContent }
+          : {}),
+        ...(wv.spec.compatibilityFlags !== undefined
+          ? { compatibilityFlags: wv.spec.compatibilityFlags }
+          : {}),
+        ...(wv.spec.vars !== undefined ? { vars: wv.spec.vars } : {}),
+        ...(wv.spec.secrets !== undefined ? { secrets: wv.spec.secrets } : {}),
+        ...(wv.spec.observability !== undefined
+          ? { observability: wv.spec.observability }
+          : {}),
+      },
+    },
+  };
+}
+
+function lowerWorkerDeployment(
+  wd: WorkerDeployment,
+): DesiredResource<WorkerDeploymentProperties> {
+  const ns = wd.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'WorkerDeployment',
+    ref: refOf(wd),
+    label: `${ns}/${wd.metadata.name}`,
+    properties: {
+      scriptName: wd.spec.scriptName,
+      ...(wd.spec.message !== undefined ? { message: wd.spec.message } : {}),
+      versions: wd.spec.versions,
+    },
+  };
 }
 
 function lowerWorkerCronTrigger(

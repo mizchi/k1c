@@ -33,6 +33,8 @@ import { r2BucketCorsProvider } from './r2-bucket-cors.ts';
 import { r2BucketLifecycleProvider } from './r2-bucket-lifecycle.ts';
 import { r2BucketEventNotificationProvider } from './r2-bucket-event-notification.ts';
 import { r2CustomDomainProvider } from './r2-custom-domain.ts';
+import { workerVersionProvider } from './worker-version.ts';
+import { workerDeploymentProvider } from './worker-deployment.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -70,6 +72,8 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(r2BucketLifecycleProvider);
   r.register(r2BucketEventNotificationProvider);
   r.register(r2CustomDomainProvider);
+  r.register(workerVersionProvider);
+  r.register(workerDeploymentProvider);
   return r;
 }
 

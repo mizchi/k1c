@@ -590,6 +590,47 @@ export const r2CustomDomainSchema = z.object({
   }),
 });
 
+export const workerVersionSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('WorkerVersion'),
+  metadata: objectMetaSchema,
+  spec: z
+    .object({
+      scriptName: z.string().min(1),
+      versionTag: z.string().min(1),
+      message: z.string().optional(),
+      entrypoint: z.string().optional(),
+      entrypointContent: z.string().optional(),
+      compatibilityDate: z.string().min(1),
+      compatibilityFlags: z.array(z.string()).optional(),
+      vars: z.record(z.string()).optional(),
+      secrets: z.record(z.string()).optional(),
+      observability: z.object({ enabled: z.boolean() }).optional(),
+    })
+    .refine((s) => s.entrypoint !== undefined || s.entrypointContent !== undefined, {
+      message: 'WorkerVersion requires either spec.entrypoint or spec.entrypointContent',
+    }),
+});
+
+export const workerDeploymentSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('WorkerDeployment'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    scriptName: z.string().min(1),
+    message: z.string().optional(),
+    versions: z
+      .array(
+        z.object({
+          versionId: z.string().min(1),
+          percentage: z.number().min(0).max(100),
+        }),
+      )
+      .min(1)
+      .max(2),
+  }),
+});
+
 const transformHeaderActionSchema = z.object({
   operation: z.enum(['set', 'add', 'remove']),
   value: z.string().optional(),
@@ -965,6 +1006,8 @@ export const SCHEMAS_BY_KIND = {
   R2BucketLifecycle: r2BucketLifecycleSchema,
   R2BucketEventNotification: r2BucketEventNotificationSchema,
   R2CustomDomain: r2CustomDomainSchema,
+  WorkerVersion: workerVersionSchema,
+  WorkerDeployment: workerDeploymentSchema,
 } as const;
 
 export type K1cKind = keyof typeof SCHEMAS_BY_KIND;
@@ -1017,4 +1060,6 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   r2BucketLifecycleSchema,
   r2BucketEventNotificationSchema,
   r2CustomDomainSchema,
+  workerVersionSchema,
+  workerDeploymentSchema,
 ]);

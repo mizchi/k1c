@@ -645,6 +645,50 @@ export type R2CustomDomain = BaseResource<
   R2CustomDomainSpec
 >;
 
+/**
+ * Subset of WorkerProperties that the manifest exposes for a versioned
+ * upload — same shape as the inline `script` field on a Worker but
+ * surfaced explicitly here so the manifest schema can declare it.
+ */
+export interface WorkerVersionSpec {
+  readonly scriptName: string;
+  readonly versionTag: string;
+  readonly message?: string;
+  readonly entrypoint?: string;
+  readonly entrypointContent?: string;
+  readonly compatibilityDate: string;
+  readonly compatibilityFlags?: ReadonlyArray<string>;
+  readonly vars?: Readonly<Record<string, string>>;
+  readonly secrets?: Readonly<Record<string, string>>;
+  readonly observability?: { readonly enabled: boolean };
+}
+
+export type WorkerVersion = BaseResource<
+  'WorkerVersion',
+  'cloudflare.k1c.io/v1alpha1',
+  WorkerVersionSpec
+>;
+
+export interface WorkerDeploymentSpec {
+  readonly scriptName: string;
+  readonly message?: string;
+  readonly versions: ReadonlyArray<{
+    /**
+     * Cloudflare version id — typically a placeholder string
+     * `<resolved-at-apply:WorkerVersion:ns/name>` that k1c rewrites to
+     * the real id at apply time using the resolution cache.
+     */
+    readonly versionId: string;
+    readonly percentage: number;
+  }>;
+}
+
+export type WorkerDeployment = BaseResource<
+  'WorkerDeployment',
+  'cloudflare.k1c.io/v1alpha1',
+  WorkerDeploymentSpec
+>;
+
 export type TransformHeaderOperation = 'set' | 'add' | 'remove';
 
 export interface TransformHeaderAction {
@@ -848,7 +892,9 @@ export type K1cResource =
   | R2BucketCors
   | R2BucketLifecycle
   | R2BucketEventNotification
-  | R2CustomDomain;
+  | R2CustomDomain
+  | WorkerVersion
+  | WorkerDeployment;
 
 export type ResourceKind = K1cResource['kind'];
 
