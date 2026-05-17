@@ -42,6 +42,8 @@ const CLOUDFLARE_KINDS_BY_PLURAL: Readonly<Record<string, string>> = {
   r2bucketlifecycles: 'R2BucketLifecycle',
   r2bucketeventnotifications: 'R2BucketEventNotification',
   r2customdomains: 'R2CustomDomain',
+  workerversions: 'WorkerVersion',
+  workerdeployments: 'WorkerDeployment',
 };
 
 /** Opt-in label that gates Deployment / Service / ConfigMap / etc. for k1c. */

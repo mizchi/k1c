@@ -97,6 +97,8 @@ const CLOUDFLARE_PLURALS: ReadonlyArray<string> = [
   'r2bucketlifecycles',
   'r2bucketeventnotifications',
   'r2customdomains',
+  'workerversions',
+  'workerdeployments',
 ];
 
 /**

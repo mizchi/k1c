@@ -1,0 +1,56 @@
+# Versioned deploy + canary rollout for a Worker using Cloudflare's native
+# Versions/Deployments API (no Argo Rollouts dependency).
+#
+# Flow:
+#   1. Upload a v1 version (existing baseline)
+#   2. Upload a v2 version (the new release)
+#   3. A WorkerDeployment splits traffic 90/10 v1/v2 — canary
+#   4. To promote, change the deployment to 100% v2 and re-apply
+#
+# The `<resolved-at-apply:WorkerVersion:default/api-v2>` placeholder is
+# substituted with the real Cloudflare versionId at apply time, so the
+# manifest references stay author-friendly.
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WorkerVersion
+metadata:
+  name: api-v1
+spec:
+  scriptName: api
+  versionTag: v1.0.0
+  compatibilityDate: "2025-01-01"
+  entrypointContent: |
+    export default {
+      async fetch() {
+        return new Response("hello from v1");
+      },
+    };
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WorkerVersion
+metadata:
+  name: api-v2
+spec:
+  scriptName: api
+  versionTag: v2.0.0
+  message: "ship the experimental cache layer"
+  compatibilityDate: "2025-01-01"
+  entrypointContent: |
+    export default {
+      async fetch() {
+        return new Response("hello from v2 (experimental)");
+      },
+    };
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: WorkerDeployment
+metadata:
+  name: api
+spec:
+  scriptName: api
+  message: "canary v2 at 10%"
+  versions:
+    - versionId: "<resolved-at-apply:WorkerVersion:default/api-v1>"
+      percentage: 90
+    - versionId: "<resolved-at-apply:WorkerVersion:default/api-v2>"
+      percentage: 10

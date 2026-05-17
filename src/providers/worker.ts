@@ -216,7 +216,7 @@ interface CFBinding {
   readonly pipeline?: string; // for pipelines bindings
 }
 
-function buildBindings(props: WorkerProperties): CFBinding[] {
+export function buildBindings(props: WorkerProperties): CFBinding[] {
   const out: CFBinding[] = [];
   for (const [name, text] of Object.entries(props.vars ?? {})) {
     out.push({ type: 'plain_text', name, text });
@@ -270,7 +270,7 @@ function buildBindings(props: WorkerProperties): CFBinding[] {
 const CONTENT_HASH_TAG_PREFIX = 'k1c.io/content-hash=';
 const DO_CLASSES_TAG_PREFIX = 'k1c.io/do-classes=';
 
-function buildMetadata(ctx: ProviderContext, props: WorkerProperties) {
+export function buildMetadata(ctx: ProviderContext, props: WorkerProperties) {
   const tags = [ctx.managedByLabel];
   if (props.entrypointHash !== undefined) {
     tags.push(`${CONTENT_HASH_TAG_PREFIX}${props.entrypointHash}`);
@@ -333,7 +333,9 @@ function extractDoClasses(tags: ReadonlyArray<string> | undefined): ReadonlyArra
   return undefined;
 }
 
-async function readEntrypoint(
+export const WORKER_MAIN_MODULE = MAIN_MODULE;
+
+export async function readEntrypoint(
   ctx: ProviderContext,
   props: WorkerProperties,
 ): Promise<Uint8Array> {
