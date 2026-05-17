@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.14.0](https://github.com/mizchi/k1c/compare/v0.13.0...v0.14.0) (2026-05-17)
+
+
+### Features
+
+* add WorkerCronTrigger + R2 bucket sidecar resources ([#53](https://github.com/mizchi/k1c/issues/53)) ([3c73bd6](https://github.com/mizchi/k1c/commit/3c73bd6d0a2a35b017bac6bca586652a0f310fee))
+* **providers:** add WorkerVersion + WorkerDeployment for gradual rollout ([#55](https://github.com/mizchi/k1c/issues/55)) ([f60196d](https://github.com/mizchi/k1c/commit/f60196de7f23e266b1a541243a27b9b8ef28cb30))
+
 ## [0.13.0](https://github.com/mizchi/k1c/compare/v0.12.0...v0.13.0) (2026-05-17)
 
 
