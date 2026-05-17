@@ -75,7 +75,16 @@ jobs:
           wait: 60s
 
       - name: Register k1c CRDs
-        run: pnpm --silent k1c export-crds | kubectl apply -f -
+        # Don't pipe directly into kubectl: kubectl applies docs as it
+        # parses them and, if any one doc errors, it closes stdin
+        # mid-stream — pnpm then dies on SIGPIPE before emitting the
+        # tail of the bundle. The truncation appears as silent
+        # field-loss on the doc that was being written when the pipe
+        # closed (and total disappearance of every later CRD). Buffer
+        # to disk first so neither side races.
+        run: |
+          pnpm --silent k1c export-crds > /tmp/k1c-crds.yaml
+          kubectl apply -f /tmp/k1c-crds.yaml
 
       - name: Register argo-rollouts CRDs
         # examples/rollout-*.yaml use `kind: Rollout` from
@@ -214,7 +223,16 @@ jobs:
         run: kind load docker-image k1c-operator:e2e --name k1c-e2e
 
       - name: Register k1c CRDs
-        run: pnpm --silent k1c export-crds | kubectl apply -f -
+        # Don't pipe directly into kubectl: kubectl applies docs as it
+        # parses them and, if any one doc errors, it closes stdin
+        # mid-stream — pnpm then dies on SIGPIPE before emitting the
+        # tail of the bundle. The truncation appears as silent
+        # field-loss on the doc that was being written when the pipe
+        # closed (and total disappearance of every later CRD). Buffer
+        # to disk first so neither side races.
+        run: |
+          pnpm --silent k1c export-crds > /tmp/k1c-crds.yaml
+          kubectl apply -f /tmp/k1c-crds.yaml
 
       - name: Deploy operator
         run: |
