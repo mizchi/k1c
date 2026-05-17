@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/mizchi/k1c/compare/v0.12.0...v0.13.0) (2026-05-17)
+
+
+### Features
+
+* AI Gateway provider, wrangler-config CLI, dynamic Workers for Platforms examples ([#51](https://github.com/mizchi/k1c/issues/51)) ([d885a8b](https://github.com/mizchi/k1c/commit/d885a8b55acf6b8f7610b6a4d88826e85eacf514))
+
 ## [0.12.0](https://github.com/mizchi/k1c/compare/v0.11.0...v0.12.0) (2026-05-10)
 
 
