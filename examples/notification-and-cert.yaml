@@ -1,0 +1,37 @@
+# NotificationPolicy + CertificatePack example.
+#
+# - NotificationPolicy fires emails when origin error rates spike on prod.
+# - CertificatePack orders a 90-day Let's Encrypt advanced cert for
+#   example.com + api.example.com (HTTP-01 validation).
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: NotificationPolicy
+metadata:
+  name: origin-errors
+  namespace: default
+spec:
+  alertType: http_alert_origin_error
+  enabled: true
+  alertInterval: 5m
+  description: Email SRE when origin error rate spikes
+  mechanisms:
+    email:
+      - id: sre@example.com
+  filters:
+    event_type:
+      - error
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: CertificatePack
+metadata:
+  name: acm-example
+  namespace: default
+spec:
+  zoneId: "<resolved-at-apply:Context:zoneId>"
+  certificateAuthority: lets_encrypt
+  hosts:
+    - example.com
+    - api.example.com
+  type: advanced
+  validationMethod: http
+  validityDays: 90

@@ -103,6 +103,14 @@ const CLOUDFLARE_PLURALS: ReadonlyArray<string> = [
   'snippets',
   'streamkeys',
   'streamwatermarks',
+  'zones',
+  'zonesettings',
+  'loadbalancermonitors',
+  'loadbalancerpools',
+  'loadbalancers',
+  'notificationpolicies',
+  'certificatepacks',
+  'webanalyticssites',
 ];
 
 /**

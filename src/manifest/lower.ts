@@ -28,6 +28,14 @@ import type {
   Snippet,
   StreamKey,
   StreamWatermark,
+  Zone,
+  ZoneSetting,
+  LoadBalancerMonitor,
+  LoadBalancerPool,
+  LoadBalancer,
+  NotificationPolicy,
+  CertificatePack,
+  WebAnalyticsSite,
   ConfigMapResource,
   CronJob,
   AIGateway,
@@ -96,6 +104,14 @@ import type { TurnstileWidgetProperties } from '../providers/turnstile-widget.ts
 import type { SnippetProperties } from '../providers/snippet.ts';
 import type { StreamKeyProperties } from '../providers/stream-key.ts';
 import type { StreamWatermarkProperties } from '../providers/stream-watermark.ts';
+import type { ZoneProperties } from '../providers/zone.ts';
+import type { ZoneSettingProperties } from '../providers/zone-setting.ts';
+import type { LoadBalancerMonitorProperties } from '../providers/load-balancer-monitor.ts';
+import type { LoadBalancerPoolProperties } from '../providers/load-balancer-pool.ts';
+import type { LoadBalancerProperties } from '../providers/load-balancer.ts';
+import type { NotificationPolicyProperties } from '../providers/notification-policy.ts';
+import type { CertificatePackProperties } from '../providers/certificate-pack.ts';
+import type { WebAnalyticsSiteProperties } from '../providers/web-analytics-site.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -197,6 +213,14 @@ export async function lower(
   const snippets: Snippet[] = [];
   const streamKeys: StreamKey[] = [];
   const streamWatermarks: StreamWatermark[] = [];
+  const zones: Zone[] = [];
+  const zoneSettings: ZoneSetting[] = [];
+  const lbMonitors: LoadBalancerMonitor[] = [];
+  const lbPools: LoadBalancerPool[] = [];
+  const lbs: LoadBalancer[] = [];
+  const notificationPolicies: NotificationPolicy[] = [];
+  const certificatePacks: CertificatePack[] = [];
+  const webAnalyticsSites: WebAnalyticsSite[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -335,6 +359,30 @@ export async function lower(
         break;
       case 'StreamWatermark':
         streamWatermarks.push(r);
+        break;
+      case 'Zone':
+        zones.push(r);
+        break;
+      case 'ZoneSetting':
+        zoneSettings.push(r);
+        break;
+      case 'LoadBalancerMonitor':
+        lbMonitors.push(r);
+        break;
+      case 'LoadBalancerPool':
+        lbPools.push(r);
+        break;
+      case 'LoadBalancer':
+        lbs.push(r);
+        break;
+      case 'NotificationPolicy':
+        notificationPolicies.push(r);
+        break;
+      case 'CertificatePack':
+        certificatePacks.push(r);
+        break;
+      case 'WebAnalyticsSite':
+        webAnalyticsSites.push(r);
         break;
     }
   }
@@ -532,8 +580,201 @@ export async function lower(
   for (const sw of streamWatermarks) {
     desired.push(lowerStreamWatermark(sw));
   }
+  for (const z of zones) {
+    desired.push(lowerZone(z));
+  }
+  for (const zs of zoneSettings) {
+    desired.push(lowerZoneSetting(zs));
+  }
+  for (const m of lbMonitors) {
+    desired.push(lowerLoadBalancerMonitor(m));
+  }
+  for (const p of lbPools) {
+    desired.push(lowerLoadBalancerPool(p));
+  }
+  for (const lb of lbs) {
+    desired.push(lowerLoadBalancer(lb));
+  }
+  for (const np of notificationPolicies) {
+    desired.push(lowerNotificationPolicy(np));
+  }
+  for (const cp of certificatePacks) {
+    desired.push(lowerCertificatePack(cp));
+  }
+  for (const ws of webAnalyticsSites) {
+    desired.push(lowerWebAnalyticsSite(ws));
+  }
 
   return { desired, warnings };
+}
+
+function lowerWebAnalyticsSite(
+  ws: WebAnalyticsSite,
+): DesiredResource<WebAnalyticsSiteProperties> {
+  const ns = ws.metadata.namespace ?? 'default';
+  if (
+    (ws.spec.host === undefined || ws.spec.host.length === 0) &&
+    (ws.spec.zoneTag === undefined || ws.spec.zoneTag.length === 0)
+  ) {
+    throw new LowerError(
+      `WebAnalyticsSite ${ns}/${ws.metadata.name}: spec.host or spec.zoneTag is required`,
+    );
+  }
+  return {
+    resourceType: 'WebAnalyticsSite',
+    ref: refOf(ws),
+    label: `${ns}/${ws.metadata.name}`,
+    properties: {
+      ...(ws.spec.host !== undefined ? { host: ws.spec.host } : {}),
+      ...(ws.spec.zoneTag !== undefined ? { zoneTag: ws.spec.zoneTag } : {}),
+      ...(ws.spec.autoInstall !== undefined ? { autoInstall: ws.spec.autoInstall } : {}),
+    },
+  };
+}
+
+function lowerNotificationPolicy(
+  np: NotificationPolicy,
+): DesiredResource<NotificationPolicyProperties> {
+  const ns = np.metadata.namespace ?? 'default';
+  const policyName = np.spec.policyName ?? `k1c-${ns}-${np.metadata.name}`;
+  return {
+    resourceType: 'NotificationPolicy',
+    ref: refOf(np),
+    label: `${ns}/${np.metadata.name}`,
+    properties: {
+      policyName,
+      alertType: np.spec.alertType,
+      enabled: np.spec.enabled ?? true,
+      mechanisms: np.spec.mechanisms,
+      ...(np.spec.description !== undefined ? { description: np.spec.description } : {}),
+      ...(np.spec.alertInterval !== undefined ? { alertInterval: np.spec.alertInterval } : {}),
+      ...(np.spec.filters !== undefined ? { filters: np.spec.filters } : {}),
+    },
+  };
+}
+
+function lowerCertificatePack(cp: CertificatePack): DesiredResource<CertificatePackProperties> {
+  const ns = cp.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'CertificatePack',
+    ref: refOf(cp),
+    label: `${ns}/${cp.metadata.name}`,
+    properties: {
+      zoneId: cp.spec.zoneId,
+      certificateAuthority: cp.spec.certificateAuthority,
+      hosts: cp.spec.hosts,
+      type: 'advanced',
+      validationMethod: cp.spec.validationMethod,
+      validityDays: cp.spec.validityDays,
+      ...(cp.spec.cloudflareBranding !== undefined
+        ? { cloudflareBranding: cp.spec.cloudflareBranding }
+        : {}),
+    },
+  };
+}
+
+function lowerLoadBalancerMonitor(
+  m: LoadBalancerMonitor,
+): DesiredResource<LoadBalancerMonitorProperties> {
+  const ns = m.metadata.namespace ?? 'default';
+  const label = `${ns}/${m.metadata.name}`;
+  const userText = m.spec.description ?? '';
+  return {
+    resourceType: 'LoadBalancerMonitor',
+    ref: refOf(m),
+    label,
+    properties: {
+      description: userText ? `k1c:${label} ${userText}` : `k1c:${label}`,
+      type: m.spec.type,
+      ...(m.spec.method !== undefined ? { method: m.spec.method } : {}),
+      ...(m.spec.path !== undefined ? { path: m.spec.path } : {}),
+      ...(m.spec.port !== undefined ? { port: m.spec.port } : {}),
+      ...(m.spec.expectedCodes !== undefined ? { expectedCodes: m.spec.expectedCodes } : {}),
+      ...(m.spec.expectedBody !== undefined ? { expectedBody: m.spec.expectedBody } : {}),
+      ...(m.spec.interval !== undefined ? { interval: m.spec.interval } : {}),
+      ...(m.spec.timeout !== undefined ? { timeout: m.spec.timeout } : {}),
+      ...(m.spec.retries !== undefined ? { retries: m.spec.retries } : {}),
+      ...(m.spec.followRedirects !== undefined ? { followRedirects: m.spec.followRedirects } : {}),
+      ...(m.spec.allowInsecure !== undefined ? { allowInsecure: m.spec.allowInsecure } : {}),
+      ...(m.spec.header !== undefined ? { header: m.spec.header } : {}),
+    },
+  };
+}
+
+function lowerLoadBalancerPool(p: LoadBalancerPool): DesiredResource<LoadBalancerPoolProperties> {
+  const ns = p.metadata.namespace ?? 'default';
+  const poolName = p.spec.poolName ?? `k1c-${ns}-${p.metadata.name}`;
+  return {
+    resourceType: 'LoadBalancerPool',
+    ref: refOf(p),
+    label: `${ns}/${p.metadata.name}`,
+    properties: {
+      poolName,
+      origins: p.spec.origins,
+      ...(p.spec.monitor !== undefined ? { monitor: p.spec.monitor } : {}),
+      ...(p.spec.enabled !== undefined ? { enabled: p.spec.enabled } : {}),
+      ...(p.spec.minimumOrigins !== undefined ? { minimumOrigins: p.spec.minimumOrigins } : {}),
+      ...(p.spec.description !== undefined ? { description: p.spec.description } : {}),
+      ...(p.spec.notificationEmail !== undefined
+        ? { notificationEmail: p.spec.notificationEmail }
+        : {}),
+    },
+  };
+}
+
+function lowerLoadBalancer(lb: LoadBalancer): DesiredResource<LoadBalancerProperties> {
+  const ns = lb.metadata.namespace ?? 'default';
+  const label = `${ns}/${lb.metadata.name}`;
+  const userText = lb.spec.description ?? '';
+  return {
+    resourceType: 'LoadBalancer',
+    ref: refOf(lb),
+    label,
+    properties: {
+      zoneId: lb.spec.zoneId,
+      name: lb.spec.name,
+      defaultPools: lb.spec.defaultPools,
+      fallbackPool: lb.spec.fallbackPool,
+      description: userText ? `k1c:${label} ${userText}` : `k1c:${label}`,
+      ...(lb.spec.proxied !== undefined ? { proxied: lb.spec.proxied } : {}),
+      ...(lb.spec.enabled !== undefined ? { enabled: lb.spec.enabled } : {}),
+      ...(lb.spec.ttl !== undefined ? { ttl: lb.spec.ttl } : {}),
+      ...(lb.spec.steeringPolicy !== undefined
+        ? { steeringPolicy: lb.spec.steeringPolicy }
+        : {}),
+    },
+  };
+}
+
+function lowerZone(z: Zone): DesiredResource<ZoneProperties> {
+  const ns = z.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'Zone',
+    ref: refOf(z),
+    label: `${ns}/${z.metadata.name}`,
+    properties: {
+      name: z.spec.name,
+      ...(z.spec.type !== undefined ? { type: z.spec.type } : {}),
+      ...(z.spec.paused !== undefined ? { paused: z.spec.paused } : {}),
+      ...(z.spec.vanityNameServers !== undefined
+        ? { vanityNameServers: z.spec.vanityNameServers }
+        : {}),
+    },
+  };
+}
+
+function lowerZoneSetting(zs: ZoneSetting): DesiredResource<ZoneSettingProperties> {
+  const ns = zs.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'ZoneSetting',
+    ref: refOf(zs),
+    label: `${ns}/${zs.metadata.name}`,
+    properties: {
+      zoneId: zs.spec.zoneId,
+      settingId: zs.spec.settingId,
+      value: zs.spec.value,
+    },
+  };
 }
 
 function lowerTurnstileWidget(tw: TurnstileWidget): DesiredResource<TurnstileWidgetProperties> {

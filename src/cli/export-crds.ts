@@ -201,7 +201,14 @@ export function runExportCrds(args: ExportCrdsArgs): number {
   for (const kind of listKinds()) {
     if (!args.includeStandard && STANDARD_KINDS.has(kind)) continue;
     const crd = buildCrd(kind);
-    out.push(stringifyYaml(crd));
+    // QUOTE_DOUBLE on string values: the YAML 1.2 default (eemeli/yaml's
+    // `core` schema) emits `off`, `on`, `yes`, `no`, `y`, `n` unquoted —
+    // perfectly valid 1.2 — but kubectl / go-yaml downstream parses YAML
+    // 1.1, which folds those back into booleans. That collides with the
+    // enum's `type: string` and fails CRD structural validation. Forcing
+    // double-quoting on string scalars (without touching keys) keeps the
+    // output round-trippable in both dialects.
+    out.push(stringifyYaml(crd, { defaultStringType: 'QUOTE_DOUBLE', defaultKeyType: 'PLAIN' }));
   }
   process.stdout.write(out.join('---\n'));
   return 0;

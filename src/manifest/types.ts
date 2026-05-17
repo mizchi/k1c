@@ -743,6 +743,173 @@ export type StreamWatermark = BaseResource<
   StreamWatermarkSpec
 >;
 
+export interface ZoneSpec {
+  /** Apex domain (example.com). Immutable post-create. */
+  readonly name: string;
+  /** Defaults to 'full' (Cloudflare-hosted DNS). */
+  readonly type?: 'full' | 'partial' | 'secondary' | 'internal';
+  /** When true, only DNS is served; proxy / security features are disabled. */
+  readonly paused?: boolean;
+  /** Business+ only. Custom NS hostnames. */
+  readonly vanityNameServers?: ReadonlyArray<string>;
+}
+
+export type Zone = BaseResource<'Zone', 'cloudflare.k1c.io/v1alpha1', ZoneSpec>;
+
+export interface ZoneSettingSpec {
+  readonly zoneId: string;
+  /** Cloudflare setting key (always_use_https, ssl, brotli, min_tls_version, http3, ...). */
+  readonly settingId: string;
+  /** Desired value. Shape depends on the setting — boolean, string, number, or object. */
+  readonly value?: unknown;
+}
+
+export type ZoneSetting = BaseResource<
+  'ZoneSetting',
+  'cloudflare.k1c.io/v1alpha1',
+  ZoneSettingSpec
+>;
+
+export type LoadBalancerMonitorType =
+  | 'http'
+  | 'https'
+  | 'tcp'
+  | 'udp_icmp'
+  | 'icmp_ping'
+  | 'smtp';
+
+export interface LoadBalancerMonitorSpec {
+  readonly type: LoadBalancerMonitorType;
+  readonly description?: string;
+  readonly method?: string;
+  readonly path?: string;
+  readonly port?: number;
+  readonly expectedCodes?: string;
+  readonly expectedBody?: string;
+  readonly interval?: number;
+  readonly timeout?: number;
+  readonly retries?: number;
+  readonly followRedirects?: boolean;
+  readonly allowInsecure?: boolean;
+  readonly header?: Readonly<Record<string, ReadonlyArray<string>>>;
+}
+
+export type LoadBalancerMonitor = BaseResource<
+  'LoadBalancerMonitor',
+  'cloudflare.k1c.io/v1alpha1',
+  LoadBalancerMonitorSpec
+>;
+
+export interface LoadBalancerPoolOrigin {
+  readonly address: string;
+  readonly name?: string;
+  readonly enabled?: boolean;
+  readonly weight?: number;
+  readonly port?: number;
+}
+
+export interface LoadBalancerPoolSpec {
+  /** Defaults to `k1c-<ns>-<name>` via lower. Alphanumeric + `-` + `_` only. */
+  readonly poolName?: string;
+  readonly origins: ReadonlyArray<LoadBalancerPoolOrigin>;
+  readonly monitor?: string;
+  readonly enabled?: boolean;
+  readonly minimumOrigins?: number;
+  readonly description?: string;
+  readonly notificationEmail?: string;
+}
+
+export type LoadBalancerPool = BaseResource<
+  'LoadBalancerPool',
+  'cloudflare.k1c.io/v1alpha1',
+  LoadBalancerPoolSpec
+>;
+
+export type LoadBalancerSteeringPolicy =
+  | 'off'
+  | 'geo'
+  | 'random'
+  | 'dynamic_latency'
+  | 'proximity'
+  | 'least_outstanding_requests'
+  | 'least_connections';
+
+export interface LoadBalancerSpec {
+  readonly zoneId: string;
+  /** DNS hostname inside the zone (apex or subdomain). */
+  readonly name: string;
+  /** Pool ids in failover order. */
+  readonly defaultPools: ReadonlyArray<string>;
+  readonly fallbackPool: string;
+  /** Free-form description; lower prepends `k1c:<ns>/<name>`. */
+  readonly description?: string;
+  readonly proxied?: boolean;
+  readonly enabled?: boolean;
+  readonly ttl?: number;
+  readonly steeringPolicy?: LoadBalancerSteeringPolicy;
+}
+
+export type LoadBalancer = BaseResource<
+  'LoadBalancer',
+  'cloudflare.k1c.io/v1alpha1',
+  LoadBalancerSpec
+>;
+
+export interface NotificationPolicyMechanism {
+  readonly email?: ReadonlyArray<{ readonly id: string }>;
+  readonly pagerduty?: ReadonlyArray<{ readonly id: string }>;
+  readonly webhooks?: ReadonlyArray<{ readonly id: string }>;
+}
+
+export interface NotificationPolicySpec {
+  /** Defaults to `k1c-<ns>-<name>` via lower. */
+  readonly policyName?: string;
+  /** Cloudflare alert_type string — large enum, see Cloudflare docs. */
+  readonly alertType: string;
+  readonly enabled?: boolean;
+  readonly mechanisms: NotificationPolicyMechanism;
+  readonly description?: string;
+  readonly alertInterval?: string;
+  /** Free-form per-alert-type filters; see Cloudflare docs. */
+  readonly filters?: Readonly<Record<string, ReadonlyArray<string>>>;
+}
+
+export type NotificationPolicy = BaseResource<
+  'NotificationPolicy',
+  'cloudflare.k1c.io/v1alpha1',
+  NotificationPolicySpec
+>;
+
+export interface CertificatePackSpec {
+  readonly zoneId: string;
+  readonly certificateAuthority: 'google' | 'lets_encrypt' | 'ssl_com';
+  readonly hosts: ReadonlyArray<string>;
+  readonly type?: 'advanced';
+  readonly validationMethod: 'txt' | 'http' | 'email';
+  readonly validityDays: 14 | 30 | 90 | 365;
+  readonly cloudflareBranding?: boolean;
+}
+
+export type CertificatePack = BaseResource<
+  'CertificatePack',
+  'cloudflare.k1c.io/v1alpha1',
+  CertificatePackSpec
+>;
+
+export interface WebAnalyticsSiteSpec {
+  /** Hostname for gray-clouded sites. Required when zoneTag is unset. */
+  readonly host?: string;
+  /** Zone tag for orange-clouded sites. Required when host is unset. */
+  readonly zoneTag?: string;
+  readonly autoInstall?: boolean;
+}
+
+export type WebAnalyticsSite = BaseResource<
+  'WebAnalyticsSite',
+  'cloudflare.k1c.io/v1alpha1',
+  WebAnalyticsSiteSpec
+>;
+
 export type TransformHeaderOperation = 'set' | 'add' | 'remove';
 
 export interface TransformHeaderAction {
@@ -952,7 +1119,15 @@ export type K1cResource =
   | TurnstileWidget
   | Snippet
   | StreamKey
-  | StreamWatermark;
+  | StreamWatermark
+  | Zone
+  | ZoneSetting
+  | LoadBalancerMonitor
+  | LoadBalancerPool
+  | LoadBalancer
+  | NotificationPolicy
+  | CertificatePack
+  | WebAnalyticsSite;
 
 export type ResourceKind = K1cResource['kind'];
 
