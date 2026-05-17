@@ -364,8 +364,8 @@ pnpm build         # emits dist/
 pnpm k1c apply   -f examples/hello-worker.yaml [--dry-run]
 
 # Optional: end-to-end tests against a real Cloudflare account (creates and
-# deletes resources). Requires K1C_E2E=1 plus the same env vars used by the CLI.
-# The full suite needs the permissions listed in the Authentication section.
+# deletes resources). Requires K1C_E2E=1 plus the same env vars used by the CLI;
+# the full suite expects the broad token recipe from docs/api-token.md.
 K1C_E2E=1 K1C_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=... pnpm test:e2e
 ```
 
@@ -417,7 +417,7 @@ Authentication is via two environment variables:
 |---|---|
 | `K1C_ACCOUNT_ID` | Cloudflare account id (legacy fallback when no context is selected) |
 | `K1C_ZONE_ID` | optional default zone id; lets `<resolved-at-apply:Context:zoneId>` placeholders resolve and `get/describe` enumerate zone-scoped resources |
-| `CLOUDFLARE_API_TOKEN` | API token for the Cloudflare resources in the manifest (legacy fallback). For the broad examples/e2e suite, use account permissions: Workers Scripts Edit, Workers KV Storage Edit, Workers R2 Storage Edit, D1 Edit, Queues Edit, Vectorize Edit, AI Gateway Edit, Workers AI Read, Access Apps and Policies Edit, plus zone permissions needed by zone resources such as DNS Edit, Zone WAF Edit, Transform Rules Edit, Cache Rules Edit, Email Routing Edit, and Page Rules Edit. |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token (legacy fallback). One broad Custom Token covering every Cloudflare product k1c touches is recommended — see [docs/api-token.md](docs/api-token.md) for the copy-paste permission list and the per-CRD least-privilege matrix. |
 | `K1C_CONTEXT` | name of a context defined in `~/.k1c/config.yaml` to use; `--context <name>` flag overrides this |
 | `K1C_CONFIG` | path to the context file (default: `~/.k1c/config.yaml`) |
 

@@ -866,5 +866,6 @@ context selection (highest wins):
 
 environment:
   K1C_ACCOUNT_ID        Cloudflare account id
-  CLOUDFLARE_API_TOKEN  API token with Workers Edit + R2 + KV permissions
+  CLOUDFLARE_API_TOKEN  Cloudflare API token (one broad Custom Token recommended;
+                        see docs/api-token.md for the permission list)
 `;

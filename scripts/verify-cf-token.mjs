@@ -71,3 +71,9 @@ if (zones.length === 1) {
   console.log('# multiple zones — pick one and set:');
   for (const z of zones) console.log(`# K1C_ZONE_ID=${z.id}  # ${z.name}`);
 }
+
+console.log(
+  '\nIf any provider call later fails with Unauthorized, the missing permission\n' +
+    'is most likely listed in docs/api-token.md (recommended: one broad Custom\n' +
+    'Token covering every product k1c touches, rather than per-CRD scoping).',
+);
