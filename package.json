@@ -44,6 +44,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:envtest": "node scripts/setup-envtest.mjs && vitest run --config vitest.envtest.config.ts",
+    "setup:envtest": "node scripts/setup-envtest.mjs",
     "secretlint": "secretlint --secretlintignore .secretlintignore '**/*'",
     "k1c": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/cli/main.ts",
     "prepublishOnly": "pnpm typecheck && pnpm test && pnpm build"

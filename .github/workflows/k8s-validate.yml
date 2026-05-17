@@ -13,6 +13,29 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  # Fast tier: spin up a local etcd + kube-apiserver pair (no kubelet)
+  # via envtest and run the reconcile-loop integration tests. ~5 s end
+  # to end vs. ~60 s for kind, and covers the surface that unit tests
+  # cannot — CRD registration, watch-driven reconcile, status writeback
+  # on the /status subresource, finalizer patches. Pod-scheduling
+  # behaviour stays in the kind-based jobs below.
+  envtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Cache envtest binaries
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/envtest
+          key: envtest-${{ runner.os }}-${{ runner.arch }}-v1.36.0
+      - run: pnpm test:envtest
+
   # Stand up a kind cluster, register the k1c CRDs, and run every example
   # manifest through `kubectl apply --dry-run=server`. This catches the
   # exact class of strict-validation regressions the 0.9.0 verification

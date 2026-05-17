@@ -1,7 +1,7 @@
 import * as k8s from '@kubernetes/client-node';
 import Cloudflare from 'cloudflare';
 import type { ProviderContext } from '../providers/types.ts';
-import { createDefaultRegistry } from '../providers/index.ts';
+import { createDefaultRegistry, type ProviderRegistry } from '../providers/index.ts';
 import { lower } from '../manifest/lower.ts';
 import { plan } from '../reconciler/plan.ts';
 import { apply } from '../reconciler/apply.ts';
@@ -54,6 +54,12 @@ export interface OperatorOptions {
   /** Hook for log lines (default: console.log). Only used by tests. */
   readonly out?: (msg: string) => void;
   readonly err?: (msg: string) => void;
+  /**
+   * Swap the provider registry. Only used by tests to inject a
+   * fake-provider registry so the reconcile loop can be driven against
+   * a real apiserver (envtest) without hitting Cloudflare.
+   */
+  readonly registryOverride?: ProviderRegistry;
 }
 
 const CLOUDFLARE_GROUP = 'cloudflare.k1c.io';
@@ -137,7 +143,7 @@ export async function runOperator(options: OperatorOptions, signal: AbortSignal)
     managedByLabel: 'k1c.io/managed-by=k1c-operator',
     signal,
   };
-  const registry = createDefaultRegistry();
+  const registry = options.registryOverride ?? createDefaultRegistry();
 
   const useWatch = options.watch ?? true;
   const debounceMs = options.debounceMs ?? 500;
