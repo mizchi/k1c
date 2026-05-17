@@ -487,6 +487,109 @@ export const workerCronTriggerSchema = z.object({
   }),
 });
 
+const corsAllowedSchema = z.object({
+  methods: z.array(z.enum(['GET', 'PUT', 'POST', 'DELETE', 'HEAD'])),
+  origins: z.array(z.string()),
+  headers: z.array(z.string()).optional(),
+});
+
+const corsRuleSpecSchema = z.object({
+  id: z.string().optional(),
+  allowed: corsAllowedSchema,
+  exposeHeaders: z.array(z.string()).optional(),
+  maxAgeSeconds: z.number().int().nonnegative().optional(),
+});
+
+export const r2BucketCorsSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('R2BucketCors'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    bucketName: z.string().min(1),
+    rules: z.array(corsRuleSpecSchema),
+  }),
+});
+
+const lifecycleAgeConditionSchema = z.object({
+  type: z.literal('Age'),
+  maxAge: z.number().int().nonnegative(),
+});
+const lifecycleDateConditionSchema = z.object({
+  type: z.literal('Date'),
+  date: z.string(),
+});
+
+const lifecycleRuleSpecSchema = z.object({
+  id: z.string(),
+  enabled: z.boolean(),
+  conditions: z.object({ prefix: z.string() }),
+  abortMultipartUploadsTransition: z
+    .object({ condition: lifecycleAgeConditionSchema.optional() })
+    .optional(),
+  deleteObjectsTransition: z
+    .object({
+      condition: z.union([lifecycleAgeConditionSchema, lifecycleDateConditionSchema]).optional(),
+    })
+    .optional(),
+  storageClassTransitions: z
+    .array(
+      z.object({
+        condition: z.union([lifecycleAgeConditionSchema, lifecycleDateConditionSchema]),
+        storageClass: z.literal('InfrequentAccess'),
+      }),
+    )
+    .optional(),
+});
+
+export const r2BucketLifecycleSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('R2BucketLifecycle'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    bucketName: z.string().min(1),
+    rules: z.array(lifecycleRuleSpecSchema),
+  }),
+});
+
+const eventNotificationRuleSchema = z.object({
+  actions: z.array(
+    z.enum([
+      'PutObject',
+      'CopyObject',
+      'DeleteObject',
+      'CompleteMultipartUpload',
+      'LifecycleDeletion',
+    ]),
+  ),
+  prefix: z.string().optional(),
+  suffix: z.string().optional(),
+  description: z.string().optional(),
+});
+
+export const r2BucketEventNotificationSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('R2BucketEventNotification'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    bucketName: z.string().min(1),
+    queueId: z.string().min(1),
+    rules: z.array(eventNotificationRuleSchema),
+  }),
+});
+
+export const r2CustomDomainSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('R2CustomDomain'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    bucketName: z.string().min(1),
+    domain: z.string().min(1),
+    zoneId: z.string().min(1),
+    enabled: z.boolean(),
+    minTLS: z.enum(['1.0', '1.1', '1.2', '1.3']).optional(),
+  }),
+});
+
 const transformHeaderActionSchema = z.object({
   operation: z.enum(['set', 'add', 'remove']),
   value: z.string().optional(),
@@ -858,6 +961,10 @@ export const SCHEMAS_BY_KIND = {
   PageRule: pageRuleSchema,
   StreamLiveInput: streamLiveInputSchema,
   WorkerCronTrigger: workerCronTriggerSchema,
+  R2BucketCors: r2BucketCorsSchema,
+  R2BucketLifecycle: r2BucketLifecycleSchema,
+  R2BucketEventNotification: r2BucketEventNotificationSchema,
+  R2CustomDomain: r2CustomDomainSchema,
 } as const;
 
 export type K1cKind = keyof typeof SCHEMAS_BY_KIND;
@@ -906,4 +1013,8 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   pageRuleSchema,
   streamLiveInputSchema,
   workerCronTriggerSchema,
+  r2BucketCorsSchema,
+  r2BucketLifecycleSchema,
+  r2BucketEventNotificationSchema,
+  r2CustomDomainSchema,
 ]);

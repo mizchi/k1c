@@ -558,6 +558,93 @@ export type WorkerCronTrigger = BaseResource<
   WorkerCronTriggerSpec
 >;
 
+export type R2CorsMethod = 'GET' | 'PUT' | 'POST' | 'DELETE' | 'HEAD';
+
+export interface R2BucketCorsSpec {
+  readonly bucketName: string;
+  readonly rules: ReadonlyArray<{
+    readonly id?: string;
+    readonly allowed: {
+      readonly methods: ReadonlyArray<R2CorsMethod>;
+      readonly origins: ReadonlyArray<string>;
+      readonly headers?: ReadonlyArray<string>;
+    };
+    readonly exposeHeaders?: ReadonlyArray<string>;
+    readonly maxAgeSeconds?: number;
+  }>;
+}
+
+export type R2BucketCors = BaseResource<
+  'R2BucketCors',
+  'cloudflare.k1c.io/v1alpha1',
+  R2BucketCorsSpec
+>;
+
+export type R2LifecycleAgeCondition = { readonly type: 'Age'; readonly maxAge: number };
+export type R2LifecycleDateCondition = { readonly type: 'Date'; readonly date: string };
+
+export interface R2BucketLifecycleSpec {
+  readonly bucketName: string;
+  readonly rules: ReadonlyArray<{
+    readonly id: string;
+    readonly enabled: boolean;
+    readonly conditions: { readonly prefix: string };
+    readonly abortMultipartUploadsTransition?: { readonly condition?: R2LifecycleAgeCondition };
+    readonly deleteObjectsTransition?: {
+      readonly condition?: R2LifecycleAgeCondition | R2LifecycleDateCondition;
+    };
+    readonly storageClassTransitions?: ReadonlyArray<{
+      readonly condition: R2LifecycleAgeCondition | R2LifecycleDateCondition;
+      readonly storageClass: 'InfrequentAccess';
+    }>;
+  }>;
+}
+
+export type R2BucketLifecycle = BaseResource<
+  'R2BucketLifecycle',
+  'cloudflare.k1c.io/v1alpha1',
+  R2BucketLifecycleSpec
+>;
+
+export type R2EventAction =
+  | 'PutObject'
+  | 'CopyObject'
+  | 'DeleteObject'
+  | 'CompleteMultipartUpload'
+  | 'LifecycleDeletion';
+
+export interface R2BucketEventNotificationSpec {
+  readonly bucketName: string;
+  /** Queue id (UUID) of the destination Cloudflare Queue. */
+  readonly queueId: string;
+  readonly rules: ReadonlyArray<{
+    readonly actions: ReadonlyArray<R2EventAction>;
+    readonly prefix?: string;
+    readonly suffix?: string;
+    readonly description?: string;
+  }>;
+}
+
+export type R2BucketEventNotification = BaseResource<
+  'R2BucketEventNotification',
+  'cloudflare.k1c.io/v1alpha1',
+  R2BucketEventNotificationSpec
+>;
+
+export interface R2CustomDomainSpec {
+  readonly bucketName: string;
+  readonly domain: string;
+  readonly zoneId: string;
+  readonly enabled: boolean;
+  readonly minTLS?: '1.0' | '1.1' | '1.2' | '1.3';
+}
+
+export type R2CustomDomain = BaseResource<
+  'R2CustomDomain',
+  'cloudflare.k1c.io/v1alpha1',
+  R2CustomDomainSpec
+>;
+
 export type TransformHeaderOperation = 'set' | 'add' | 'remove';
 
 export interface TransformHeaderAction {
@@ -757,7 +844,11 @@ export type K1cResource =
   | ResponseHeaderRule
   | PageRule
   | StreamLiveInput
-  | WorkerCronTrigger;
+  | WorkerCronTrigger
+  | R2BucketCors
+  | R2BucketLifecycle
+  | R2BucketEventNotification
+  | R2CustomDomain;
 
 export type ResourceKind = K1cResource['kind'];
 

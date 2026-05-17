@@ -38,6 +38,10 @@ const CLOUDFLARE_KINDS_BY_PLURAL: Readonly<Record<string, string>> = {
   customhostnames: 'CustomHostname',
   emailroutingrules: 'EmailRoutingRule',
   workercrontriggers: 'WorkerCronTrigger',
+  r2bucketcorses: 'R2BucketCors',
+  r2bucketlifecycles: 'R2BucketLifecycle',
+  r2bucketeventnotifications: 'R2BucketEventNotification',
+  r2customdomains: 'R2CustomDomain',
 };
 
 /** Opt-in label that gates Deployment / Service / ConfigMap / etc. for k1c. */

@@ -1,0 +1,52 @@
+# R2 sidecar configuration applied on top of an existing bucket. Each CRD
+# targets the bucket by name (no namespace prefix); the bucket itself may be
+# managed elsewhere or out-of-band.
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2BucketCors
+metadata:
+  name: media-cors
+spec:
+  bucketName: media
+  rules:
+    - allowed:
+        methods: [GET, HEAD]
+        origins: ["https://app.example.com"]
+        headers: ["x-trace-id"]
+      exposeHeaders: ["etag"]
+      maxAgeSeconds: 3600
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2BucketLifecycle
+metadata:
+  name: cold-logs-lifecycle
+spec:
+  bucketName: cold-logs
+  rules:
+    - id: expire-30d
+      enabled: true
+      conditions: { prefix: "" }
+      deleteObjectsTransition:
+        condition: { type: Age, maxAge: 2592000 }
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2BucketEventNotification
+metadata:
+  name: uploads-to-queue
+spec:
+  bucketName: uploads
+  queueId: 00000000000000000000000000000000   # replace with real queue id
+  rules:
+    - actions: [PutObject, CompleteMultipartUpload]
+      prefix: "incoming/"
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: R2CustomDomain
+metadata:
+  name: assets-cdn
+spec:
+  bucketName: assets
+  domain: cdn.example.com
+  zoneId: 00000000000000000000000000000000   # replace with real zone id
+  enabled: true
+  minTLS: "1.2"
