@@ -44,6 +44,10 @@ const CLOUDFLARE_KINDS_BY_PLURAL: Readonly<Record<string, string>> = {
   r2customdomains: 'R2CustomDomain',
   workerversions: 'WorkerVersion',
   workerdeployments: 'WorkerDeployment',
+  turnstilewidgets: 'TurnstileWidget',
+  snippets: 'Snippet',
+  streamkeys: 'StreamKey',
+  streamwatermarks: 'StreamWatermark',
 };
 
 /** Opt-in label that gates Deployment / Service / ConfigMap / etc. for k1c. */

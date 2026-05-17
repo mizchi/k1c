@@ -99,6 +99,10 @@ const CLOUDFLARE_PLURALS: ReadonlyArray<string> = [
   'r2customdomains',
   'workerversions',
   'workerdeployments',
+  'turnstilewidgets',
+  'snippets',
+  'streamkeys',
+  'streamwatermarks',
 ];
 
 /**

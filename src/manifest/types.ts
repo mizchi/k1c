@@ -689,6 +689,60 @@ export type WorkerDeployment = BaseResource<
   WorkerDeploymentSpec
 >;
 
+export interface TurnstileWidgetSpec {
+  /** Display name. The provider prefixes with `k1c-<ns>-<name>` when not set explicitly. */
+  readonly widgetName?: string;
+  readonly domains: ReadonlyArray<string>;
+  readonly mode: 'non-interactive' | 'invisible' | 'managed';
+  readonly botFightMode?: boolean;
+  readonly clearanceLevel?: 'no_clearance' | 'jschallenge' | 'managed' | 'interactive';
+  readonly ephemeralId?: boolean;
+  readonly offlabel?: boolean;
+  readonly region?: 'world' | 'china';
+}
+
+export type TurnstileWidget = BaseResource<
+  'TurnstileWidget',
+  'cloudflare.k1c.io/v1alpha1',
+  TurnstileWidgetSpec
+>;
+
+export interface SnippetSpec {
+  readonly zoneId: string;
+  /** Snippet name (zone-scoped key). Defaults to manifest `metadata.name`. */
+  readonly snippetName?: string;
+  /** Module file name registered in metadata.main_module. */
+  readonly mainModule?: string;
+  /** JavaScript source bytes for the snippet body. */
+  readonly content: string;
+}
+
+export type Snippet = BaseResource<'Snippet', 'cloudflare.k1c.io/v1alpha1', SnippetSpec>;
+
+export interface StreamKeySpec {
+  /** Reserved; the Cloudflare side has no tunable fields for signing keys. */
+  readonly placeholder?: never;
+}
+
+export type StreamKey = BaseResource<'StreamKey', 'cloudflare.k1c.io/v1alpha1', StreamKeySpec>;
+
+export interface StreamWatermarkSpec {
+  /** Display name on Cloudflare. Defaults to `k1c-<ns>-<name>`. */
+  readonly profileName?: string;
+  /** Path to the watermark image relative to the manifest cwd. */
+  readonly filePath: string;
+  readonly opacity?: number;
+  readonly padding?: number;
+  readonly position?: 'upperRight' | 'upperLeft' | 'lowerLeft' | 'lowerRight' | 'center';
+  readonly scale?: number;
+}
+
+export type StreamWatermark = BaseResource<
+  'StreamWatermark',
+  'cloudflare.k1c.io/v1alpha1',
+  StreamWatermarkSpec
+>;
+
 export type TransformHeaderOperation = 'set' | 'add' | 'remove';
 
 export interface TransformHeaderAction {
@@ -894,7 +948,11 @@ export type K1cResource =
   | R2BucketEventNotification
   | R2CustomDomain
   | WorkerVersion
-  | WorkerDeployment;
+  | WorkerDeployment
+  | TurnstileWidget
+  | Snippet
+  | StreamKey
+  | StreamWatermark;
 
 export type ResourceKind = K1cResource['kind'];
 

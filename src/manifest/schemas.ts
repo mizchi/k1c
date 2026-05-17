@@ -631,6 +631,55 @@ export const workerDeploymentSchema = z.object({
   }),
 });
 
+export const turnstileWidgetSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('TurnstileWidget'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    widgetName: z.string().optional(),
+    domains: z.array(z.string()).min(1),
+    mode: z.enum(['non-interactive', 'invisible', 'managed']),
+    botFightMode: z.boolean().optional(),
+    clearanceLevel: z.enum(['no_clearance', 'jschallenge', 'managed', 'interactive']).optional(),
+    ephemeralId: z.boolean().optional(),
+    offlabel: z.boolean().optional(),
+    region: z.enum(['world', 'china']).optional(),
+  }),
+});
+
+export const snippetSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('Snippet'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    zoneId: z.string().min(1),
+    snippetName: z.string().optional(),
+    mainModule: z.string().optional(),
+    content: z.string(),
+  }),
+});
+
+export const streamKeySchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('StreamKey'),
+  metadata: objectMetaSchema,
+  spec: z.object({}).strict().optional().default({}),
+});
+
+export const streamWatermarkSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('StreamWatermark'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    profileName: z.string().optional(),
+    filePath: z.string().min(1),
+    opacity: z.number().min(0).max(1).optional(),
+    padding: z.number().min(0).max(1).optional(),
+    position: z.enum(['upperRight', 'upperLeft', 'lowerLeft', 'lowerRight', 'center']).optional(),
+    scale: z.number().min(0).max(1).optional(),
+  }),
+});
+
 const transformHeaderActionSchema = z.object({
   operation: z.enum(['set', 'add', 'remove']),
   value: z.string().optional(),
@@ -1008,6 +1057,10 @@ export const SCHEMAS_BY_KIND = {
   R2CustomDomain: r2CustomDomainSchema,
   WorkerVersion: workerVersionSchema,
   WorkerDeployment: workerDeploymentSchema,
+  TurnstileWidget: turnstileWidgetSchema,
+  Snippet: snippetSchema,
+  StreamKey: streamKeySchema,
+  StreamWatermark: streamWatermarkSchema,
 } as const;
 
 export type K1cKind = keyof typeof SCHEMAS_BY_KIND;
@@ -1062,4 +1115,8 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   r2CustomDomainSchema,
   workerVersionSchema,
   workerDeploymentSchema,
+  turnstileWidgetSchema,
+  snippetSchema,
+  streamKeySchema,
+  streamWatermarkSchema,
 ]);

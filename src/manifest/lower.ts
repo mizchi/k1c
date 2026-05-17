@@ -24,6 +24,10 @@ import type {
   R2CustomDomain,
   WorkerVersion,
   WorkerDeployment,
+  TurnstileWidget,
+  Snippet,
+  StreamKey,
+  StreamWatermark,
   ConfigMapResource,
   CronJob,
   AIGateway,
@@ -88,6 +92,10 @@ import type { R2BucketEventNotificationProperties } from '../providers/r2-bucket
 import type { R2CustomDomainProperties } from '../providers/r2-custom-domain.ts';
 import type { WorkerVersionProperties } from '../providers/worker-version.ts';
 import type { WorkerDeploymentProperties } from '../providers/worker-deployment.ts';
+import type { TurnstileWidgetProperties } from '../providers/turnstile-widget.ts';
+import type { SnippetProperties } from '../providers/snippet.ts';
+import type { StreamKeyProperties } from '../providers/stream-key.ts';
+import type { StreamWatermarkProperties } from '../providers/stream-watermark.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -185,6 +193,10 @@ export async function lower(
   const r2CustomDomains: R2CustomDomain[] = [];
   const workerVersions: WorkerVersion[] = [];
   const workerDeployments: WorkerDeployment[] = [];
+  const turnstileWidgets: TurnstileWidget[] = [];
+  const snippets: Snippet[] = [];
+  const streamKeys: StreamKey[] = [];
+  const streamWatermarks: StreamWatermark[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -311,6 +323,18 @@ export async function lower(
         break;
       case 'WorkerDeployment':
         workerDeployments.push(r);
+        break;
+      case 'TurnstileWidget':
+        turnstileWidgets.push(r);
+        break;
+      case 'Snippet':
+        snippets.push(r);
+        break;
+      case 'StreamKey':
+        streamKeys.push(r);
+        break;
+      case 'StreamWatermark':
+        streamWatermarks.push(r);
         break;
     }
   }
@@ -496,7 +520,88 @@ export async function lower(
     desired.push(lowerWorkerDeployment(wd));
   }
 
+  for (const tw of turnstileWidgets) {
+    desired.push(lowerTurnstileWidget(tw));
+  }
+  for (const sn of snippets) {
+    desired.push(lowerSnippet(sn));
+  }
+  for (const sk of streamKeys) {
+    desired.push(lowerStreamKey(sk));
+  }
+  for (const sw of streamWatermarks) {
+    desired.push(lowerStreamWatermark(sw));
+  }
+
   return { desired, warnings };
+}
+
+function lowerTurnstileWidget(tw: TurnstileWidget): DesiredResource<TurnstileWidgetProperties> {
+  const ns = tw.metadata.namespace ?? 'default';
+  const widgetName = tw.spec.widgetName ?? `k1c-${ns}-${tw.metadata.name}`;
+  return {
+    resourceType: 'TurnstileWidget',
+    ref: refOf(tw),
+    label: `${ns}/${tw.metadata.name}`,
+    properties: {
+      widgetName,
+      domains: tw.spec.domains,
+      mode: tw.spec.mode,
+      ...(tw.spec.botFightMode !== undefined ? { botFightMode: tw.spec.botFightMode } : {}),
+      ...(tw.spec.clearanceLevel !== undefined
+        ? { clearanceLevel: tw.spec.clearanceLevel }
+        : {}),
+      ...(tw.spec.ephemeralId !== undefined ? { ephemeralId: tw.spec.ephemeralId } : {}),
+      ...(tw.spec.offlabel !== undefined ? { offlabel: tw.spec.offlabel } : {}),
+      ...(tw.spec.region !== undefined ? { region: tw.spec.region } : {}),
+    },
+  };
+}
+
+function lowerSnippet(sn: Snippet): DesiredResource<SnippetProperties> {
+  const ns = sn.metadata.namespace ?? 'default';
+  const snippetName = sn.spec.snippetName ?? sn.metadata.name;
+  return {
+    resourceType: 'Snippet',
+    ref: refOf(sn),
+    label: `${ns}/${sn.metadata.name}`,
+    properties: {
+      zoneId: sn.spec.zoneId,
+      snippetName,
+      mainModule: sn.spec.mainModule ?? 'snippet.js',
+      content: sn.spec.content,
+    },
+  };
+}
+
+function lowerStreamKey(sk: StreamKey): DesiredResource<StreamKeyProperties> {
+  const ns = sk.metadata.namespace ?? 'default';
+  return {
+    resourceType: 'StreamKey',
+    ref: refOf(sk),
+    label: `${ns}/${sk.metadata.name}`,
+    properties: {},
+  };
+}
+
+function lowerStreamWatermark(
+  sw: StreamWatermark,
+): DesiredResource<StreamWatermarkProperties> {
+  const ns = sw.metadata.namespace ?? 'default';
+  const profileName = sw.spec.profileName ?? `k1c-${ns}-${sw.metadata.name}`;
+  return {
+    resourceType: 'StreamWatermark',
+    ref: refOf(sw),
+    label: `${ns}/${sw.metadata.name}`,
+    properties: {
+      profileName,
+      filePath: sw.spec.filePath,
+      ...(sw.spec.opacity !== undefined ? { opacity: sw.spec.opacity } : {}),
+      ...(sw.spec.padding !== undefined ? { padding: sw.spec.padding } : {}),
+      ...(sw.spec.position !== undefined ? { position: sw.spec.position } : {}),
+      ...(sw.spec.scale !== undefined ? { scale: sw.spec.scale } : {}),
+    },
+  };
 }
 
 function lowerWorkerVersion(wv: WorkerVersion): DesiredResource<WorkerVersionProperties> {
