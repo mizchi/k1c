@@ -17,6 +17,7 @@ import type {
   ResponseHeaderRule,
   PageRule,
   StreamLiveInput,
+  WorkerCronTrigger,
   ConfigMapResource,
   CronJob,
   AIGateway,
@@ -74,6 +75,7 @@ import type { URIRewriteRuleProperties } from '../providers/uri-rewrite-rule.ts'
 import type { ResponseHeaderRuleProperties } from '../providers/response-header-rule.ts';
 import type { PageRuleProperties } from '../providers/page-rule.ts';
 import type { StreamLiveInputProperties } from '../providers/stream-live-input.ts';
+import type { WorkerCronTriggerProperties } from '../providers/worker-cron-trigger.ts';
 import type { AccessPolicyProperties } from '../providers/access-policy.ts';
 import { placeholder as makePlaceholder } from '../reconciler/placeholders.ts';
 import { generateDispatcher } from '../canary/dispatcher-template.ts';
@@ -164,6 +166,7 @@ export async function lower(
   const responseHeaderRules: ResponseHeaderRule[] = [];
   const pageRules: PageRule[] = [];
   const streamLiveInputs: StreamLiveInput[] = [];
+  const workerCronTriggers: WorkerCronTrigger[] = [];
 
   for (const r of resources) {
     const label = labelOf(r);
@@ -269,6 +272,9 @@ export async function lower(
         break;
       case 'StreamLiveInput':
         streamLiveInputs.push(r);
+        break;
+      case 'WorkerCronTrigger':
+        workerCronTriggers.push(r);
         break;
     }
   }
@@ -430,7 +436,27 @@ export async function lower(
     desired.push(lowerStreamLiveInput(sli));
   }
 
+  for (const wct of workerCronTriggers) {
+    desired.push(lowerWorkerCronTrigger(wct));
+  }
+
   return { desired, warnings };
+}
+
+function lowerWorkerCronTrigger(
+  wct: WorkerCronTrigger,
+): DesiredResource<WorkerCronTriggerProperties> {
+  const ns = wct.metadata.namespace ?? 'default';
+  const name = wct.metadata.name;
+  return {
+    resourceType: 'WorkerCronTrigger',
+    ref: refOf(wct),
+    label: `${ns}/${name}`,
+    properties: {
+      scriptName: wct.spec.scriptName,
+      schedules: wct.spec.schedules,
+    },
+  };
 }
 
 function lowerStreamLiveInput(

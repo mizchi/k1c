@@ -545,6 +545,19 @@ export type StreamLiveInput = BaseResource<
   StreamLiveInputSpec
 >;
 
+export interface WorkerCronTriggerSpec {
+  /** Cloudflare Worker script name to attach the cron triggers to. */
+  readonly scriptName: string;
+  /** Cron expressions (standard 5-field format, UTC). Empty array removes all triggers. */
+  readonly schedules: ReadonlyArray<string>;
+}
+
+export type WorkerCronTrigger = BaseResource<
+  'WorkerCronTrigger',
+  'cloudflare.k1c.io/v1alpha1',
+  WorkerCronTriggerSpec
+>;
+
 export type TransformHeaderOperation = 'set' | 'add' | 'remove';
 
 export interface TransformHeaderAction {
@@ -743,7 +756,8 @@ export type K1cResource =
   | URIRewriteRule
   | ResponseHeaderRule
   | PageRule
-  | StreamLiveInput;
+  | StreamLiveInput
+  | WorkerCronTrigger;
 
 export type ResourceKind = K1cResource['kind'];
 

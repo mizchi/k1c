@@ -92,6 +92,7 @@ const CLOUDFLARE_PLURALS: ReadonlyArray<string> = [
   'ratelimitrules',
   'customhostnames',
   'emailroutingrules',
+  'workercrontriggers',
 ];
 
 /**

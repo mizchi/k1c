@@ -29,6 +29,7 @@ const CLOUDFLARE_PLURAL_BY_KIND: Readonly<Record<string, string>> = {
   RateLimitRule: 'ratelimitrules',
   CustomHostname: 'customhostnames',
   EmailRoutingRule: 'emailroutingrules',
+  WorkerCronTrigger: 'workercrontriggers',
 };
 
 const CLOUDFLARE_GROUP = 'cloudflare.k1c.io';

@@ -477,6 +477,16 @@ export const streamLiveInputSchema = z.object({
   }),
 });
 
+export const workerCronTriggerSchema = z.object({
+  apiVersion: z.literal('cloudflare.k1c.io/v1alpha1'),
+  kind: z.literal('WorkerCronTrigger'),
+  metadata: objectMetaSchema,
+  spec: z.object({
+    scriptName: z.string().min(1),
+    schedules: z.array(z.string().min(1)),
+  }),
+});
+
 const transformHeaderActionSchema = z.object({
   operation: z.enum(['set', 'add', 'remove']),
   value: z.string().optional(),
@@ -847,6 +857,7 @@ export const SCHEMAS_BY_KIND = {
   ResponseHeaderRule: responseHeaderRuleSchema,
   PageRule: pageRuleSchema,
   StreamLiveInput: streamLiveInputSchema,
+  WorkerCronTrigger: workerCronTriggerSchema,
 } as const;
 
 export type K1cKind = keyof typeof SCHEMAS_BY_KIND;
@@ -894,4 +905,5 @@ export const k1cResourceSchema = z.discriminatedUnion('kind', [
   responseHeaderRuleSchema,
   pageRuleSchema,
   streamLiveInputSchema,
+  workerCronTriggerSchema,
 ]);
