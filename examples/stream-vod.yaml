@@ -1,0 +1,20 @@
+# Cloudflare Stream VOD assets: a signing key (for signed URL playback)
+# and a watermark profile (overlaid on every video that references this
+# profile via the videoEdit API).
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: StreamKey
+metadata:
+  name: signed-playback
+spec: {}
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: StreamWatermark
+metadata:
+  name: brand-overlay
+spec:
+  filePath: ./watermark.png
+  opacity: 0.75
+  padding: 0.05
+  position: upperRight
+  scale: 0.15

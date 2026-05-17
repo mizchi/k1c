@@ -36,6 +36,10 @@ const CLOUDFLARE_PLURAL_BY_KIND: Readonly<Record<string, string>> = {
   R2CustomDomain: 'r2customdomains',
   WorkerVersion: 'workerversions',
   WorkerDeployment: 'workerdeployments',
+  TurnstileWidget: 'turnstilewidgets',
+  Snippet: 'snippets',
+  StreamKey: 'streamkeys',
+  StreamWatermark: 'streamwatermarks',
 };
 
 const CLOUDFLARE_GROUP = 'cloudflare.k1c.io';

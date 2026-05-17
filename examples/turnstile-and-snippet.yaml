@@ -1,0 +1,36 @@
+# Cloudflare Turnstile (CAPTCHA) widget + a lightweight zone Snippet
+# (redirect logic). Both are common companions to a Worker / Pages site.
+#
+# The widget's `sitekey` (the nativeId reported by status) goes into the
+# frontend HTML data-sitekey attribute; the verification secret is
+# returned by the API and not surfaced through k1c — fetch it from the
+# Cloudflare dashboard or `wrangler turnstile secret`.
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: TurnstileWidget
+metadata:
+  name: checkout
+spec:
+  domains:
+    - example.com
+    - app.example.com
+  mode: managed
+  botFightMode: true
+---
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: Snippet
+metadata:
+  name: legacy-redirect
+spec:
+  zoneId: "00000000000000000000000000000000"   # replace with real zone id
+  content: |
+    export default {
+      async fetch(request) {
+        const url = new URL(request.url);
+        if (url.pathname.startsWith("/old/")) {
+          url.pathname = "/new/" + url.pathname.slice("/old/".length);
+          return Response.redirect(url.toString(), 301);
+        }
+        return fetch(request);
+      },
+    };

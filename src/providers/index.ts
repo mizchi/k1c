@@ -35,6 +35,10 @@ import { r2BucketEventNotificationProvider } from './r2-bucket-event-notificatio
 import { r2CustomDomainProvider } from './r2-custom-domain.ts';
 import { workerVersionProvider } from './worker-version.ts';
 import { workerDeploymentProvider } from './worker-deployment.ts';
+import { turnstileWidgetProvider } from './turnstile-widget.ts';
+import { snippetProvider } from './snippet.ts';
+import { streamKeyProvider } from './stream-key.ts';
+import { streamWatermarkProvider } from './stream-watermark.ts';
 
 export function createDefaultRegistry(): ProviderRegistry {
   const r = new ProviderRegistry();
@@ -74,6 +78,10 @@ export function createDefaultRegistry(): ProviderRegistry {
   r.register(r2CustomDomainProvider);
   r.register(workerVersionProvider);
   r.register(workerDeploymentProvider);
+  r.register(turnstileWidgetProvider);
+  r.register(snippetProvider);
+  r.register(streamKeyProvider);
+  r.register(streamWatermarkProvider);
   return r;
 }
 
