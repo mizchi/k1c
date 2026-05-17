@@ -1,0 +1,45 @@
+# Cloudflare Agents + Workers AI + AI Gateway.
+#
+# k1c handles the platform wiring:
+#   - AIGateway CRD creates the gateway
+#   - cloudflare.com/ai binds env.AI
+#   - cloudflare.com/ai-gateway-ref exposes env.AI_GATEWAY_ID
+#   - cloudflare.com/agent-classes adds Durable Object binding + SQLite migration
+#
+# If you use the Agents SDK package, point image at your bundled output.
+
+apiVersion: cloudflare.k1c.io/v1alpha1
+kind: AIGateway
+metadata:
+  name: chat
+spec:
+  collectLogs: true
+  cacheTtl: 300
+  cacheInvalidateOnUpdate: true
+  rateLimiting:
+    interval: 60
+    limit: 120
+    technique: sliding
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-agent
+  annotations:
+    cloudflare.com/compatibility-date: "2026-05-12"
+    cloudflare.com/observability: enabled
+    cloudflare.com/ai: enabled
+    cloudflare.com/ai-gateway-ref: chat
+    cloudflare.com/agent-classes: ChatAgent
+spec:
+  selector:
+    matchLabels:
+      app: ai-agent
+  template:
+    metadata:
+      labels:
+        app: ai-agent
+    spec:
+      containers:
+        - name: ai-agent
+          image: ./examples/ai-agent-worker.mjs

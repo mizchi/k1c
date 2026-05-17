@@ -19,6 +19,7 @@ import type {
   StreamLiveInput,
   ConfigMapResource,
   CronJob,
+  AIGateway,
   D1Database,
   Deployment,
   DispatchNamespace,
@@ -47,6 +48,7 @@ import type { WorkerBinding, WorkerProperties } from '../providers/worker.ts';
 import type { R2BucketProperties } from '../providers/r2-bucket.ts';
 import type { KVNamespaceProperties } from '../providers/kv-namespace.ts';
 import type { DispatchNamespaceProperties } from '../providers/dispatch-namespace.ts';
+import type { AIGatewayProperties } from '../providers/ai-gateway.ts';
 import type { CustomDomainProperties } from '../providers/custom-domain.ts';
 import type { HyperdriveProperties } from '../providers/hyperdrive.ts';
 import type { D1DatabaseProperties } from '../providers/d1-database.ts';
@@ -111,6 +113,8 @@ interface LookupTables {
   readonly secrets: Map<string, SecretResource>;
   readonly r2Buckets: Map<string, R2Bucket>;
   readonly kvNamespaces: Map<string, KVNamespace>;
+  readonly dispatchNamespaces: Map<string, DispatchNamespace>;
+  readonly aiGateways: Map<string, AIGateway>;
   readonly hyperdrives: Map<string, Hyperdrive>;
   readonly d1Databases: Map<string, D1Database>;
   readonly queues: Map<string, Queue>;
@@ -128,6 +132,8 @@ export async function lower(
     secrets: new Map(),
     r2Buckets: new Map(),
     kvNamespaces: new Map(),
+    dispatchNamespaces: new Map(),
+    aiGateways: new Map(),
     hyperdrives: new Map(),
     d1Databases: new Map(),
     queues: new Map(),
@@ -178,6 +184,10 @@ export async function lower(
         break;
       case 'DispatchNamespace':
         dispatchNamespaces.push(r);
+        tables.dispatchNamespaces.set(label, r);
+        break;
+      case 'AIGateway':
+        tables.aiGateways.set(label, r);
         break;
       case 'Service':
         services.push(r);
@@ -279,6 +289,7 @@ export async function lower(
   for (const b of tables.r2Buckets.values()) desired.push(lowerR2Bucket(b));
   for (const kv of tables.kvNamespaces.values()) desired.push(lowerKVNamespace(kv));
   for (const dn of dispatchNamespaces) desired.push(lowerDispatchNamespace(dn));
+  for (const g of tables.aiGateways.values()) desired.push(lowerAIGateway(g));
   for (const h of tables.hyperdrives.values()) desired.push(lowerHyperdrive(h, tables));
   for (const d of tables.d1Databases.values()) desired.push(lowerD1Database(d));
   for (const q of tables.queues.values()) {
@@ -1457,6 +1468,52 @@ function lowerDispatchNamespace(
   };
 }
 
+function lowerAIGateway(g: AIGateway): DesiredResource<AIGatewayProperties> {
+  const ns = g.metadata.namespace ?? 'default';
+  const name = g.metadata.name;
+  const spec = g.spec ?? {};
+  const properties: AIGatewayProperties = {
+    id: spec.id ?? aiGatewayId(ns, name),
+    cacheInvalidateOnUpdate: spec.cacheInvalidateOnUpdate ?? false,
+    cacheTtl: spec.cacheTtl ?? null,
+    collectLogs: spec.collectLogs ?? true,
+    rateLimiting: {
+      interval: spec.rateLimiting?.interval ?? null,
+      limit: spec.rateLimiting?.limit ?? null,
+      technique: spec.rateLimiting?.technique ?? 'fixed',
+    },
+    ...(spec.authentication !== undefined ? { authentication: spec.authentication } : {}),
+    ...(spec.logManagement !== undefined
+      ? {
+          logManagement: {
+            retention: spec.logManagement.retention ?? null,
+            strategy: spec.logManagement.strategy ?? null,
+          },
+        }
+      : {}),
+    ...(spec.logpush !== undefined
+      ? {
+          logpush: {
+            enabled: spec.logpush.enabled ?? true,
+            ...(spec.logpush.publicKey !== undefined
+              ? { publicKey: spec.logpush.publicKey }
+              : {}),
+          },
+        }
+      : {}),
+  };
+  return {
+    resourceType: 'AIGateway',
+    ref: refOf(g),
+    label: `${ns}/${name}`,
+    properties,
+  };
+}
+
+function aiGatewayId(ns: string, name: string): string {
+  return `k1c-${ns}-${name}`;
+}
+
 function labelOf(r: K1cResource): string {
   return `${r.metadata.namespace ?? 'default'}/${r.metadata.name}`;
 }
@@ -1792,6 +1849,10 @@ async function buildWorkerDesireds(
   const scriptNames = containers.map((c, i) =>
     i === 0 ? baseScriptName : `${baseScriptName}--${c.name}`,
   );
+  const agentClasses = parseAgentClasses(
+    meta.annotations?.['cloudflare.com/agent-classes'],
+    `${kind} ${ns}/${name}`,
+  );
 
   const results: DesiredResource<WorkerProperties>[] = [];
   for (let i = 0; i < containers.length; i += 1) {
@@ -1827,13 +1888,15 @@ async function buildWorkerDesireds(
       bindings = [...bindings, ...siblings];
     }
 
+    const compatibilityFlags =
+      agentClasses.length > 0
+        ? appendUniqueFlag(built.compatibilityFlags, 'nodejs_compat')
+        : built.compatibilityFlags;
     const baseProperties: WorkerProperties = {
       scriptName,
       entrypoint: resolveContainerSource(container, meta.annotations ?? {}),
       compatibilityDate: built.compatibilityDate,
-      ...(built.compatibilityFlags !== undefined
-        ? { compatibilityFlags: built.compatibilityFlags }
-        : {}),
+      ...(compatibilityFlags !== undefined ? { compatibilityFlags } : {}),
       ...(Object.keys(built.vars).length > 0 ? { vars: built.vars } : {}),
       ...(Object.keys(built.secrets).length > 0 ? { secrets: built.secrets } : {}),
       ...(bindings.length > 0 ? { bindings } : {}),
@@ -1841,6 +1904,7 @@ async function buildWorkerDesireds(
         ? { observability: built.observability }
         : {}),
       ...(built.placement !== undefined ? { placement: built.placement } : {}),
+      ...(agentClasses.length > 0 ? { durableObjectClasses: agentClasses } : {}),
     };
     const properties: WorkerProperties = {
       ...baseProperties,
@@ -1953,7 +2017,7 @@ async function buildContainerProperties(
     const driver = vol.csi.driver;
     const attrs = vol.csi.volumeAttributes ?? {};
     const bindingName =
-      attrs['bindingName'] ?? defaultBindingName(vol.name);
+      attrs['binding'] ?? attrs['bindingName'] ?? defaultBindingName(vol.name);
     switch (driver) {
       case 'r2.k1c.io': {
         const ref = attrs['bucketRef'];
@@ -2021,6 +2085,33 @@ async function buildContainerProperties(
           namespace: ns,
           name: ref,
         });
+        break;
+      }
+      case 'dispatch-namespace.k1c.io': {
+        const ref = attrs['ref'] ?? attrs['namespaceRef'];
+        if (!ref) {
+          throw new LowerError(
+            `${ctxLabel}: csi driver dispatch-namespace.k1c.io requires volumeAttributes.ref`,
+          );
+        }
+        const dn = tables.dispatchNamespaces.get(`${ns}/${ref}`);
+        if (!dn) {
+          throw new LowerError(
+            `${ctxLabel}: DispatchNamespace "${ref}" not found in namespace "${ns}"`,
+          );
+        }
+        const remote = parseOptionalBooleanAttr(
+          attrs['remote'],
+          ctxLabel,
+          'remote',
+        );
+        bindings.push({
+          type: 'dispatch_namespace',
+          name: bindingName,
+          dispatchNamespace: `k1c-${ns}-${dn.metadata.name}`,
+          ...(remote !== undefined ? { remote } : {}),
+        });
+        pushUnique(dependsOn, refOf(dn));
         break;
       }
       case 'hyperdrive.k1c.io': {
@@ -2139,23 +2230,55 @@ async function buildContainerProperties(
       }
       default:
         throw new LowerError(
-          `${ctxLabel}: unknown CSI driver "${driver}" on volume "${vol.name}". Known drivers: r2.k1c.io / kv.k1c.io / d1.k1c.io / hyperdrive.k1c.io / queue.k1c.io / vectorize.k1c.io / service.k1c.io / analytics-engine.k1c.io / mtls.k1c.io / pipelines.k1c.io`,
+          `${ctxLabel}: unknown CSI driver "${driver}" on volume "${vol.name}". Known drivers: r2.k1c.io / kv.k1c.io / d1.k1c.io / hyperdrive.k1c.io / queue.k1c.io / vectorize.k1c.io / service.k1c.io / dispatch-namespace.k1c.io / analytics-engine.k1c.io / mtls.k1c.io / pipelines.k1c.io`,
         );
     }
   }
 
   // Pod-level annotations for the no-config bindings: AI, Browser Rendering,
-  // Version Metadata. Value `enabled` uses the default JS binding name; any other
-  // string overrides it.
+  // Images, Dynamic Workers' Worker Loader, and Version Metadata. Value
+  // `enabled` uses the default JS binding name; any other string overrides it.
   const aiAnno = annotations['cloudflare.com/ai'];
   if (aiAnno !== undefined) {
     bindings.push({ type: 'ai', name: aiAnno === 'enabled' ? 'AI' : aiAnno });
+  }
+  const aiGatewayRef = annotations['cloudflare.com/ai-gateway-ref'];
+  const aiGatewayLiteral = annotations['cloudflare.com/ai-gateway-id'];
+  if (aiGatewayRef !== undefined && aiGatewayLiteral !== undefined) {
+    throw new LowerError(
+      `${ctxLabel}: use only one of cloudflare.com/ai-gateway-ref or cloudflare.com/ai-gateway-id`,
+    );
+  }
+  const aiGatewayValue =
+    aiGatewayRef !== undefined
+      ? resolveAIGatewayRef(aiGatewayRef, ns, tables, dependsOn, ctxLabel)
+      : aiGatewayLiteral;
+  if (aiGatewayValue !== undefined) {
+    const gatewayVar = annotations['cloudflare.com/ai-gateway-var'] ?? 'AI_GATEWAY_ID';
+    vars[gatewayVar] = aiGatewayValue;
+    if (!bindings.some((b) => b.type === 'ai')) {
+      bindings.push({ type: 'ai', name: 'AI' });
+    }
   }
   const browserAnno = annotations['cloudflare.com/browser-rendering'];
   if (browserAnno !== undefined) {
     bindings.push({
       type: 'browser',
       name: browserAnno === 'enabled' ? 'BROWSER' : browserAnno,
+    });
+  }
+  const imagesAnno = annotations['cloudflare.com/images'];
+  if (imagesAnno !== undefined) {
+    bindings.push({
+      type: 'images',
+      name: imagesAnno === 'enabled' ? 'IMAGES' : imagesAnno,
+    });
+  }
+  const workerLoaderAnno = annotations['cloudflare.com/worker-loader'];
+  if (workerLoaderAnno !== undefined) {
+    bindings.push({
+      type: 'worker_loader',
+      name: workerLoaderAnno === 'enabled' ? 'LOADER' : workerLoaderAnno,
     });
   }
   const vmAnno = annotations['cloudflare.com/version-metadata'];
@@ -2206,10 +2329,74 @@ function secretValue(sec: SecretResource, key: string): string | undefined {
   return undefined;
 }
 
+function resolveAIGatewayRef(
+  ref: string,
+  ns: string,
+  tables: LookupTables,
+  dependsOn: ResourceRef[],
+  ctxLabel: string,
+): string {
+  const gateway = tables.aiGateways.get(`${ns}/${ref}`);
+  if (!gateway) {
+    throw new LowerError(
+      `${ctxLabel}: AIGateway "${ref}" not found in namespace "${ns}"`,
+    );
+  }
+  pushUnique(dependsOn, refOf(gateway));
+  return gateway.spec.id ?? aiGatewayId(ns, gateway.metadata.name);
+}
+
+function parseAgentClasses(
+  value: string | undefined,
+  ctxLabel: string,
+): ReadonlyArray<string> {
+  if (value === undefined) return [];
+  const classes = value
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+  if (classes.length === 0) {
+    throw new LowerError(`${ctxLabel}: cloudflare.com/agent-classes must not be empty`);
+  }
+  for (const className of classes) {
+    if (!isValidJsIdentifier(className)) {
+      throw new LowerError(
+        `${ctxLabel}: agent class "${className}" is not a valid JS identifier`,
+      );
+    }
+  }
+  return classes;
+}
+
+function isValidJsIdentifier(value: string): boolean {
+  return /^[$A-Z_a-z][$\w]*$/.test(value);
+}
+
+function appendUniqueFlag(
+  flags: ReadonlyArray<string> | undefined,
+  flag: string,
+): ReadonlyArray<string> {
+  if (flags === undefined) return [flag];
+  if (flags.includes(flag)) return flags;
+  return [...flags, flag];
+}
+
+function parseOptionalBooleanAttr(
+  value: string | undefined,
+  ctxLabel: string,
+  attr: string,
+): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  throw new LowerError(`${ctxLabel}: volumeAttributes.${attr} must be "true" or "false"`);
+}
+
 /**
  * Convert a k8s-style DNS-1123 volume name (lowercase, hyphens) into the
  * upper-snake conventional Worker binding name. `r2-media` → `R2_MEDIA`.
- * Used as the default when `volumeAttributes.bindingName` is not provided.
+ * Used as the default when `volumeAttributes.binding` / `bindingName` is not
+ * provided.
  */
 function defaultBindingName(volumeName: string): string {
   return volumeName.replaceAll('-', '_').toUpperCase();

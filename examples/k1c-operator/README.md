@@ -194,8 +194,13 @@ Cloudflare to host them.
 Environment variables (set on the Deployment):
 
   K1C_ACCOUNT_ID         Cloudflare account id
-  CLOUDFLARE_API_TOKEN   API token with Workers Edit + R2 + KV permissions
+  CLOUDFLARE_API_TOKEN   API token scoped to the resources being reconciled
   K1C_ZONE_ID            (optional) default zone id
+
+For manifests that use Workers AI, AI Gateway, Agents, or Dynamic Workers,
+include at least Workers Scripts Edit, Workers AI Read, and AI Gateway Edit on
+the account token, plus the storage / zone permissions required by the other
+resources in the manifest.
 
 Container args:
 

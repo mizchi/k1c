@@ -35,6 +35,7 @@ so they stay in sync with the schemas.
 | [`hyperdrive.yaml`](hyperdrive.yaml) | Hyperdrive pooled Postgres with password from a Secret |
 | [`queue-producer-consumer.yaml`](queue-producer-consumer.yaml) | Cloudflare Queue with one producer Worker + one consumer Worker |
 | [`ai-rag.yaml`](ai-rag.yaml) | RAG-style stack: Workers AI + Vectorize + R2 |
+| [`ai-agent-gateway.yaml`](ai-agent-gateway.yaml) + [`ai-agent-worker.mjs`](ai-agent-worker.mjs) | Cloudflare Agents wired to Workers AI through an AI Gateway |
 
 ## Networking + routing
 
@@ -43,6 +44,7 @@ so they stay in sync with the schemas.
 | [`ingress-fanout.yaml`](ingress-fanout.yaml) | path-based routing via a generated router Worker |
 | [`path-routing-with-access.yaml`](path-routing-with-access.yaml) | Ingress + Cloudflare Access on the same hostname |
 | [`saas-multi-tenant.yaml`](saas-multi-tenant.yaml) | Cloudflare for SaaS (CustomHostname per tenant) + DispatchNamespace |
+| [`dynamic-workers.yaml`](dynamic-workers.yaml) | Dynamic Workers Worker Loader + Workers for Platforms dispatch namespace binding |
 
 ## Zone-level configuration
 
@@ -112,6 +114,17 @@ at apply time.
 
 ## Runtime helpers
 
-`hello-worker.mjs` and `counter-do.mjs` are the JS entry points referenced
-by several manifests. They are intentionally trivial — replace them with
-your real code.
+`hello-worker.mjs`, `counter-do.mjs`, `dynamic-platform.mjs`, and
+`ai-agent-worker.mjs` are the JS entry points referenced by several manifests.
+They are intentionally small — replace them with your real code. If you use the
+Agents SDK package, point the manifest at your bundled output.
+
+For local Worker development, generate a Wrangler config from any single-Worker
+manifest:
+
+```sh
+pnpm k1c wrangler-config -f examples/hello-worker.yaml > wrangler.jsonc
+```
+
+If a manifest lowers to multiple Workers, select one with
+`--worker <namespace/name>`.

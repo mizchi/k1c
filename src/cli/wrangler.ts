@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import process from 'node:process';
 import type { LogsArgs, PortForwardArgs } from './args.ts';
+export { runWranglerConfig, type WranglerConfigDeps } from './wrangler-config.ts';
 
 /**
  * Translate a manifest <kind, name, namespace> tuple into the underlying Worker

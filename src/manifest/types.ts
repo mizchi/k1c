@@ -47,6 +47,11 @@ export interface VolumeMount {
  */
 export interface CSIVolumeSource {
   readonly driver: string;
+  /**
+   * Driver-specific refs plus an optional Worker binding name. `binding` is
+   * preferred; `bindingName` remains accepted for older manifests. When omitted,
+   * k1c derives one from the volume name (`r2-media` -> `R2_MEDIA`).
+   */
   readonly volumeAttributes?: Readonly<Record<string, string>>;
 }
 
@@ -179,6 +184,34 @@ export type DispatchNamespace = BaseResource<
   'DispatchNamespace',
   'cloudflare.k1c.io/v1alpha1',
   DispatchNamespaceSpec
+>;
+
+export interface AIGatewaySpec {
+  /** Optional literal Gateway ID. Defaults to k1c-<namespace>-<name>. */
+  readonly id?: string;
+  readonly cacheInvalidateOnUpdate?: boolean;
+  readonly cacheTtl?: number | null;
+  readonly collectLogs?: boolean;
+  readonly rateLimiting?: {
+    readonly interval?: number | null;
+    readonly limit?: number | null;
+    readonly technique?: 'fixed' | 'sliding';
+  };
+  readonly authentication?: boolean;
+  readonly logManagement?: {
+    readonly retention?: number | null;
+    readonly strategy?: 'STOP_INSERTING' | 'DELETE_OLDEST' | null;
+  };
+  readonly logpush?: {
+    readonly enabled?: boolean;
+    readonly publicKey?: string | null;
+  };
+}
+
+export type AIGateway = BaseResource<
+  'AIGateway',
+  'cloudflare.k1c.io/v1alpha1',
+  AIGatewaySpec
 >;
 
 export type HyperdriveScheme = 'postgres' | 'postgresql' | 'mysql';
@@ -689,6 +722,7 @@ export type K1cResource =
   | R2Bucket
   | KVNamespace
   | DispatchNamespace
+  | AIGateway
   | Hyperdrive
   | D1Database
   | Queue

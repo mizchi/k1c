@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import type Cloudflare from 'cloudflare';
-import { workerProvider } from './worker.ts';
+import { workerProvider, type WorkerProperties } from './worker.ts';
 import { NotFound } from './types.ts';
 import type { ProviderContext } from './types.ts';
 
@@ -185,7 +185,7 @@ describe('workerProvider', () => {
       expect(bindings).toContainEqual({ type: 'secret_text', name: 'TOKEN', text: 'shh' });
     });
 
-    it('translates r2_bucket / kv_namespace / service bindings', async () => {
+    it('translates r2_bucket / kv_namespace / service / ai / images / worker_loader bindings', async () => {
       const scripts = setup();
       await workerProvider.create(buildCtx(scripts), 'default/api', {
         ...baseProps,
@@ -193,6 +193,15 @@ describe('workerProvider', () => {
           { type: 'r2_bucket', name: 'R2_MEDIA', bucketName: 'k1c-default-media' },
           { type: 'kv_namespace', name: 'KV_CACHE', namespaceId: 'id-1' },
           { type: 'service', name: 'API', service: 'k1c--default--auth' },
+          {
+            type: 'dispatch_namespace',
+            name: 'DISPATCHER',
+            dispatchNamespace: 'k1c-default-production',
+            remote: true,
+          },
+          { type: 'ai', name: 'AI' },
+          { type: 'images', name: 'IMAGES' },
+          { type: 'worker_loader', name: 'LOADER' },
         ],
       });
       const bindings = (await readMetadata(scripts.update)).bindings as Array<Record<string, string>>;
@@ -210,6 +219,23 @@ describe('workerProvider', () => {
         type: 'service',
         name: 'API',
         service: 'k1c--default--auth',
+      });
+      expect(bindings).toContainEqual({
+        type: 'dispatch_namespace',
+        name: 'DISPATCHER',
+        namespace: 'k1c-default-production',
+      });
+      expect(bindings).toContainEqual({
+        type: 'ai',
+        name: 'AI',
+      });
+      expect(bindings).toContainEqual({
+        type: 'images',
+        name: 'IMAGES',
+      });
+      expect(bindings).toContainEqual({
+        type: 'worker_loader',
+        name: 'LOADER',
       });
     });
 
@@ -466,6 +492,10 @@ describe('workerProvider', () => {
           { type: 'plain_text', name: 'REGION', text: 'weur' },
           { type: 'r2_bucket', name: 'R2_MEDIA', bucket_name: 'k1c-default-media' },
           { type: 'kv_namespace', name: 'KV_CACHE', namespace_id: 'id-1' },
+          { type: 'dispatch_namespace', name: 'DISPATCHER', namespace: 'production' },
+          { type: 'ai', name: 'AI' },
+          { type: 'images', name: 'IMAGES' },
+          { type: 'worker_loader', name: 'LOADER' },
         ],
       });
       const result = await workerProvider.read(buildCtx(scripts), 'k1c--default--api');
@@ -487,6 +517,51 @@ describe('workerProvider', () => {
         name: 'KV_CACHE',
         namespaceId: 'id-1',
       });
+      expect(bindings).toContainEqual({
+        type: 'dispatch_namespace',
+        name: 'DISPATCHER',
+        dispatchNamespace: 'production',
+      });
+      expect(bindings).toContainEqual({
+        type: 'ai',
+        name: 'AI',
+      });
+      expect(bindings).toContainEqual({
+        type: 'images',
+        name: 'IMAGES',
+      });
+      expect(bindings).toContainEqual({
+        type: 'worker_loader',
+        name: 'LOADER',
+      });
+    });
+
+    it('ignores dispatch_namespace remote flag when comparing deployed Worker state', () => {
+      const desired = {
+        scriptName: 'k1c--default--api',
+        entrypoint: './worker.js',
+        compatibilityDate: '2025-01-01',
+        bindings: [
+          {
+            type: 'dispatch_namespace',
+            name: 'DISPATCHER',
+            dispatchNamespace: 'production',
+            remote: true,
+          },
+        ],
+      } as const;
+      const prior: WorkerProperties = {
+        ...desired,
+        entrypoint: '<read-from-cluster>',
+        bindings: [
+          {
+            type: 'dispatch_namespace',
+            name: 'DISPATCHER',
+            dispatchNamespace: 'production',
+          },
+        ],
+      };
+      expect(workerProvider.equals?.(prior, desired)).toBe(true);
     });
   });
 
